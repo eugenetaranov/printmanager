@@ -11,9 +11,15 @@
     update_cache: true
 
 # --- Brother scanner backend (open-source brscan) ----------------------------
-# Brother's proprietary brscan4 is x86-only, so on the Pi (arm64) we install the
-# reverse-engineered open-source backend instead. A udev rule grants the
-# saned/scanbd user USB access to the device.
+# Brother's proprietary brscan4 is x86-only, so on the Pi (arm64) we build the
+# reverse-engineered open-source backend from source (linking current system
+# libs). A udev rule grants the saned/scanbd user USB access to the device.
+- name: Install brscan build dependencies
+  apt:
+    name: "{{ brscan_build_packages }}"
+    state: present
+    update_cache: true
+
 - name: Render the open-source brscan installer
   template:
     src: install-brscan.sh.j2
@@ -57,7 +63,6 @@
     src: scanbd.conf.j2
     dest: /etc/scanbd/scanbd.conf
     mode: "0644"
-  notify: Restart scanbd
 
 # scanbd runs button scripts as the `saned` user; add it to the scan group so
 # scans can be written into the setgid share directory.
@@ -72,17 +77,21 @@
     dest: /etc/sane.d/saned.conf
     mode: "0644"
 
-- name: Enable and start scanbd (owns the scanner and the saned proxy on 6566)
+# scanbd exists only to trigger scans from the printer's physical button, but
+# the DCP-1510's button can't drive the Pi (Brother's button daemon is x86-only
+# and the SANE backend exposes no button option), so scanbd is dead weight here.
+# Disable and mask it. The scan-to-share.sh script it would have called remains
+# installed for manual/scripted use; network scanning is served by AirSane.
+- name: Disable scanbd (physical-button scanning unsupported on this hardware)
   systemd:
     name: scanbd
-    state: started
-    enabled: true
+    state: stopped
+    enabled: false
+    masked: true
 
-# scanbd itself listens on the saned port (6566) and launches saned on demand
-# (see `saned = ...` in scanbd.conf), so the packaged saned.socket collides with
-# it ("address already in use"). Stop, disable, and mask it so it can never bind
-# the port now or at boot; scanbd provides network pull scanning.
-- name: Disable the standalone saned.socket (scanbd handles network scanning)
+# The packaged saned.socket stays masked: network scanning is handled by AirSane
+# (eSCL), not classic SANE-net, so nothing should bind saned's port.
+- name: Disable the standalone saned.socket (AirSane handles network scanning)
   systemd:
     name: saned.socket
     state: stopped
@@ -143,3 +152,50 @@
     comment: "scan: airsane escl"
     persist: true
   when: airsane_enabled
+
+# --- Scan-to-share web UI ----------------------------------------------------
+# A tiny stdlib-Python web app: a Scan button that runs the reliable server-side
+# scan and drops a PDF into the share. Runs as scan_web_user.
+- name: Create the scan-web install directory
+  file:
+    path: /usr/local/lib/scan-web
+    state: directory
+    mode: "0755"
+  when: scan_web_enabled
+
+- name: Install the scan-web server
+  template:
+    src: scan-web.py.j2
+    dest: /usr/local/lib/scan-web/scan-web.py
+    mode: "0755"
+  when: scan_web_enabled
+  notify: Restart scan-web
+
+- name: Install the scan-web systemd unit
+  template:
+    src: scan-web.service.j2
+    dest: /etc/systemd/system/scan-web.service
+    mode: "0644"
+  when: scan_web_enabled
+  notify: Restart scan-web
+
+- name: Ensure scan-web is running and enabled
+  systemd:
+    name: scan-web
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: scan_web_enabled
+
+# Inserted above the base default-deny DROP (see the base role).
+- name: Open the firewall for the scan-web UI from the LAN
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    source: "{{ local_subnet }}"
+    destination_port: "{{ scan_web_port }}"
+    jump: ACCEPT
+    action: insert
+    comment: "scan: web ui"
+    persist: true
+  when: scan_web_enabled

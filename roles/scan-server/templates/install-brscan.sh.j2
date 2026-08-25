@@ -1,55 +1,57 @@
 #!/bin/sh
-# Install the open-source Brother SANE backend (dmikushin/brscan), a clean-room
-# replacement for Brother's x86-only brscan4 that also runs on ARM. The correct
-# release tarball + checksum for this architecture are baked in at render time.
-# Idempotent: exits early once the backend is installed and registered.
+# Build and install the open-source Brother SANE backend (dmikushin/brscan) from
+# source, linking against the system's current libjpeg/libusb so it actually
+# loads on Ubuntu 24.04. (The upstream prebuilt release links libjpeg.so.62 and
+# libusb-0.1 ABIs that noble no longer ships, so the dll loader silently skips
+# it and no scanner is found.) Build deps are installed by the role. Runs as
+# root via the Tack play. Idempotent: skips once an installed backend loads with
+# all libraries resolved.
 set -eu
 
-URL='{{ index .brscan_urls .facts.arch }}'
-SHA='{{ index .brscan_sha256 .facts.arch }}'
-ARCH='{{ .facts.arch }}'
-
-if [ -z "$URL" ]; then
-  echo "No open-source brscan backend URL configured for architecture '$ARCH'."
-  exit 0
-fi
+URL='{{ .brscan_git_url }}'
+REF='{{ .brscan_git_ref }}'
 
 # Debian/Ubuntu keep SANE backends in a multiarch dir (e.g.
-# /usr/lib/aarch64-linux-gnu/sane), NOT the upstream /usr/lib/sane. Detect it
-# from an existing backend so the dll loader can actually find libsane-brother.
+# /usr/lib/aarch64-linux-gnu/sane); detect it from an existing backend.
 sanedir="$(dirname "$(find /usr/lib -type f -name 'libsane-net.so*' 2>/dev/null | head -1)")"
 [ -n "$sanedir" ] && [ -d "$sanedir" ] || sanedir=/usr/lib/sane
 
-if [ -e "$sanedir/libsane-brother.so.1" ] && grep -qx brother /etc/sane.d/dll.conf; then
-  echo "Open-source brscan backend already installed in $sanedir."
+# Skip only if the backend is present, registered, AND all its libs resolve
+# (a prior prebuilt install may exist but fail to load — rebuild in that case).
+if [ -e "$sanedir/libsane-brother.so.1" ] \
+   && ! ldd "$sanedir/libsane-brother.so.1" 2>/dev/null | grep -q 'not found' \
+   && grep -qx brother /etc/sane.d/dll.conf; then
+  echo "brscan backend already installed and all libraries resolve; skipping."
   exit 0
 fi
 
 tmpd="$(mktemp -d)"
 trap 'rm -rf "$tmpd"' EXIT
-tarball="$tmpd/brscan.tar.gz"
 
-echo "Downloading brscan $ARCH backend from $URL"
-curl -fsSL "$URL" -o "$tarball"
-echo "$SHA  $tarball" | sha256sum -c -
+git clone --depth 1 --branch "$REF" "$URL" "$tmpd/brscan"
+mkdir -p "$tmpd/build"
+cd "$tmpd/build"
+cmake -DCMAKE_INSTALL_PREFIX=/usr "$tmpd/brscan"
+make -j"$(nproc)"
+make install
 
-tar -xzf "$tarball" -C "$tmpd"
-src="$(find "$tmpd" -maxdepth 1 -type d -name 'brscan-*')"
-
-# Support libraries onto the linker path; backend into the SANE backend dir.
-install -m 644 "$src/lib/libbrscandec.so.1" /usr/lib/libbrscandec.so.1
-install -m 644 "$src/lib/libbrcolm.so.1"    /usr/lib/libbrcolm.so.1
-ln -sf libbrscandec.so.1 /usr/lib/libbrscandec.so
-ln -sf libbrscandec.so.1 /usr/lib/libbrscandec2.so
-ln -sf libbrcolm.so.1    /usr/lib/libbrcolm.so
-ln -sf libbrcolm.so.1    /usr/lib/libbrcolm2.so
-
-install -d "$sanedir"
-install -m 644 "$src/lib/sane/libsane-brother.so.1" "$sanedir/libsane-brother.so.1"
-ln -sf libsane-brother.so.1 "$sanedir/libsane-brother.so"
+# Copy the freshly built backend into the multiarch dir the dll loader searches,
+# OVERWRITING any stale prior copy (e.g. a prebuilt one with unresolved libs).
+# Prefer the build tree; fall back to wherever make install placed it.
+built="$(find "$tmpd/build" -type f -name 'libsane-brother.so*' 2>/dev/null | head -1)"
+[ -n "$built" ] || built="$(find /usr/lib -type f -name 'libsane-brother.so.1' 2>/dev/null | grep -v "^$sanedir/" | head -1)"
+if [ -n "$built" ]; then
+  install -d "$sanedir"
+  install -m 644 "$built" "$sanedir/libsane-brother.so.1"
+  ln -sf libsane-brother.so.1 "$sanedir/libsane-brother.so"
+fi
 ldconfig
 
-# Register the backend with SANE's dll loader (idempotent).
 grep -qx brother /etc/sane.d/dll.conf || echo brother >> /etc/sane.d/dll.conf
 
-echo "Open-source brscan backend installed into $sanedir."
+if ldd "$sanedir/libsane-brother.so.1" 2>/dev/null | grep -q 'not found'; then
+  echo "WARNING: brscan backend still has unresolved libraries:" >&2
+  ldd "$sanedir/libsane-brother.so.1" | grep 'not found' >&2
+  exit 1
+fi
+echo "brscan backend built and installed into $sanedir."

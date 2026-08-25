@@ -1,0 +1,369 @@
+#!/usr/bin/env python3
+"""Scan-to-share web UI for printmanager.
+
+Serves one page with a Scan button. Each scan runs the server-side
+scan-to-share.sh (reliable full-page scanimage -> tiff2pdf) and drops a PDF into
+the Samba share, then lists recent scans. Dependency-free (stdlib only).
+Configuration comes from the environment; see the systemd unit."""
+import os
+import re
+import json
+import time
+import html
+import urllib.parse
+import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+SCAN_DIR = os.environ.get("SCAN_WEB_DIR", "/srv/scans")
+PORT = int(os.environ.get("SCAN_WEB_PORT", "8080"))
+TITLE = os.environ.get("SCAN_WEB_TITLE", "printmanager")
+SHARE = os.environ.get("SCAN_WEB_SHARE", "smb://printmanager.local/scans")
+SCRIPT = os.environ.get("SCAN_WEB_SCRIPT", "/etc/scanbd/scripts/scan-to-share.sh")
+DEF_MODE = os.environ.get("SCAN_WEB_DEFAULT_MODE", "24bit Color")
+DEF_RES = os.environ.get("SCAN_WEB_DEFAULT_RES", "300")
+
+# (backend mode name, friendly label). The names must match the brscan backend
+# exactly (scanimage --help); friendly labels are shown in the UI.
+MODES = [("24bit Color", "Color"), ("True Gray", "Gray"), ("Black & White", "Black & white")]
+MODE_VALUES = [m[0] for m in MODES]
+RESOLUTIONS = ["150", "200", "300", "400", "600"]
+NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
+
+_scan_lock = threading.Lock()
+
+
+def list_scans(limit=30):
+    items = []
+    try:
+        for name in os.listdir(SCAN_DIR):
+            if name.startswith("."):
+                continue
+            path = os.path.join(SCAN_DIR, name)
+            if not os.path.isfile(path):
+                continue
+            st = os.stat(path)
+            items.append({"name": name, "size": st.st_size, "mtime": int(st.st_mtime)})
+    except FileNotFoundError:
+        pass
+    items.sort(key=lambda x: x["mtime"], reverse=True)
+    return items[:limit]
+
+
+def run_scan(mode, resolution):
+    if mode not in MODE_VALUES:
+        mode = DEF_MODE
+    if resolution not in RESOLUTIONS:
+        resolution = DEF_RES
+    env = dict(os.environ, SCAN_MODE=mode, SCAN_RES=resolution, SCAN_FMT="pdf")
+    with _scan_lock:
+        proc = subprocess.run([SCRIPT], env=env, capture_output=True,
+                              text=True, timeout=240)
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout or "").strip()
+        last = msg.splitlines()[-1] if msg else "scan failed"
+        raise RuntimeError(last)
+    out = proc.stdout.strip().splitlines()
+    return os.path.basename(out[-1]) if out else ""
+
+
+def options(values, default, suffix=""):
+    parts = []
+    for v in values:
+        sel = " selected" if v == default else ""
+        parts.append('<option value="%s"%s>%s%s</option>'
+                     % (html.escape(v), sel, html.escape(v), suffix))
+    return "".join(parts)
+
+
+def mode_options(default):
+    parts = []
+    for val, label in MODES:
+        sel = " selected" if val == default else ""
+        parts.append('<option value="%s"%s>%s</option>'
+                     % (html.escape(val), sel, html.escape(label)))
+    return "".join(parts)
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "scan-web/1"
+
+    def log_message(self, *a):
+        pass
+
+    def _send(self, code, body, ctype="text/html; charset=utf-8", extra=None):
+        if isinstance(body, str):
+            body = body.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _json(self, code, obj):
+        self._send(code, json.dumps(obj), "application/json")
+
+    def do_GET(self):
+        path = urllib.parse.urlparse(self.path).path
+        if path in ("/", "/index.html"):
+            self._send(200, render_page())
+        elif path == "/recent":
+            self._json(200, {"scans": list_scans()})
+        elif path.startswith("/file/"):
+            self._serve_file(urllib.parse.unquote(path[len("/file/"):]))
+        else:
+            self._send(404, "Not found", "text/plain")
+
+    def _serve_file(self, name):
+        if not NAME_RE.fullmatch(name):
+            return self._send(400, "Bad name", "text/plain")
+        path = os.path.join(SCAN_DIR, name)
+        if not os.path.isfile(path):
+            return self._send(404, "Not found", "text/plain")
+        with open(path, "rb") as f:
+            data = f.read()
+        ctype = "application/pdf" if name.lower().endswith(".pdf") else "application/octet-stream"
+        self._send(200, data, ctype,
+                   {"Content-Disposition": 'inline; filename="%s"' % name})
+
+    def do_POST(self):
+        if urllib.parse.urlparse(self.path).path != "/scan":
+            return self._send(404, "Not found", "text/plain")
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length else ""
+        form = urllib.parse.parse_qs(raw)
+        mode = form.get("mode", [DEF_MODE])[0]
+        res = form.get("resolution", [DEF_RES])[0]
+        t0 = time.time()
+        try:
+            name = run_scan(mode, res)
+            if not name:
+                raise RuntimeError("No output file was produced")
+            self._json(200, {"ok": True, "file": name,
+                             "seconds": round(time.time() - t0, 1)})
+        except subprocess.TimeoutExpired:
+            self._json(200, {"ok": False,
+                             "error": "Scan timed out. Is a page on the glass and the scanner awake?"})
+        except Exception as e:
+            self._json(200, {"ok": False, "error": str(e)})
+
+
+def render_page():
+    return (PAGE
+            .replace("__TITLE__", html.escape(TITLE))
+            .replace("__SHARE__", html.escape(SHARE))
+            .replace("__MODE_OPTS__", mode_options(DEF_MODE))
+            .replace("__RES_OPTS__", options(RESOLUTIONS, DEF_RES, " dpi")))
+
+
+PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scan · __TITLE__</title>
+<style>
+:root{
+  --bg:#fbfbf9; --surface:#ffffff; --border:#e7e6e1; --text:#1b1b18;
+  --muted:#6f6e67; --faint:#9c9b92; --accent:#0f7a63; --accent-weak:#e8f3ef;
+  --primary:#1b1b18; --primary-ink:#ffffff; --danger:#b03a2c;
+  --shadow:0 1px 2px rgba(20,20,16,.05),0 8px 24px -14px rgba(20,20,16,.2);
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#151518; --surface:#1e1e22; --border:#2e2e34; --text:#eceae6;
+    --muted:#9d9c96; --faint:#6d6c66; --accent:#43c3a4; --accent-weak:#16302a;
+    --primary:#eceae6; --primary-ink:#151518; --danger:#e2745f;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -16px rgba(0,0,0,.6);
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);
+  line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.wrap{max-width:540px;margin:0 auto;padding:clamp(22px,5vw,44px) 20px 96px}
+header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:26px}
+.brand{font-weight:640;font-size:19px;letter-spacing:-.01em}
+.brand small{display:block;margin-top:3px;font:500 12px/1.4 var(--mono);
+  color:var(--faint);letter-spacing:.01em}
+.status{flex:none;display:inline-flex;align-items:center;gap:7px;
+  font:500 12px/1 var(--mono);color:var(--muted);padding-top:4px}
+.status .led{width:7px;height:7px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 0 0 var(--accent)}
+.status[data-state="busy"] .led{animation:pulse 1.2s ease-in-out infinite}
+.status[data-state="error"] .led{background:var(--danger)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  box-shadow:var(--shadow);padding:20px}
+.controls{display:flex;gap:12px;margin-bottom:16px}
+.field{flex:1;display:flex;flex-direction:column;gap:6px}
+.field .lbl{font:600 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+select{appearance:none;-webkit-appearance:none;width:100%;padding:10px 34px 10px 12px;
+  font:500 14px var(--sans);color:var(--text);background:var(--bg);
+  border:1px solid var(--border);border-radius:10px;cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%239c9b92' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 12px center}
+select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-color:var(--accent)}
+.scan{width:100%;padding:15px 20px;border:none;border-radius:11px;
+  background:var(--primary);color:var(--primary-ink);font:640 16px var(--sans);
+  letter-spacing:-.01em;cursor:pointer;transition:opacity .15s,transform .05s}
+.scan:hover{opacity:.9}.scan:active{transform:translateY(1px)}
+.scan:disabled{opacity:.5;cursor:default}
+.scan:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.progress{height:2px;margin-top:12px;border-radius:2px;background:var(--border);
+  overflow:hidden;opacity:0;transition:opacity .2s}
+.scanning .progress{opacity:1}
+.progress .bar{height:100%;width:34%;border-radius:2px;background:var(--accent);
+  transform:translateX(-120%);animation:indet 1.15s ease-in-out infinite}
+@keyframes indet{0%{transform:translateX(-120%)}100%{transform:translateX(380%)}}
+.note{margin:14px 2px 0;min-height:18px;font:500 13px var(--mono);color:var(--muted)}
+.note.ok{color:var(--accent)}.note.err{color:var(--danger)}
+.note a{color:inherit}
+.recent{margin-top:34px}
+.recent h2{margin:0 0 2px;font-size:13px;font-weight:640;letter-spacing:.02em}
+.recent .path{font:500 12px var(--mono);color:var(--faint);word-break:break-all}
+.list{list-style:none;margin:16px 0 0;padding:0}
+.row{display:flex;align-items:center;gap:12px;padding:12px 2px;border-top:1px solid var(--border)}
+.row:first-child{border-top:none}
+.row .name{flex:1;min-width:0;font:500 13px var(--mono);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .size{flex:none;font:500 12px var(--mono);color:var(--faint);
+  font-variant-numeric:tabular-nums}
+.row .ago{flex:none;width:70px;text-align:right;font:500 12px var(--mono);
+  color:var(--faint);font-variant-numeric:tabular-nums}
+.row .dl{flex:none;color:var(--muted);text-decoration:none;padding:4px;border-radius:6px;line-height:0}
+.row .dl:hover{color:var(--text);background:var(--bg)}
+.row .dl:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.empty{padding:14px 2px;color:var(--muted);font-size:14px}
+.new{animation:in .35s ease both}
+@keyframes in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important;animation-iteration-count:1!important}
+  .progress .bar{width:100%;transform:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">Scan<small>__TITLE__ · flatbed</small></div>
+    <span class="status" id="status" data-state="idle" role="status" aria-live="polite">
+      <i class="led"></i><span id="statusText">Ready</span>
+    </span>
+  </header>
+
+  <form class="card" id="form">
+    <div class="controls">
+      <label class="field"><span class="lbl">Mode</span>
+        <select name="mode" id="mode">__MODE_OPTS__</select></label>
+      <label class="field"><span class="lbl">Resolution</span>
+        <select name="resolution" id="resolution">__RES_OPTS__</select></label>
+    </div>
+    <button class="scan" id="scanBtn" type="submit">Scan</button>
+    <div class="progress" aria-hidden="true"><div class="bar"></div></div>
+    <p class="note" id="note" aria-live="polite"></p>
+  </form>
+
+  <section class="recent">
+    <h2>Recent scans</h2>
+    <div class="path">Saved to __SHARE__</div>
+    <ul class="list" id="list">
+      <li class="empty">No scans yet. Place a page on the glass and press Scan.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+(function(){
+  var form=document.getElementById('form');
+  var btn=document.getElementById('scanBtn');
+  var status=document.getElementById('status');
+  var statusText=document.getElementById('statusText');
+  var note=document.getElementById('note');
+  var list=document.getElementById('list');
+  var scanning=false, firstLoad=null;
+
+  function fmtSize(b){
+    if(b<1024) return b+' B';
+    if(b<1048576) return (b/1024).toFixed(b<10240?1:0)+' KB';
+    return (b/1048576).toFixed(1)+' MB';
+  }
+  function ago(sec){
+    var d=Math.max(0,Math.floor(Date.now()/1000)-sec);
+    if(d<60) return 'just now';
+    if(d<3600) return Math.floor(d/60)+'m ago';
+    if(d<86400) return Math.floor(d/3600)+'h ago';
+    return Math.floor(d/86400)+'d ago';
+  }
+  function render(scans, newest){
+    if(!scans.length){
+      list.innerHTML='<li class="empty">No scans yet. Place a page on the glass and press Scan.</li>';
+      return;
+    }
+    list.innerHTML='';
+    scans.forEach(function(s){
+      var li=document.createElement('li');
+      li.className='row'+(s.name===newest?' new':'');
+      var a='/file/'+encodeURIComponent(s.name);
+      li.innerHTML='<span class="name" title="'+s.name+'">'+s.name+'</span>'+
+        '<span class="size">'+fmtSize(s.size)+'</span>'+
+        '<span class="ago">'+ago(s.mtime)+'</span>'+
+        '<a class="dl" href="'+a+'" target="_blank" rel="noopener" title="Open" aria-label="Open '+s.name+'">'+
+        '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg></a>';
+      list.appendChild(li);
+    });
+  }
+  function refresh(newest){
+    return fetch('/recent').then(function(r){return r.json();})
+      .then(function(d){render(d.scans||[], newest);})
+      .catch(function(){});
+  }
+  function setStatus(state,text){ status.dataset.state=state; statusText.textContent=text; }
+
+  form.addEventListener('submit',function(e){
+    e.preventDefault();
+    if(scanning) return;
+    scanning=true;
+    form.classList.add('scanning');
+    btn.disabled=true; btn.textContent='Scanning…';
+    note.className='note'; note.textContent='';
+    setStatus('busy','Scanning');
+    var body=new URLSearchParams(new FormData(form)).toString();
+    fetch('/scan',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(d.ok){
+          setStatus('idle','Ready');
+          note.className='note ok';
+          note.innerHTML='Saved '+d.file+' · '+d.seconds+'s — <a href="/file/'+encodeURIComponent(d.file)+'" target="_blank" rel="noopener">open</a>';
+          return refresh(d.file);
+        }
+        setStatus('error','Failed');
+        note.className='note err'; note.textContent=d.error||'Scan failed.';
+      })
+      .catch(function(){
+        setStatus('error','Failed');
+        note.className='note err'; note.textContent='Could not reach the scanner service.';
+      })
+      .finally(function(){
+        scanning=false; form.classList.remove('scanning');
+        btn.disabled=false; btn.textContent='Scan';
+      });
+  });
+
+  refresh();
+  setInterval(function(){ if(!scanning) refresh(); }, 15000);
+})();
+</script>
+</body>
+</html>"""
+
+
+if __name__ == "__main__":
+    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

@@ -1,0 +1,25 @@
+# Managed by Tack — roles/scan-server.
+[Unit]
+Description=Scan-to-share web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ .scan_web_user }}
+Group={{ .scan_group }}
+Environment=SCAN_WEB_DIR={{ .scan_dir }}
+Environment=SCAN_WEB_PORT={{ .scan_web_port }}
+Environment=SCAN_WEB_TITLE={{ .scan_web_title }}
+Environment=SCAN_WEB_SHARE={{ .scan_web_share }}
+Environment=SCAN_WEB_SCRIPT=/etc/scanbd/scripts/scan-to-share.sh
+Environment=SCAN_WEB_DEFAULT_MODE={{ .scan_mode }}
+Environment=SCAN_WEB_DEFAULT_RES={{ .scan_resolution }}
+ExecStart=/usr/bin/python3 /usr/local/lib/scan-web/scan-web.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
