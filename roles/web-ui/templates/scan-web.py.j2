@@ -129,7 +129,7 @@ def validate_template(obj):
                      (gx, "Column gap"), (gy, "Row gap")):
         if v < 0:
             raise ValueError("%s can't be negative" % label)
-    gx, gy = round(gx), round(gy)   # gaps are whole millimetres
+    ml, mt, gx, gy = round(ml), round(mt), round(gx), round(gy)   # whole millimetres
     cw, ch = derive_cells(page_w, page_h, cols, rows, ml, mt, gx, gy)
     if cw < MIN_CELL_MM or ch < MIN_CELL_MM:
         raise ValueError("Doesn't fit the page — reduce margins, gaps, or counts")
@@ -773,6 +773,7 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .sheet .cell:hover{fill:var(--accent-weak)}
 .sheet .cell.sel{fill:var(--accent-weak);stroke:var(--accent);stroke-width:.7}
 .sheet .ptext{fill:var(--accent);font-family:var(--sans);font-weight:700;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.sheet image{pointer-events:none} /* let clicks fall through to the cell rect so it stays toggleable */
 /* sheet management */
 .tplrow{align-items:flex-end}
 .manage{flex:none;height:40px;padding:0 14px;white-space:nowrap}
@@ -964,9 +965,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
       </div>
       <div class="controls">
         <label class="field"><span class="lbl">Left margin <span class="opt">mm</span></span>
-          <input class="txt" id="eML" type="number" min="0" step="0.1"></label>
+          <input class="txt" id="eML" type="number" min="0" max="100" step="1"></label>
         <label class="field"><span class="lbl">Top margin <span class="opt">mm</span></span>
-          <input class="txt" id="eMT" type="number" min="0" step="0.1"></label>
+          <input class="txt" id="eMT" type="number" min="0" max="140" step="1"></label>
       </div>
       <div class="controls">
         <label class="field"><span class="lbl">Column gap <span class="opt">mm</span></span>
@@ -1140,9 +1141,21 @@ input[type=number]{font-variant-numeric:tabular-nums}
   var fileNameEl=document.getElementById('fileName'), fileClear=document.getElementById('fileClear'), filePv=document.getElementById('filePv');
   var calX=document.getElementById('calX'), calY=document.getElementById('calY');
   var fill=document.getElementById('fill'), fillVal=document.getElementById('fillVal');
-  var sel=new Set(), pmode='text', fileData=null, fileNm='', printing=false;
+  var sel=new Set(), pmode='text', fileData=null, fileNm='', filePvUrl=null, printing=false;
 
   function f2(n){ return Math.round(n*100)/100; }
+  function makeThumb(dataUrl, cb){
+    var img=new Image();
+    img.onload=function(){
+      var max=200, w=img.width||1, h=img.height||1, s=Math.min(1, max/Math.max(w,h));
+      var cv=document.createElement('canvas');
+      cv.width=Math.max(1,Math.round(w*s)); cv.height=Math.max(1,Math.round(h*s));
+      try{ cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height); cb(cv.toDataURL('image/png')); }
+      catch(e){ cb(dataUrl); }
+    };
+    img.onerror=function(){ cb(null); };
+    img.src=dataUrl;
+  }
   function curTpl(){ return TBYID[tplSel.value] || TEMPLATES[0]; }
   function renderSheet(){
     var t=curTpl(); if(!t) return;
@@ -1153,6 +1166,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
       var r=Math.floor(i/cols), c=i%cols;
       var x=ml+c*(cw+gx), y=mt+r*(ch+gy), on=sel.has(i);
       s+='<rect class="cell'+(on?' sel':'')+'" data-i="'+i+'" x="'+f2(x)+'" y="'+f2(y)+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.8"/>';
+      if(on && pmode==='file' && filePvUrl){
+        var ip=Math.min(cw,ch)*0.08;
+        s+='<image href="'+filePvUrl+'" x="'+f2(x+ip)+'" y="'+f2(y+ip)+'" width="'+f2(cw-2*ip)+'" height="'+f2(ch-2*ip)+'" preserveAspectRatio="xMidYMid meet"/>';
+      }
       if(on && txt){
         var lines=txt.split('\n'), nl=lines.length, maxlen=1;
         for(var k=0;k<nl;k++){ if(lines[k].length>maxlen) maxlen=lines[k].length; }
@@ -1208,7 +1225,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
       reader.onload=function(){
         var res=reader.result; fileData=res.slice(res.indexOf(',')+1);
         fileNameEl.textContent=fileNm; fileChip.hidden=false;
-        if(/^image\//.test(file.type)){ filePv.src=res; filePv.hidden=false; } else { filePv.hidden=true; }
+        if(/^image\//.test(file.type)){
+          filePv.src=res; filePv.hidden=false;
+          makeThumb(res,function(th){ filePvUrl=th; renderSheet(); });
+        } else { filePv.hidden=true; filePvUrl=null; }  // PDF: no in-cell preview
         setMode('file'); updateUI();
       };
       reader.readAsDataURL(file);
@@ -1228,7 +1248,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         }
       }
     });
-    fileClear.addEventListener('click',function(){ fileData=null; fileNm=''; pfile.value=''; fileChip.hidden=true; filePv.hidden=true; updateUI(); });
+    fileClear.addEventListener('click',function(){ fileData=null; fileNm=''; filePvUrl=null; pfile.value=''; fileChip.hidden=true; filePv.hidden=true; renderSheet(); updateUI(); });
     fill.addEventListener('input',function(){ fillVal.textContent=fill.value+'%'; });
     function saveCal(){ try{ localStorage.setItem('pm_calx',calX.value); localStorage.setItem('pm_caly',calY.value); }catch(e){} }
     calX.addEventListener('change',saveCal); calY.addEventListener('change',saveCal);
@@ -1268,6 +1288,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
     function printTabActive(){ var p=document.getElementById('tab-print'); return !!(p && p.classList.contains('active')); }
     function r1(n){ return Math.round(n*10)/10; }
+    var nameAuto=true;
+    function genName(){ var c=parseInt(eCols.value,10)||0, r=parseInt(eRows.value,10)||0; return 'A4 · '+(c*r)+' labels ('+c+'×'+r+')'; }
+    function syncName(){ if(nameAuto) eName.value=genName(); }
     function applyTemplates(list, selId){
       if(list) TEMPLATES=list;
       TBYID={}; TEMPLATES.forEach(function(t){ TBYID[t.id]=t; });
@@ -1322,6 +1345,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
       eName.value = mode==='edit' ? t.name : (mode==='duplicate' ? (t.name+' copy').slice(0,60) : '');
       eCols.value=t.cols; eRows.value=t.rows;
       eML.value=t.margin_l; eMT.value=t.margin_t; eGX.value=t.gap_x||0; eGY.value=t.gap_y||0;
+      nameAuto = (!eName.value.trim() || eName.value===genName());
+      syncName();
       eDelete.hidden = (mode!=='edit');
       eDelete.classList.remove('armed'); eDelete.textContent='Delete this sheet';
       modalTitle.textContent = mode==='new' ? 'New sheet' : (mode==='duplicate' ? 'Duplicate sheet' : 'Edit sheet');
@@ -1332,11 +1357,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
       sheetList.innerHTML='';
       TEMPLATES.forEach(function(t){
         var row=document.createElement('div'); row.className='srow'; row.dataset.id=t.id;
-        var badge = t.builtin ? '<span class="badge">Preset</span>' : '';
         var acts='<button type="button" class="act" data-a="edit" title="Edit" aria-label="Edit">'+ICON.ed+'</button>'+
                  '<button type="button" class="act" data-a="dup" title="Duplicate" aria-label="Duplicate">'+ICON.dup+'</button>'+
                  '<button type="button" class="act del" data-a="del" title="Delete" aria-label="Delete">'+ICON.rm+'</button>';
-        row.innerHTML='<div class="info"><div class="nm">'+esc(t.name)+badge+'</div>'+
+        row.innerHTML='<div class="info"><div class="nm">'+esc(t.name)+'</div>'+
           '<div class="sub">'+t.cols+'×'+t.rows+' · '+r1(t.cell_w)+'×'+r1(t.cell_h)+'mm · L '+r1(t.margin_l)+' T '+r1(t.margin_t)+'</div></div>'+
           '<div class="ra">'+acts+'</div>';
         sheetList.appendChild(row);
@@ -1354,7 +1378,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
     sheetModal.addEventListener('click',function(e){ if(e.target===sheetModal) closeModal(); });
     document.addEventListener('keydown',function(e){ if(e.key==='Escape' && !sheetModal.hidden) closeModal(); });
     newSheet.addEventListener('click',function(){ openEditor(curTpl(),'new'); });
-    [eName,eCols,eRows,eML,eMT,eGX,eGY].forEach(function(el){ el.addEventListener('input',updateEditor); });
+    eName.addEventListener('input',function(){ nameAuto=!eName.value.trim(); updateEditor(); });
+    eCols.addEventListener('input',function(){ syncName(); updateEditor(); });
+    eRows.addEventListener('input',function(){ syncName(); updateEditor(); });
+    [eML,eMT,eGX,eGY].forEach(function(el){ el.addEventListener('input',updateEditor); });
     eCancel.addEventListener('click',backToList);
     eSave.addEventListener('click',function(){
       if(eSave.disabled) return;
