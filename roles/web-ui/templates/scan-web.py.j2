@@ -44,6 +44,9 @@ MODE_VALUES = [m[0] for m in MODES]
 RESOLUTIONS = ["150", "200", "300", "400", "600"]
 NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
 SAFE_RE = re.compile(r"[^A-Za-z0-9 _-]+")
+# Grid-derived sheet names like "A4 · 8 labels (2×4)"; auto-corrected to the real
+# columns×rows on save so a preset name can't go stale if the client didn't sync.
+_GRID_NAME = re.compile("^A4 · \\d+ labels \\(\\d+×\\d+\\)$")
 
 # --- Label sheets: built-in presets + user-managed sheets --------------------
 # Built-in A4 presets (mm, approximate real stock). The UI can edit ANY sheet
@@ -119,6 +122,8 @@ def validate_template(obj):
     rows = int(_tnum(obj.get("rows"), "Rows"))
     if not (1 <= cols <= 50) or not (1 <= rows <= 100):
         raise ValueError("Columns must be 1–50 and rows 1–100")
+    if _GRID_NAME.match(name):
+        name = "A4 · %d labels (%d×%d)" % (cols * rows, cols, rows)
     page_w = _tnum(obj.get("page_w", PAGE_W), "Page width") or PAGE_W
     page_h = _tnum(obj.get("page_h", PAGE_H), "Page height") or PAGE_H
     ml = _tnum(obj.get("margin_l", 0), "Left margin")
@@ -164,9 +169,15 @@ def load_all():
 
 def save_all(items):
     os.makedirs(DATA_DIR, exist_ok=True)
+    out = []
+    for t in items:
+        d = {k: t.get(k) for k in _TEMPLATE_KEYS}
+        if t.get("fav"):
+            d["fav"] = True
+        out.append(d)
     tmp = TEMPLATES_FILE + ".tmp"
     with open(tmp, "w") as f:
-        json.dump([{k: t.get(k) for k in _TEMPLATE_KEYS} for t in items], f, indent=2)
+        json.dump(out, f, indent=2)
     os.replace(tmp, TEMPLATES_FILE)
 
 
@@ -200,6 +211,21 @@ def upsert_template(obj):
 def delete_template(tid):
     with _templates_lock:
         save_all([t for t in load_all() if t["id"] != tid])
+        refresh_templates()
+
+
+def set_favorite(tid):
+    """Toggle the favorite sheet (the one preselected on load); at most one."""
+    with _templates_lock:
+        items = load_all()
+        was = next((t for t in items if t.get("fav")), None)
+        for t in items:
+            t.pop("fav", None)
+        if not (was and was["id"] == tid):
+            for t in items:
+                if t["id"] == tid:
+                    t["fav"] = True
+        save_all(items)
         refresh_templates()
 
 
@@ -542,7 +568,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
-        if path in ("/", "/index.html"):
+        if path in ("/", "/index.html", "/scan", "/print"):
             self._send(200, render_page())
         elif path == "/recent":
             self._json(200, {"scans": list_scans()})
@@ -605,6 +631,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/templates/restore":
             try:
                 restore_presets()
+                return self._json(200, {"ok": True, "templates": LABEL_TEMPLATES})
+            except Exception as e:
+                return self._json(200, {"ok": False, "error": str(e)})
+        if path == "/templates/favorite":
+            tid = (self._json_body() or {}).get("id", "")
+            try:
+                set_favorite(tid)
                 return self._json(200, {"ok": True, "templates": LABEL_TEMPLATES})
             except Exception as e:
                 return self._json(200, {"ok": False, "error": str(e)})
@@ -771,7 +804,8 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .sheet .paper{fill:var(--bg);stroke:var(--border);stroke-width:.5}
 .sheet .cell{fill:transparent;stroke:var(--border);stroke-width:.35;cursor:pointer;transition:fill .1s}
 .sheet .cell:hover{fill:var(--accent-weak)}
-.sheet .cell.sel{fill:var(--accent-weak);stroke:var(--accent);stroke-width:.7}
+.sheet .cell.sel{fill:var(--accent-weak)}
+.sheet .seloutline{fill:none;stroke:var(--accent);stroke-width:.7;pointer-events:none}
 .sheet .ptext{fill:var(--accent);font-family:var(--sans);font-weight:700;text-anchor:middle;dominant-baseline:central;pointer-events:none}
 .sheet image{pointer-events:none} /* let clicks fall through to the cell rect so it stays toggleable */
 /* sheet management */
@@ -793,6 +827,8 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .badge{font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent);background:var(--accent-weak);padding:2px 6px;border-radius:5px}
 .badge.ed{color:var(--muted);background:var(--bg)}
 .srow .ra{display:flex;gap:2px;flex:none}
+.act.star.on{color:#e0a800}
+.act.star:hover{color:#e0a800}
 .scan.alt{background:var(--surface);color:var(--text);border:1px dashed var(--border)}
 .scan.alt:hover{opacity:1;border-color:var(--accent);color:var(--accent)}
 .editacts{display:flex;align-items:stretch;gap:10px;margin-top:18px}
@@ -1002,7 +1038,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
     rn:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3l2 2-7 7-3 1 1-3z"/></svg>',
     rm:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10M6 4V3h4v1M5 4l1 9h4l1-9"/></svg>',
     dup:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M2.5 10.5V3.5a1 1 0 011-1h7"/></svg>',
-    rs:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 11-1.5-3.6"/><path d="M13 2v3h-3"/></svg>'
+    rs:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 11-1.5-3.6"/><path d="M13 2v3h-3"/></svg>',
+    star:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M8 2l1.76 3.57 3.94.57-2.85 2.78.67 3.92L8 11.77 4.48 12.9l.67-3.92L2.3 6.14l3.94-.57z"/></svg>',
+    starf:'<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2l1.76 3.57 3.94.57-2.85 2.78.67 3.92L8 11.77 4.48 12.9l.67-3.92L2.3 6.14l3.94-.57z"/></svg>'
   };
   function esc(s){return (s+'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function fmtSize(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(b<10240?1:0)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
@@ -1012,14 +1050,18 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
   // --- tabs ---
   var tabBtns=Array.prototype.slice.call(document.querySelectorAll('.tab-btn'));
+  function tabHidden(name){ var b=document.querySelector('.tab-btn[data-tab="'+name+'"]'); return !b || b.hidden; }
+  function pathTab(){ var p=location.pathname.replace(/\/+$/,''); return (p==='/print' && !tabHidden('print')) ? 'print' : 'scan'; }
+  function selectTab(name, push){
+    tabBtns.forEach(function(x){ x.setAttribute('aria-selected', x.dataset.tab===name?'true':'false'); });
+    Array.prototype.forEach.call(document.querySelectorAll('.tab-panel'),function(p){
+      p.classList.toggle('active', p.id==='tab-'+name); });
+    if(push){ try{ history.pushState({tab:name}, '', '/'+name); }catch(e){} }
+  }
   tabBtns.forEach(function(b){
-    b.addEventListener('click',function(){
-      tabBtns.forEach(function(x){ x.setAttribute('aria-selected', x===b ? 'true':'false'); });
-      Array.prototype.forEach.call(document.querySelectorAll('.tab-panel'),function(p){
-        p.classList.toggle('active', p.id==='tab-'+b.dataset.tab); });
-      try{ localStorage.setItem('pm_tab', b.dataset.tab); }catch(e){}
-    });
+    b.addEventListener('click',function(){ if(!b.hidden) selectTab(b.dataset.tab, true); });
   });
+  window.addEventListener('popstate',function(){ selectTab(pathTab(), false); });
 
   function render(scans, newest){
     tbody.innerHTML='';
@@ -1164,28 +1206,32 @@ input[type=number]{font-variant-numeric:tabular-nums}
     var t=curTpl(); if(!t) return;
     var cols=t.cols, rows=t.rows, cw=t.cell_w, ch=t.cell_h, ml=t.margin_l, mt=t.margin_t, gx=t.gap_x||0, gy=t.gap_y||0;
     var txt=(pmode==='text')?ptext.value.trim():'';
-    var s='<rect class="paper" x="0" y="0" width="210" height="297" rx="2"/>';
+    // Two passes: all cell fills first, then selected outlines + content on top,
+    // so a selected cell's border is never dimmed by a hovered/adjacent neighbor.
+    var base='', over='';
     for(var i=0;i<cols*rows;i++){
       var r=Math.floor(i/cols), c=i%cols;
       var x=ml+c*(cw+gx), y=mt+r*(ch+gy), on=sel.has(i);
-      s+='<rect class="cell'+(on?' sel':'')+'" data-i="'+i+'" x="'+f2(x)+'" y="'+f2(y)+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.8"/>';
-      if(on && pmode==='file' && filePvUrl){
+      base+='<rect class="cell'+(on?' sel':'')+'" data-i="'+i+'" x="'+f2(x)+'" y="'+f2(y)+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.8"/>';
+      if(!on) continue;
+      over+='<rect class="seloutline" x="'+f2(x)+'" y="'+f2(y)+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.8"/>';
+      if(pmode==='file' && filePvUrl){
         var ip=Math.min(cw,ch)*0.08;
-        s+='<image href="'+filePvUrl+'" x="'+f2(x+ip)+'" y="'+f2(y+ip)+'" width="'+f2(cw-2*ip)+'" height="'+f2(ch-2*ip)+'" preserveAspectRatio="xMidYMid meet"/>';
+        over+='<image href="'+filePvUrl+'" x="'+f2(x+ip)+'" y="'+f2(y+ip)+'" width="'+f2(cw-2*ip)+'" height="'+f2(ch-2*ip)+'" preserveAspectRatio="xMidYMid meet"/>';
       }
-      if(on && txt){
+      if(txt){
         var lines=txt.split('\n'), nl=lines.length, maxlen=1;
         for(var k=0;k<nl;k++){ if(lines[k].length>maxlen) maxlen=lines[k].length; }
         var lg=1.18;
         var fs=Math.min(ch*0.6, (cw*0.82)/(maxlen*0.58), (ch*0.82)/(0.72+(nl-1)*lg));
         var lh=fs*lg, cx=x+cw/2, y0=y+ch/2-(nl-1)*lh/2;
-        for(var k=0;k<nl;k++){
-          s+='<text class="ptext" x="'+f2(cx)+'" y="'+f2(y0+k*lh)+'" font-size="'+f2(fs)+'">'+esc(lines[k])+'</text>';
+        for(var k2=0;k2<nl;k2++){
+          over+='<text class="ptext" x="'+f2(cx)+'" y="'+f2(y0+k2*lh)+'" font-size="'+f2(fs)+'">'+esc(lines[k2])+'</text>';
         }
       }
     }
     sheet.setAttribute('viewBox','0 0 210 297');
-    sheet.innerHTML=s;
+    sheet.innerHTML='<rect class="paper" x="0" y="0" width="210" height="297" rx="2"/>'+base+over;
   }
   function hasContent(){ return pmode==='text' ? !!ptext.value.trim() : !!fileData; }
   function updateUI(){
@@ -1319,15 +1365,18 @@ input[type=number]{font-variant-numeric:tabular-nums}
       if(v){
         var d=deriveCells(v), cw=d.cw, ch=d.ch, ml=v.margin_l, mt=v.margin_t, gx=v.gap_x, gy=v.gap_y;
         if(cw>0 && ch>0){
-          s+='<rect class="'+(hl==='mt'?'hlband':'mband')+'" x="0" y="0" width="210" height="'+f2(mt)+'"/>';
-          s+='<rect class="'+(hl==='ml'?'hlband':'mband')+'" x="0" y="0" width="'+f2(ml)+'" height="297"/>';
+          var topB='<rect class="'+(hl==='mt'?'hlband':'mband')+'" x="0" y="0" width="210" height="'+f2(mt)+'"/>';
+          var leftB='<rect class="'+(hl==='ml'?'hlband':'mband')+'" x="0" y="0" width="'+f2(ml)+'" height="297"/>';
+          s += (hl==='ml') ? (topB+leftB) : (leftB+topB);   // paint the highlighted band last so the corner overlap stays uniform
           for(var i=0;i<v.cols*v.rows;i++){
             var r=Math.floor(i/v.cols), c=i%v.cols;
             var cls='cell'+(((hl==='cols'&&r===0)||(hl==='rows'&&c===0))?' hl':'');
             s+='<rect class="'+cls+'" x="'+f2(ml+c*(cw+gx))+'" y="'+f2(mt+r*(ch+gy))+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.6"/>';
           }
-          if(hl==='gx' && gx>0){ for(var c2=0;c2<v.cols-1;c2++){ s+='<rect class="hlgap" x="'+f2(ml+c2*(cw+gx)+cw)+'" y="'+f2(mt)+'" width="'+f2(gx)+'" height="'+f2(297-2*mt)+'"/>'; } }
-          if(hl==='gy' && gy>0){ for(var r2=0;r2<v.rows-1;r2++){ s+='<rect class="hlgap" x="'+f2(ml)+'" y="'+f2(mt+r2*(ch+gy)+ch)+'" width="'+f2(210-2*ml)+'" height="'+f2(gy)+'"/>'; } }
+          // Gaps: a red strip of the real gap width, or a thin line at each cell
+          // boundary when the gap is 0, so the field always shows what it controls.
+          if(hl==='gx'){ var gw=gx>0?gx:1.2; for(var c2=0;c2<v.cols-1;c2++){ var gcx=ml+c2*(cw+gx)+cw+gx/2; s+='<rect class="hlgap" x="'+f2(gcx-gw/2)+'" y="'+f2(mt)+'" width="'+f2(gw)+'" height="'+f2(297-2*mt)+'"/>'; } }
+          if(hl==='gy'){ var gh=gy>0?gy:1.2; for(var r2=0;r2<v.rows-1;r2++){ var gcy=mt+r2*(ch+gy)+ch+gy/2; s+='<rect class="hlgap" x="'+f2(ml)+'" y="'+f2(gcy-gh/2)+'" width="'+f2(210-2*ml)+'" height="'+f2(gh)+'"/>'; } }
         }
       }
       eSheet.innerHTML=s;
@@ -1345,6 +1394,12 @@ input[type=number]{font-variant-numeric:tabular-nums}
       else if(!valid){ eCap.className='cellcap err'; eCap.textContent='Enter valid numbers (cols 1–50, rows 1–100, margins/gaps ≥ 0).'; }
       else if(!fits){ eCap.className='cellcap err'; eCap.textContent="Doesn't fit A4 — reduce margins, gaps, or counts."; }
       else { eCap.className='cellcap'; eCap.textContent='Each label '+r1(cw)+' × '+r1(ch)+' mm · '+(v.cols*v.rows)+' per sheet'; }
+      // While the layout overflows A4, cap each field's max at its current value
+      // so the up-arrows can't make it worse (only the down-arrows work).
+      var MX={eML:100,eMT:140,eGX:50,eGY:50,eCols:50,eRows:100};
+      [eML,eMT,eGX,eGY,eCols,eRows].forEach(function(el){
+        el.max = (valid && !fits) ? el.value : MX[el.id];
+      });
       eSave.disabled=!(valid && fits);
     }
     function openEditor(t, mode){
@@ -1365,7 +1420,11 @@ input[type=number]{font-variant-numeric:tabular-nums}
       sheetList.innerHTML='';
       TEMPLATES.forEach(function(t){
         var row=document.createElement('div'); row.className='srow'; row.dataset.id=t.id;
-        var acts='<button type="button" class="act" data-a="edit" title="Edit" aria-label="Edit">'+ICON.ed+'</button>'+
+        var star = (TEMPLATES.length>1)
+          ? '<button type="button" class="act star'+(t.fav?' on':'')+'" data-a="fav" title="'+(t.fav?'Default sheet':'Make default')+'" aria-label="Favorite">'+(t.fav?ICON.starf:ICON.star)+'</button>'
+          : '';
+        var acts=star+
+                 '<button type="button" class="act" data-a="edit" title="Edit" aria-label="Edit">'+ICON.ed+'</button>'+
                  '<button type="button" class="act" data-a="dup" title="Duplicate" aria-label="Duplicate">'+ICON.dup+'</button>'+
                  '<button type="button" class="act del" data-a="del" title="Delete" aria-label="Delete">'+ICON.rm+'</button>';
         row.innerHTML='<div class="info"><div class="nm">'+esc(t.name)+'</div>'+
@@ -1423,6 +1482,11 @@ input[type=number]{font-variant-numeric:tabular-nums}
       var b=e.target.closest('[data-a]'); if(!b) return;
       var row=b.closest('.srow'), t=TBYID[row.dataset.id]; if(!t) return;
       var a=b.dataset.a;
+      if(a==='fav'){
+        fetch('/templates/favorite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:t.id})})
+          .then(function(r){return r.json();}).then(function(d){ if(d.ok){ applyTemplates(d.templates); renderList(); } }).catch(function(){});
+        return;
+      }
       if(a==='edit') openEditor(t,'edit');
       else if(a==='dup') openEditor(t,'duplicate');
       else if(a==='del'){
@@ -1433,8 +1497,11 @@ input[type=number]{font-variant-numeric:tabular-nums}
     });
 
     // restore prefs + first render
+    var favT=TEMPLATES.filter(function(t){ return t.fav; })[0];
     try{
-      var savedT=localStorage.getItem('pm_tpl'); if(savedT&&TBYID[savedT]) tplSel.value=savedT;
+      var savedT=localStorage.getItem('pm_tpl');
+      if(favT) tplSel.value=favT.id;                 // favorite wins, always preselected
+      else if(savedT&&TBYID[savedT]) tplSel.value=savedT;
       calX.value=localStorage.getItem('pm_calx')||'0';
       calY.value=localStorage.getItem('pm_caly')||'0';
     }catch(e){}
@@ -1442,11 +1509,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
     renderSheet(); updateUI();
   }
 
-  // restore last-open tab
-  try{
-    var savedTab=localStorage.getItem('pm_tab');
-    if(savedTab){ var tb=document.querySelector('.tab-btn[data-tab="'+savedTab+'"]'); if(tb && !tb.hidden) tb.click(); }
-  }catch(e){}
+  // open the tab named by the URL (/scan or /print)
+  selectTab(pathTab(), false);
 
   refresh();
   setInterval(function(){ if(!scanning && !tbody.querySelector('.edit')) refresh(); }, 15000);
