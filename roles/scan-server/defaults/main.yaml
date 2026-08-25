@@ -16,7 +16,9 @@ scan_packages:
 # PDF is selectable and searchable. List the languages to recognize by their
 # Tesseract code — eng, ukr, tur, spa (Spanish), deu, fra, rus, … — and the
 # matching tesseract-ocr-<code> data packs are installed automatically and passed
-# to ocrmypdf as eng+ukr+tur. More languages = a bit slower per page. Falls back
+# to ocrmypdf as eng+ukr+tur. Valid codes (the .traineddata file names):
+# https://github.com/tesseract-ocr/tessdata  (or: apt-cache search tesseract-ocr-)
+# More languages = a bit slower per page. Falls back
 # to an image-only PDF if OCR fails (e.g. a blank page). scan_ocr_enabled false
 # skips OCR entirely.
 scan_ocr_enabled: true
