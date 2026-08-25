@@ -1,0 +1,72 @@
+# Network print server: CUPS + brlaser driver for the USB Brother DCP-1511,
+# shared to the LAN and advertised over Avahi/mDNS (AirPrint).
+#
+# Overridable variables: see defaults/main.yaml. Depends on `base` for
+# local_subnet and ufw.
+
+- name: Install CUPS, brlaser driver, and Avahi
+  apt:
+    name: "{{ print_packages }}"
+    state: present
+    update_cache: true
+
+- name: Configure CUPS to listen on the LAN and share printers
+  template:
+    src: cupsd.conf.j2
+    dest: /etc/cups/cupsd.conf
+    mode: "0640"
+  notify: Restart CUPS
+
+- name: Ensure CUPS and Avahi are running and enabled
+  systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - cups
+    - avahi-daemon
+
+- name: Install the printer-queue setup helper
+  template:
+    src: setup-printer-queue.sh.j2
+    dest: /usr/local/sbin/setup-printer-queue.sh
+    mode: "0755"
+
+# Creates/updates the queue when the Brother is connected; a safe no-op when it
+# is not (see the helper script). Re-run the play after plugging in to finalize.
+# Env is passed inline to avoid depending on the `environment:` keyword.
+- name: Create the shared CUPS queue for the DCP-1511
+  command:
+    cmd: >
+      env QUEUE='{{ printer_queue_name }}'
+      PPD='{{ printer_ppd }}'
+      DESC='{{ printer_description }}'
+      LOCATION='{{ printer_location }}'
+      SET_DEFAULT='{{ printer_set_default }}'
+      /usr/local/sbin/setup-printer-queue.sh
+
+# Two direct tasks rather than a loop: tack renders templates in a single pass,
+# so a loop item like "{{ cups_listen_port }}/tcp" would reach ufw unrendered.
+# action: insert places these ACCEPTs above the default-deny DROP the base role
+# appends to INPUT, regardless of role run order.
+- name: Open the firewall for IPP (CUPS) from the LAN
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    source: "{{ local_subnet }}"
+    destination_port: "{{ cups_listen_port }}"
+    jump: ACCEPT
+    action: insert
+    comment: "print: cups ipp"
+    persist: true
+
+- name: Open the firewall for mDNS from the LAN
+  iptables:
+    chain: INPUT
+    protocol: udp
+    source: "{{ local_subnet }}"
+    destination_port: 5353
+    jump: ACCEPT
+    action: insert
+    comment: "print: mdns"
+    persist: true

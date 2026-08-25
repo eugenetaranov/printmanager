@@ -1,0 +1,35 @@
+# Managed by Tack — roles/scan-share. Local edits are overwritten on run.
+[global]
+   workgroup = {{ .samba_workgroup }}
+   server string = {{ .samba_server_string }}
+   security = user
+{{- if .scan_samba_guest }}
+   # Unauthenticated clients are mapped to the guest account below.
+   map to guest = bad user
+   guest account = {{ .scan_samba_user }}
+{{- else }}
+   map to guest = never
+{{- end }}
+   # Restrict all access to the LAN subnet; deny everything else.
+   hosts allow = {{ .local_subnet }} 127.
+   hosts deny = 0.0.0.0/0
+   log file = /var/log/samba/log.%m
+   max log size = 1000
+   logging = file
+
+[scans]
+   comment = Scanned documents
+   path = {{ .scan_dir }}
+   browseable = yes
+   read only = no
+{{- if .scan_samba_guest }}
+   # Guests act as scan_samba_user (owner of scan_dir) via force user, so they
+   # can read and write regardless of their client-side identity.
+   guest ok = yes
+   force user = {{ .scan_samba_user }}
+{{- else }}
+   valid users = {{ .scan_samba_user }}
+{{- end }}
+   force group = {{ .scan_group }}
+   create mask = 0660
+   directory mask = 2770

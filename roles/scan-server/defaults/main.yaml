@@ -1,0 +1,62 @@
+# Scanning stack: SANE tools, scanbd (button monitor + saned coordinator),
+# libtiff-tools for tiff2pdf (reliable TIFF→PDF; unlike ImageMagick it isn't
+# blocked by Ubuntu's policy.xml PDF restriction), and ImageMagick for the
+# non-PDF output formats.
+scan_packages:
+  - sane-utils
+  - scanbd
+  - libtiff-tools
+  - imagemagick
+
+# Open-source Brother SANE backend (dmikushin/brscan) — a reverse-engineered,
+# clean-room replacement for Brother's proprietary brscan4. Unlike Brother's
+# driver (x86-only), it ships prebuilt binaries for amd64/arm64/armhf, so it
+# works on the Raspberry Pi. Release tarballs + checksums keyed by dpkg arch
+# (`.facts.arch`); the armhf key points at the project's armv7 asset.
+brscan_version: "1.0.1"
+brscan_urls:
+  amd64: "https://github.com/dmikushin/brscan/releases/download/v1.0.1/brscan-v1.0.1-amd64.tar.gz"
+  arm64: "https://github.com/dmikushin/brscan/releases/download/v1.0.1/brscan-v1.0.1-arm64.tar.gz"
+  armhf: "https://github.com/dmikushin/brscan/releases/download/v1.0.1/brscan-v1.0.1-armv7.tar.gz"
+brscan_sha256:
+  amd64: "b00e79929f0ab0b5d86ab53cd2b2cc7a390164145cf033cb982eff619d8a9d61"
+  arm64: "2289c8c6e330972b9c449dba50488f4e1939ed11ad3278bed037823ac9edccdc"
+  armhf: "f8daec548b006df7a5070513f1807fcf41afef9a55025a058865f9a69102f500"
+
+# USB vendor/product IDs for the Brother DCP-1510/1511, used by the scanner
+# udev rule so the saned/scanbd user can open the device. (`lsusb`: 04f9:02d0.)
+brother_scanner_usb_vendor: "04f9"
+brother_scanner_usb_product: "02d0"
+
+# --- AirSane: publish the scanner to macOS/iOS/Windows via AirScan/eSCL -------
+# The DCP-1510's physical Scan button cannot drive the Pi (Brother's button
+# daemon is x86-only, and the SANE backend exposes no button option to poll), so
+# scanning is network-initiated. AirSane advertises the SANE scanner over
+# mDNS/Avahi as an eSCL device that Apple Image Capture / iOS and Linux
+# (sane-airscan) discover natively. Built from source — no upstream package.
+airsane_enabled: true
+airsane_git_url: "https://github.com/SimulPiscator/AirSane.git"
+airsane_git_ref: "master"
+airsane_port: 8090
+airsane_build_packages:
+  - git
+  - cmake
+  - g++
+  - libsane-dev
+  - libjpeg-dev
+  - libpng-dev
+  - libavahi-client-dev
+  - libusb-1.0-0-dev
+
+# Scan output settings for the button-triggered scan script.
+scan_resolution: 300
+scan_mode: Color          # Color | Gray | Lineart
+scan_format: pdf          # pdf | jpeg | tiff
+
+# SANE net (saned) listen port; opened to local_subnet in the firewall.
+saned_port: 6566
+
+# These must match the scan-share role so scans land in the shared directory
+# with the right group.
+scan_dir: /srv/scans
+scan_group: scans

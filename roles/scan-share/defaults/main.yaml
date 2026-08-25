@@ -1,0 +1,31 @@
+# Samba packages.
+share_packages:
+  - samba
+
+# Destination directory scans are written to and the [scans] share exposes.
+scan_dir: /srv/scans
+
+# System group owning the scan dir; both the scan process and the Samba user
+# are members so files written by either are readable by the other. The dir is
+# setgid so new files inherit this group.
+scan_group: scans
+
+# Samba (and system) user that clients authenticate as to reach the share.
+scan_samba_user: scans
+
+# Allow unauthenticated (guest) access to the [scans] share. When true, clients
+# reach the share without a password, mapped to scan_samba_user (the owner of
+# scan_dir) so they can read and write scans. Suitable for a trusted LAN, where
+# access is already restricted to local_subnet by hosts allow/deny. Set false to
+# require the Samba password below instead.
+scan_samba_guest: true
+
+# Samba password for scan_samba_user. This is a SECRET — leave empty here and
+# supply it from encrypted vars / a vault at run time. When empty, the Samba
+# password is left unset (task skipped) and you must set it manually with
+# `smbpasswd -a scans` on the host. Only relevant when scan_samba_guest is false.
+scan_samba_password: ""
+
+# Samba workgroup / server identification.
+samba_workgroup: WORKGROUP
+samba_server_string: Print/Scan Server

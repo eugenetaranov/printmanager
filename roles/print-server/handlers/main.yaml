@@ -1,0 +1,5 @@
+# Triggered via `notify: Restart CUPS` when cupsd.conf changes.
+- name: Restart CUPS
+  systemd:
+    name: cups
+    state: restarted

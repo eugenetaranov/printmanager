@@ -1,0 +1,43 @@
+# Managed by Tack — roles/scan-server.
+# scanbd holds the scanner, watches for button presses, and brokers device
+# access with saned (so network scans and button scans don't collide).
+#
+# NOTE: the button trigger name/values below are the common defaults. The exact
+# action name the DCP-1511 emits can only be confirmed with the device attached
+# (run `scanbd -d -f` and press Scan to see the emitted action). Adjust the
+# `action scan` filter/trigger here if the button does not fire the script.
+global {
+    debug       = true
+    debug-level = 2
+    user        = saned
+    group       = scanner
+
+    # scanbd launches saned for network pull scans through this wrapper.
+    saned       = "/usr/sbin/saned"
+    saned_env   = { "SANE_CONFIG_DIR=/etc/scanbd" }
+    scriptdir   = /etc/scanbd/scripts
+    pidfile     = "/run/scanbd.pid"
+
+    # Poll/hold timeout in ms.
+    timeout     = 500
+
+    environment {
+        device = "SCANBD_DEVICE"
+        action = "SCANBD_ACTION"
+    }
+
+    # Physical Scan button → scan-to-share script.
+    action scan {
+        filter = "^scan.*"
+        numerical-trigger {
+            from-value = 1
+            to-value   = 0
+        }
+        desc   = "Scan to network share"
+        script = "scan-to-share.sh"
+    }
+}
+# NOTE: no `include(...)` here. scanbd's parser (libconfuse) only accepts a
+# quoted single file, not a glob, and an unquoted glob is a syntax error that
+# crash-loops the service. All config is defined inline above; there are no
+# scanner.d drop-ins to include.

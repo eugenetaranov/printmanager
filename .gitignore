@@ -1,0 +1,38 @@
+# Proxmox MCP job database — local runtime state, not source.
+proxmox-jobs.sqlite3
+proxmox-jobs.sqlite3-shm
+proxmox-jobs.sqlite3-wal
+
+# SQLite databases and their WAL/SHM sidecars in general.
+*.sqlite3
+*.sqlite
+*.sqlite3-shm
+*.sqlite3-wal
+*.db-shm
+*.db-wal
+
+# Tack secrets — never commit decrypted vaults or credential files.
+# (scan_samba_password etc. should come from an encrypted vault at run time.)
+*vault*.ya?ml
+secrets.ya?ml
+*.secret
+
+# Claude Code local, machine-specific overrides (keep shared commands/skills).
+.claude/settings.local.json
+
+# macOS
+.DS_Store
+.AppleDouble
+._*
+
+# Editors / IDEs
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Misc build/temp artifacts
+*.log
+*.tmp
+*.bak

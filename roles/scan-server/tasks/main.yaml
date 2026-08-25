@@ -1,0 +1,145 @@
+# Scan server for the USB Brother DCP-1511: SANE + brscan4, button-triggered
+# scan-to-share via scanbd, and network pull scanning via saned.
+#
+# Overridable variables: see defaults/main.yaml. Depends on `base` (local_subnet,
+# ufw) and `scan-share` (scan_dir, scan_group must already exist).
+
+- name: Install SANE tools, ImageMagick, and scanbd
+  apt:
+    name: "{{ scan_packages }}"
+    state: present
+    update_cache: true
+
+# --- Brother scanner backend (open-source brscan) ----------------------------
+# Brother's proprietary brscan4 is x86-only, so on the Pi (arm64) we install the
+# reverse-engineered open-source backend instead. A udev rule grants the
+# saned/scanbd user USB access to the device.
+- name: Render the open-source brscan installer
+  template:
+    src: install-brscan.sh.j2
+    dest: /usr/local/sbin/install-brscan.sh
+    mode: "0755"
+
+- name: Install the open-source Brother SANE backend
+  command:
+    cmd: /usr/local/sbin/install-brscan.sh
+
+- name: Install the Brother scanner udev rule (USB access for saned/scanbd)
+  template:
+    src: 60-brother-scanner.rules.j2
+    dest: /etc/udev/rules.d/60-brother-scanner.rules
+    mode: "0644"
+  notify: Reload udev rules
+
+# Detection log only (never fails the run): lists scanners when the DCP-1511 is
+# connected and the backend can open it. Expected empty until plugged in.
+- name: Probe for scanners (informational)
+  command:
+    cmd: "sh -c 'scanimage -L || true'"
+
+# --- Button-triggered scan-to-share (scanbd) ---------------------------------
+# The scanbd package ships /etc/scanbd/scanbd.conf and scanner.d/ but not the
+# scriptdir our config points at, so create it before dropping the script in.
+- name: Ensure the scanbd scripts directory exists
+  file:
+    path: /etc/scanbd/scripts
+    state: directory
+    mode: "0755"
+
+- name: Install the scan-to-share script
+  template:
+    src: scan-to-share.sh.j2
+    dest: /etc/scanbd/scripts/scan-to-share.sh
+    mode: "0755"
+
+- name: Configure scanbd
+  template:
+    src: scanbd.conf.j2
+    dest: /etc/scanbd/scanbd.conf
+    mode: "0644"
+  notify: Restart scanbd
+
+# scanbd runs button scripts as the `saned` user; add it to the scan group so
+# scans can be written into the setgid share directory.
+- name: Allow the saned user to write to the scan share
+  command:
+    cmd: "sh -c 'id -nG saned | tr \" \" \"\\n\" | grep -qx {{ scan_group }} || usermod -aG {{ scan_group }} saned'"
+
+# --- Network pull scanning (saned) -------------------------------------------
+- name: Configure saned allowed hosts
+  template:
+    src: saned.conf.j2
+    dest: /etc/sane.d/saned.conf
+    mode: "0644"
+
+- name: Enable and start scanbd (owns the scanner and the saned proxy on 6566)
+  systemd:
+    name: scanbd
+    state: started
+    enabled: true
+
+# scanbd itself listens on the saned port (6566) and launches saned on demand
+# (see `saned = ...` in scanbd.conf), so the packaged saned.socket collides with
+# it ("address already in use"). Stop, disable, and mask it so it can never bind
+# the port now or at boot; scanbd provides network pull scanning.
+- name: Disable the standalone saned.socket (scanbd handles network scanning)
+  systemd:
+    name: saned.socket
+    state: stopped
+    enabled: false
+    masked: true
+
+# Inserted above the base default-deny DROP (see the base role).
+- name: Open the firewall for SANE net from the LAN
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    source: "{{ local_subnet }}"
+    destination_port: "{{ saned_port }}"
+    jump: ACCEPT
+    action: insert
+    comment: "scan: saned"
+    persist: true
+
+# --- AirSane: eSCL/AirScan server for macOS/iOS/Windows discovery ------------
+# Built from source and run as the saned user (covered by the scanner udev
+# rule). Publishes over the Avahi daemon the print role already enables.
+- name: Install AirSane build dependencies
+  apt:
+    name: "{{ airsane_build_packages }}"
+    state: present
+    update_cache: true
+  when: airsane_enabled
+
+- name: Render the AirSane installer
+  template:
+    src: install-airsane.sh.j2
+    dest: /usr/local/sbin/install-airsane.sh
+    mode: "0755"
+  when: airsane_enabled
+
+- name: Build and install AirSane from source
+  command:
+    cmd: /usr/local/sbin/install-airsane.sh
+  when: airsane_enabled
+
+- name: Ensure AirSane (airsaned) is running and enabled
+  systemd:
+    name: airsaned
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: airsane_enabled
+
+# Inserted above the base default-deny DROP (see the base role).
+- name: Open the firewall for AirSane (eSCL) from the LAN
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    source: "{{ local_subnet }}"
+    destination_port: "{{ airsane_port }}"
+    jump: ACCEPT
+    action: insert
+    comment: "scan: airsane escl"
+    persist: true
+  when: airsane_enabled

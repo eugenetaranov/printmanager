@@ -1,0 +1,26 @@
+# The LAN subnet permitted to reach the print/scan/share services.
+# Every service role scopes its firewall rules to this range.
+local_subnet: 192.168.1.0/24
+
+# Packages shared across roles. usbutils gives lsusb for identifying the
+# Brother's USB VID/PID; iptables-persistent restores the rules the firewall
+# tasks write (via `persist: true`) across reboots.
+base_packages:
+  - ca-certificates
+  - curl
+  - usbutils
+  - iptables-persistent
+
+# Ensure the `<codename>-updates` apt pocket is enabled before installing
+# packages. Ubuntu ships it on by default; if it has been removed, installed
+# -updates point releases (e.g. libacl1) conflict with the older -release
+# versions and apt reports "held broken packages". Set false to leave apt
+# sources untouched.
+base_ensure_updates_pocket: true
+
+# Manage the firewall (default-deny incoming via iptables). Set false to leave
+# the firewall untouched.
+base_firewall_enabled: true
+
+# SSH port allowed before the default-deny DROP rule is added (prevents lockout).
+base_ssh_port: 22

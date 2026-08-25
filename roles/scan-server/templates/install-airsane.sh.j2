@@ -1,0 +1,28 @@
+#!/bin/sh
+# Build and install AirSane (eSCL/AirScan server) from source so the SANE
+# scanner is discoverable by macOS/iOS/Windows over mDNS. Idempotent: skips the
+# build once airsaned is installed. Build dependencies are installed by the role
+# before this runs. Executed as root by the Tack play.
+set -eu
+
+URL='{{ .airsane_git_url }}'
+REF='{{ .airsane_git_ref }}'
+
+if command -v airsaned >/dev/null 2>&1; then
+  echo "AirSane already installed ($(command -v airsaned)); skipping build."
+  exit 0
+fi
+
+tmpd="$(mktemp -d)"
+trap 'rm -rf "$tmpd"' EXIT
+
+git clone --depth 1 --branch "$REF" "$URL" "$tmpd/AirSane"
+mkdir -p "$tmpd/build"
+cd "$tmpd/build"
+cmake "$tmpd/AirSane"
+make -j"$(nproc)"
+make install
+
+# make install ships the airsaned.service unit; refresh systemd's view of it.
+systemctl daemon-reload || true
+echo "AirSane installed."

@@ -1,0 +1,69 @@
+# Samba share that holds scanned documents. Authored before scan-server so the
+# destination directory and group exist before the scanner writes into them.
+#
+# Overridable variables: see defaults/main.yaml. Depends on `base` for
+# local_subnet and ufw.
+
+- name: Install Samba
+  apt:
+    name: "{{ share_packages }}"
+    state: present
+    update_cache: true
+
+# getent guards keep group/user creation idempotent without relying on module
+# create/append semantics.
+- name: Ensure the scan group exists
+  command:
+    cmd: "sh -c 'getent group {{ scan_group }} >/dev/null || groupadd --system {{ scan_group }}'"
+
+- name: Ensure the scan user exists
+  command:
+    cmd: "sh -c 'getent passwd {{ scan_samba_user }} >/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin -g {{ scan_group }} {{ scan_samba_user }}'"
+
+# setgid (2xxx) so files created here by the scan process inherit the scan
+# group and stay readable to Samba clients.
+- name: Create the scan destination directory
+  file:
+    path: "{{ scan_dir }}"
+    state: directory
+    owner: "{{ scan_samba_user }}"
+    group: "{{ scan_group }}"
+    mode: "2775"
+
+- name: Configure the Samba [scans] share
+  template:
+    src: smb.conf.j2
+    dest: /etc/samba/smb.conf
+    mode: "0644"
+  notify: Restart Samba
+
+# Only runs when a password is supplied via encrypted vars. Default is empty,
+# in which case set it manually on the host: `smbpasswd -a scans`.
+- name: Set the Samba password for the scan user
+  command:
+    cmd: "sh -c 'pdbedit -L 2>/dev/null | grep -q \"^{{ scan_samba_user }}:\" || printf \"%s\\n%s\\n\" \"{{ scan_samba_password }}\" \"{{ scan_samba_password }}\" | smbpasswd -s -a {{ scan_samba_user }}'"
+  when: scan_samba_password
+
+- name: Ensure Samba services are running and enabled
+  systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - smbd
+    - nmbd
+
+# Inserted above the base default-deny DROP (see the base role).
+- name: Open the firewall for SMB from the LAN
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    source: "{{ local_subnet }}"
+    destination_port: "{{ item }}"
+    jump: ACCEPT
+    action: insert
+    comment: "share: smb"
+    persist: true
+  loop:
+    - 445
+    - 139

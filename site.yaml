@@ -1,0 +1,22 @@
+name: Provision printmanager server
+hosts: [192.168.1.113]
+connection: ssh
+sudo: true
+
+ssh:
+  user: e
+  port: 22
+  key: ~/.ssh/identities/local_servers/default
+
+roles:
+  # Order matters: base sets up ufw + common packages; scan-share creates the
+  # scan directory and group that scan-server writes into.
+  - role: base
+    tags: [base]
+  - role: print-server
+    tags: [print]
+  - role: scan-share
+    tags: [scan, share]
+  - role: scan-server
+    tags: [scan]
+

@@ -1,0 +1,13 @@
+# Defined before "Restart scanbd" so, when both fire in the same run, device
+# permissions are refreshed before scanbd re-opens the scanner.
+# Triggered when the scanner udev rule changes: reload and re-apply to the
+# already-connected device so new permissions take effect without a replug.
+- name: Reload udev rules
+  command:
+    cmd: "sh -c 'udevadm control --reload-rules && udevadm trigger --subsystem-match=usb'"
+
+# Triggered via `notify: Restart scanbd` when scanbd.conf changes.
+- name: Restart scanbd
+  systemd:
+    name: scanbd
+    state: restarted

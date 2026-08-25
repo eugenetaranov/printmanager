@@ -1,0 +1,55 @@
+#!/bin/sh
+# Install the open-source Brother SANE backend (dmikushin/brscan), a clean-room
+# replacement for Brother's x86-only brscan4 that also runs on ARM. The correct
+# release tarball + checksum for this architecture are baked in at render time.
+# Idempotent: exits early once the backend is installed and registered.
+set -eu
+
+URL='{{ index .brscan_urls .facts.arch }}'
+SHA='{{ index .brscan_sha256 .facts.arch }}'
+ARCH='{{ .facts.arch }}'
+
+if [ -z "$URL" ]; then
+  echo "No open-source brscan backend URL configured for architecture '$ARCH'."
+  exit 0
+fi
+
+# Debian/Ubuntu keep SANE backends in a multiarch dir (e.g.
+# /usr/lib/aarch64-linux-gnu/sane), NOT the upstream /usr/lib/sane. Detect it
+# from an existing backend so the dll loader can actually find libsane-brother.
+sanedir="$(dirname "$(find /usr/lib -type f -name 'libsane-net.so*' 2>/dev/null | head -1)")"
+[ -n "$sanedir" ] && [ -d "$sanedir" ] || sanedir=/usr/lib/sane
+
+if [ -e "$sanedir/libsane-brother.so.1" ] && grep -qx brother /etc/sane.d/dll.conf; then
+  echo "Open-source brscan backend already installed in $sanedir."
+  exit 0
+fi
+
+tmpd="$(mktemp -d)"
+trap 'rm -rf "$tmpd"' EXIT
+tarball="$tmpd/brscan.tar.gz"
+
+echo "Downloading brscan $ARCH backend from $URL"
+curl -fsSL "$URL" -o "$tarball"
+echo "$SHA  $tarball" | sha256sum -c -
+
+tar -xzf "$tarball" -C "$tmpd"
+src="$(find "$tmpd" -maxdepth 1 -type d -name 'brscan-*')"
+
+# Support libraries onto the linker path; backend into the SANE backend dir.
+install -m 644 "$src/lib/libbrscandec.so.1" /usr/lib/libbrscandec.so.1
+install -m 644 "$src/lib/libbrcolm.so.1"    /usr/lib/libbrcolm.so.1
+ln -sf libbrscandec.so.1 /usr/lib/libbrscandec.so
+ln -sf libbrscandec.so.1 /usr/lib/libbrscandec2.so
+ln -sf libbrcolm.so.1    /usr/lib/libbrcolm.so
+ln -sf libbrcolm.so.1    /usr/lib/libbrcolm2.so
+
+install -d "$sanedir"
+install -m 644 "$src/lib/sane/libsane-brother.so.1" "$sanedir/libsane-brother.so.1"
+ln -sf libsane-brother.so.1 "$sanedir/libsane-brother.so"
+ldconfig
+
+# Register the backend with SANE's dll loader (idempotent).
+grep -qx brother /etc/sane.d/dll.conf || echo brother >> /etc/sane.d/dll.conf
+
+echo "Open-source brscan backend installed into $sanedir."

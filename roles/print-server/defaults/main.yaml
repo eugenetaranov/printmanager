@@ -1,0 +1,23 @@
+# Packages for network printing: CUPS, the open-source brlaser driver (covers
+# the Brother DCP-1510/1511 family), and Avahi for mDNS/AirPrint advertisement.
+print_packages:
+  - cups
+  - printer-driver-brlaser
+  - avahi-daemon
+  - avahi-utils
+
+# CUPS queue identity.
+printer_queue_name: DCP1511
+printer_description: Brother DCP-1511
+printer_location: Home LAN
+
+# brlaser PPD/model used when creating the queue. Discover valid values on the
+# host with: lpinfo -m | grep -i brlaser
+# The DCP-1511 uses the DCP-1510-series brlaser PPD.
+printer_ppd: "drv:///brlaser.drv/br1510.ppd"
+
+# Port CUPS listens on (IPP).
+cups_listen_port: 631
+
+# Set the queue as the system default when created.
+printer_set_default: true

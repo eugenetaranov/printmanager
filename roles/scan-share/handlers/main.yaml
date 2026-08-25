@@ -1,0 +1,6 @@
+# Triggered via `notify: Restart Samba` when smb.conf changes.
+# One systemctl call restarts both units: handlers don't expand `loop`, so a
+# looped systemd task here fails with "name must be a string".
+- name: Restart Samba
+  command:
+    cmd: "systemctl restart smbd nmbd"

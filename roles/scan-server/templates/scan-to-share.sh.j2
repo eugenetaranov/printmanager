@@ -1,0 +1,45 @@
+#!/bin/sh
+# Scan the loaded page and write a timestamped file into the Samba scan share.
+# Invoked by scanbd when the physical Scan button is pressed (and usable by
+# hand for testing). Output format/resolution come from role defaults.
+set -eu
+
+DEST='{{ .scan_dir }}'
+GROUP='{{ .scan_group }}'
+RES='{{ .scan_resolution }}'
+MODE='{{ .scan_mode }}'
+FMT='{{ .scan_format }}'
+
+ts="$(date +%Y%m%d-%H%M%S)"
+base="$DEST/scan-$ts"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+# Scan one page to TIFF. scanbd exports SCANBD_DEVICE for the triggering
+# scanner; use it so we target the right device (falls back to the default).
+DEV="${SCANBD_DEVICE:-}"
+if [ -n "$DEV" ]; then set -- -d "$DEV"; else set --; fi
+
+# Try the configured mode+resolution, then progressively fall back so an
+# unexpected backend mode name (e.g. "24bit Color" vs "Color") still yields a
+# scan rather than aborting the whole button flow. The final attempt lets any
+# real error surface on stderr.
+scanimage "$@" --resolution "$RES" --mode "$MODE" --format=tiff > "$tmp/page.tiff" 2>/dev/null \
+  || scanimage "$@" --resolution "$RES" --format=tiff > "$tmp/page.tiff" 2>/dev/null \
+  || scanimage "$@" --format=tiff > "$tmp/page.tiff"
+
+# Convert to the requested delivery format. PDF uses tiff2pdf (libtiff-tools),
+# which — unlike ImageMagick — is not blocked by Ubuntu's policy.xml.
+case "$FMT" in
+  pdf)  tiff2pdf -o "$base.pdf" "$tmp/page.tiff"; out="$base.pdf"  ;;
+  jpeg) convert "$tmp/page.tiff" "$base.jpg";     out="$base.jpg"  ;;
+  tiff) cp "$tmp/page.tiff" "$base.tiff";         out="$base.tiff" ;;
+  *)    echo "Unknown scan_format '$FMT'" >&2;    exit 1           ;;
+esac
+
+# Make sure share users can read it (setgid dir usually handles the group).
+chgrp "$GROUP" "$out" 2>/dev/null || true
+chmod 0660 "$out" 2>/dev/null || true
+
+logger -t scan-to-share "wrote $out"
+echo "$out"

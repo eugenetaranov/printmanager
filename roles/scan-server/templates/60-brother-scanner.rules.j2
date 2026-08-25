@@ -1,0 +1,5 @@
+# Managed by Tack — roles/scan-server.
+# Grants access to the Brother scanner over USB so the saned/scanbd user (which
+# runs the button-scan flow) can open the device. Without this, SANE reports
+# "Access denied (insufficient permissions)" for non-root users.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTRS{idVendor}=="{{ .brother_scanner_usb_vendor }}", ATTRS{idProduct}=="{{ .brother_scanner_usb_product }}", GROUP="lp", ENV{libsane_matched}="yes", MODE="0666"

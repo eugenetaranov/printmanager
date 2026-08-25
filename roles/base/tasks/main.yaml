@@ -1,0 +1,130 @@
+# Base host preparation for the print/scan server: common packages and a
+# default-deny firewall baseline (iptables/ip6tables). Runs first so later roles
+# can assume iptables-persistent + usbutils exist and just INSERT their own
+# ACCEPT rules above the trailing DROP this role appends.
+#
+# Required/overridable variables live in defaults/main.yaml:
+#   local_subnet, base_packages, base_firewall_enabled, base_ssh_port,
+#   base_ensure_updates_pocket
+
+# Runs before the package install below so its `update_cache` refresh picks up
+# the newly-enabled pocket. Idempotent: once `<codename>-updates` is present the
+# sed no longer matches. No-op on non-deb822 hosts (file guard). See the default
+# for why a missing -updates pocket breaks installs ("held broken packages").
+- name: Ensure the release-updates apt pocket is enabled
+  command:
+    cmd: >
+      sh -c 'f=/etc/apt/sources.list.d/ubuntu.sources;
+      [ -f "$f" ] || exit 0;
+      . /etc/os-release;
+      grep -qE "^Suites:.*${VERSION_CODENAME}-updates" "$f" && exit 0;
+      sed -i "s/^Suites: ${VERSION_CODENAME}$/Suites: ${VERSION_CODENAME} ${VERSION_CODENAME}-updates/" "$f"'
+  when: base_ensure_updates_pocket
+
+- name: Install common base packages
+  apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: true
+
+# --- Firewall: retire ufw, then build a default-deny baseline with iptables ----
+# Order is critical. `ufw-init stop` runs flush_builtins, which flushes the
+# INPUT chain entirely -- so ufw MUST be torn down BEFORE we add our rules,
+# otherwise stopping it would wipe them. After the flush the chain policy is
+# ACCEPT (open) until the trailing DROP below lands, so the live SSH session is
+# never at risk during the switch.
+- name: Stop and disable ufw (replaced by iptables)
+  systemd:
+    name: ufw
+    state: stopped
+    enabled: false
+  when: base_firewall_enabled
+
+- name: Remove the ufw package
+  apt:
+    name: ufw
+    state: absent
+  when: base_firewall_enabled
+
+# Allow rules are appended first (so they sit above the DROP), SSH included,
+# BEFORE the default-deny rule is added -- this is what prevents a lockout.
+# Service roles run after base and INSERT their own ACCEPT rules, which land
+# above this DROP regardless of run order.
+- name: Allow loopback traffic (IPv4)
+  iptables:
+    chain: INPUT
+    in_interface: lo
+    jump: ACCEPT
+    comment: "base: loopback"
+    persist: true
+  when: base_firewall_enabled
+
+- name: Allow established/related connections (IPv4)
+  iptables:
+    chain: INPUT
+    ctstate: ESTABLISHED,RELATED
+    jump: ACCEPT
+    comment: "base: established"
+    persist: true
+  when: base_firewall_enabled
+
+- name: Allow SSH (IPv4)
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "{{ base_ssh_port }}"
+    jump: ACCEPT
+    comment: "base: ssh"
+    persist: true
+  when: base_firewall_enabled
+
+- name: Default-deny incoming (IPv4)
+  iptables:
+    chain: INPUT
+    jump: DROP
+    comment: "base: default-deny"
+    persist: true
+  when: base_firewall_enabled
+
+# IPv6 gets the same baseline: dropping ufw would otherwise leave v6 wide open.
+# No LAN service ports here -- the LAN is IPv4 (local_subnet) -- but SSH and the
+# established/loopback allowances keep the host reachable and self-consistent.
+- name: Allow loopback traffic (IPv6)
+  iptables:
+    chain: INPUT
+    ip_version: ipv6
+    in_interface: lo
+    jump: ACCEPT
+    comment: "base: loopback"
+    persist: true
+  when: base_firewall_enabled
+
+- name: Allow established/related connections (IPv6)
+  iptables:
+    chain: INPUT
+    ip_version: ipv6
+    ctstate: ESTABLISHED,RELATED
+    jump: ACCEPT
+    comment: "base: established"
+    persist: true
+  when: base_firewall_enabled
+
+- name: Allow SSH (IPv6)
+  iptables:
+    chain: INPUT
+    ip_version: ipv6
+    protocol: tcp
+    destination_port: "{{ base_ssh_port }}"
+    jump: ACCEPT
+    comment: "base: ssh"
+    persist: true
+  when: base_firewall_enabled
+
+- name: Default-deny incoming (IPv6)
+  iptables:
+    chain: INPUT
+    ip_version: ipv6
+    jump: DROP
+    comment: "base: default-deny"
+    persist: true
+  when: base_firewall_enabled
