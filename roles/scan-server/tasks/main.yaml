@@ -173,3 +173,20 @@
     comment: "scan: web ui"
     persist: true
   when: scan_web_enabled
+
+# --- Retention: hourly cleanup of old scans ----------------------------------
+- name: Install the scan cleanup script
+  template:
+    src: scan-cleanup.sh.j2
+    dest: /usr/local/sbin/scan-cleanup.sh
+    mode: "0755"
+  when: scan_cleanup_enabled
+
+- name: Schedule the hourly scan cleanup
+  cron:
+    name: scan-cleanup
+    job: /usr/local/sbin/scan-cleanup.sh
+    minute: "17"
+    user: root
+    cron_file: /etc/cron.d/scan-cleanup
+    state: "{{ 'present' if scan_cleanup_enabled else 'absent' }}"

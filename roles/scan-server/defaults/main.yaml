@@ -68,3 +68,8 @@ saned_port: 6566
 # Must match the scan-share role (where scans land, and the owning group).
 scan_dir: /srv/scans
 scan_group: scans
+
+# Auto-delete scans (and their thumbnails/metadata) older than this many hours,
+# via an hourly cron job. Set scan_cleanup_enabled false to keep scans forever.
+scan_cleanup_enabled: true
+scan_retention_hours: 24

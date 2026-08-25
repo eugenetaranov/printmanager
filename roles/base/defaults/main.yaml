@@ -1,6 +1,8 @@
-# The LAN subnet permitted to reach the print/scan/share services.
-# Every service role scopes its firewall rules to this range.
-local_subnet: 192.168.1.0/24
+# The LAN subnet permitted to reach the print/scan/share services. Discovered
+# from the host's primary IP rather than hardcoded — iptables masks the host
+# bits, so 192.168.1.111/24 becomes 192.168.1.0/24. Assumes a /24 (the home-LAN
+# norm); override this variable for a different mask.
+local_subnet: "{{ facts.default_ipv4 }}/24"
 
 # Packages shared across roles. usbutils gives lsusb for identifying the
 # Brother's USB VID/PID; iptables-persistent restores the rules the firewall

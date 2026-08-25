@@ -1,0 +1,14 @@
+#!/bin/sh
+# Delete scans (and their web-UI thumbnails + metadata) older than the retention
+# window. Run hourly by cron. Managed by Tack — roles/scan-server.
+set -eu
+DEST='{{ .scan_dir }}'
+MINS=$(( {{ .scan_retention_hours }} * 60 ))
+
+find "$DEST" -maxdepth 1 -type f -name '*.pdf' -mmin +"$MINS" 2>/dev/null | while IFS= read -r f; do
+  b="$(basename "$f" .pdf)"
+  rm -f "$f" "/var/lib/scan-web/thumbs/$b.jpg" "/var/lib/scan-web/meta/$b"
+done
+
+# Sweep any orphaned sidecars past the window too.
+find /var/lib/scan-web/thumbs /var/lib/scan-web/meta -type f -mmin +"$MINS" -delete 2>/dev/null || true
