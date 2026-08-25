@@ -1,51 +1,10 @@
 #!/bin/sh
-# Scan the loaded page and write a timestamped file into the Samba scan share.
-# Invoked by scanbd when the physical Scan button is pressed (and usable by
-# hand for testing). Output format/resolution come from role defaults.
+# Scan via Brother's driver (root chroot helper) and drop a compressed PDF into
+# the Samba scan share. Invoked by scan-web (as the scans user) and usable by
+# hand. Output settings come from the environment (scan-web sets them) or the
+# role defaults baked into the helper.
 set -eu
-
-DEST='{{ .scan_dir }}'
-GROUP='{{ .scan_group }}'
-# Role defaults, overridable via the environment (used by the scan-web UI so it
-# and the button/manual path share one scan implementation).
-RES="${SCAN_RES:-{{ .scan_resolution }}}"
-MODE="${SCAN_MODE:-{{ .scan_mode }}}"
-FMT="${SCAN_FMT:-{{ .scan_format }}}"
-QUALITY="${SCAN_QUALITY:-{{ .scan_jpeg_quality }}}"
-
-ts="$(date +%Y%m%d-%H%M%S)"
-base="$DEST/scan-$ts"
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
-
-# Scan one page to TIFF. scanbd exports SCANBD_DEVICE for the triggering
-# scanner; use it so we target the right device (falls back to the default).
-DEV="${SCANBD_DEVICE:-}"
-if [ -n "$DEV" ]; then set -- -d "$DEV"; else set --; fi
-
-# Try the configured mode+resolution, then progressively fall back so an
-# unexpected backend mode name (e.g. "24bit Color" vs "Color") still yields a
-# scan rather than aborting the whole button flow. The final attempt lets any
-# real error surface on stderr.
-scanimage "$@" --resolution "$RES" --mode "$MODE" --format=tiff > "$tmp/page.tiff" 2>/dev/null \
-  || scanimage "$@" --resolution "$RES" --format=tiff > "$tmp/page.tiff" 2>/dev/null \
-  || scanimage "$@" --format=tiff > "$tmp/page.tiff"
-
-# Convert to the requested delivery format. PDF uses tiff2pdf (libtiff-tools),
-# which — unlike ImageMagick — is not blocked by Ubuntu's policy.xml. The `-j`
-# flag JPEG-compresses the image inside the PDF: without it an uncompressed
-# 300 DPI colour page is ~25 MB; with it a document is a few hundred KB (a near
-# blank page, a few tens of KB), with negligible quality loss.
-case "$FMT" in
-  pdf)  tiff2pdf -j -q "$QUALITY" -o "$base.pdf" "$tmp/page.tiff"; out="$base.pdf"  ;;
-  jpeg) convert -quality "$QUALITY" "$tmp/page.tiff" "$base.jpg";  out="$base.jpg"  ;;
-  tiff) cp "$tmp/page.tiff" "$base.tiff";                          out="$base.tiff" ;;
-  *)    echo "Unknown scan_format '$FMT'" >&2;                     exit 1           ;;
-esac
-
-# Make sure share users can read it (setgid dir usually handles the group).
-chgrp "$GROUP" "$out" 2>/dev/null || true
-chmod 0660 "$out" 2>/dev/null || true
-
-logger -t scan-to-share "wrote $out"
-echo "$out"
+sudo /usr/local/sbin/brscan-scan.sh \
+  "${SCAN_MODE:-{{ .scan_mode }}}" \
+  "${SCAN_RES:-{{ .scan_resolution }}}" \
+  "${SCAN_QUALITY:-{{ .scan_jpeg_quality }}}"

@@ -1,0 +1,12 @@
+# Managed by Tack — roles/scan-server. Exposes the chroot's brscan4 saned on
+# localhost:6566 so the host SANE (net backend) — and thus AirSane — can reach
+# Brother's driver. scan-web does NOT use this (it scans in the chroot directly).
+[Unit]
+Description=Brother brscan4 saned (chroot) socket
+
+[Socket]
+ListenStream=127.0.0.1:{{ .saned_port }}
+Accept=yes
+
+[Install]
+WantedBy=sockets.target

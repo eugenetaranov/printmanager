@@ -1,0 +1,4 @@
+# Managed by Tack — roles/scan-server.
+# Let the scan-web user run the root scan helper (Brother's driver lives in an
+# i386 chroot, which needs privilege). The helper validates its own arguments.
+{{ .scan_web_user }} ALL=(root) NOPASSWD: /usr/local/sbin/brscan-scan.sh

@@ -1,0 +1,12 @@
+# Managed by Tack — roles/scan-server. Per-connection saned inside the brscan4
+# chroot (inetd-style; the accepted socket is passed on stdin).
+[Unit]
+Description=Brother brscan4 saned (chroot) per-connection
+Requires=brscan-mounts.service
+After=brscan-mounts.service
+
+[Service]
+ExecStart=/usr/sbin/chroot {{ .brscan4_chroot }} /usr/sbin/saned
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal

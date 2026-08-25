@@ -1,0 +1,33 @@
+# Pad (or trim) a binary PNM (P6) file's pixel data to exactly width*height*3
+# bytes. Brother's driver truncates the last row or two at higher DPI, which
+# makes strict readers (ImageMagick, tiff2pdf) reject the file; padding the
+# missing bytes with white makes it valid at a cost of an invisible bottom edge.
+import sys
+p = sys.argv[1]
+d = bytearray(open(p, "rb").read())
+i = 0
+def tok():
+    global i
+    while i < len(d):
+        c = d[i:i+1]
+        if c.isspace():
+            i += 1
+        elif c == b'#':
+            while i < len(d) and d[i:i+1] != b'\n':
+                i += 1
+        else:
+            break
+    s = i
+    while i < len(d) and not d[i:i+1].isspace():
+        i += 1
+    return d[s:i]
+tok()                      # magic (P6)
+w = int(tok()); h = int(tok()); tok()   # width, height, maxval
+i += 1                     # single whitespace after maxval
+need = w * h * 3
+have = len(d) - i
+if have < need:
+    d.extend(b'\xff' * (need - have))
+elif have > need:
+    del d[i + need:]
+open(p, "wb").write(d)

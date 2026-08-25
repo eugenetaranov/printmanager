@@ -228,6 +228,8 @@ select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-c
 .recent{margin-top:34px}
 .recent h2{margin:0 0 2px;font-size:13px;font-weight:640;letter-spacing:.02em}
 .recent .path{font:500 12px var(--mono);color:var(--faint);word-break:break-all}
+.recent .path a{color:var(--accent);text-decoration:none}
+.recent .path a:hover{text-decoration:underline}
 .list{list-style:none;margin:16px 0 0;padding:0}
 .row{display:flex;align-items:center;gap:12px;padding:12px 2px;border-top:1px solid var(--border)}
 .row:first-child{border-top:none}
@@ -272,7 +274,7 @@ select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-c
 
   <section class="recent">
     <h2>Recent scans</h2>
-    <div class="path">Saved to __SHARE__</div>
+    <div class="path">Saved to <a href="__SHARE__">__SHARE__</a></div>
     <ul class="list" id="list">
       <li class="empty">No scans yet. Place a page on the glass and press Scan.</li>
     </ul>

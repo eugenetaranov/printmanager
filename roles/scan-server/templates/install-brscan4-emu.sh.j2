@@ -1,0 +1,36 @@
+#!/bin/bash
+# Set up Brother's official (x86) brscan4 scanner driver under i386 emulation on
+# this arm64 host. Brother ships no ARM driver and the reverse-engineered
+# open-source backend can't reliably drive the DCP-1510, so we run Brother's
+# real driver inside a small i386 Debian chroot via qemu-user-static.
+# Idempotent: skips the (slow) debootstrap + install once the chroot is ready.
+set -e
+CHROOT='{{ .brscan4_chroot }}'
+BR_URL='{{ .brscan4_deb_url }}'
+
+# binfmt for i386 comes from qemu-user-static (installed by the role).
+if [ ! -x "$CHROOT/usr/bin/scanimage" ]; then
+  echo "debootstrap i386 Debian chroot at $CHROOT (slow, one-time)"
+  debootstrap --arch=i386 --variant=minbase \
+    --include=sane-utils,libusb-0.1-4,curl,ca-certificates \
+    {{ .brscan4_suite }} "$CHROOT" {{ .brscan4_mirror }}
+fi
+
+# Bind mounts so the chroot can reach USB during package config + scanning.
+for m in dev proc sys; do
+  mountpoint -q "$CHROOT/$m" || mount --bind "/$m" "$CHROOT/$m"
+done
+
+if ! chroot "$CHROOT" dpkg -s brscan4 >/dev/null 2>&1; then
+  echo "installing Brother brscan4 in the chroot"
+  curl -fsSL -o "$CHROOT/tmp/brscan4.deb" "$BR_URL"
+  chroot "$CHROOT" dpkg -i /tmp/brscan4.deb || chroot "$CHROOT" apt-get -f install -y
+  rm -f "$CHROOT/tmp/brscan4.deb"
+fi
+
+# The chroot's saned enumerates ONLY brscan4 (no net loop / slow backends);
+# used by the net bridge that feeds AirSane. Allow localhost.
+echo brother4 > "$CHROOT/etc/sane.d/dll.conf"
+printf 'localhost\n127.0.0.1\n' > "$CHROOT/etc/sane.d/saned.conf"
+
+echo "brscan4 emulation ready in $CHROOT"

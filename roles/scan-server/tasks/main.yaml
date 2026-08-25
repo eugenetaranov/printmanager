@@ -1,118 +1,107 @@
-# Scan server for the USB Brother DCP-1511: SANE + brscan4, button-triggered
-# scan-to-share via scanbd, and network pull scanning via saned.
+# Scan server for the USB Brother DCP-1511. Brother's real brscan4 driver (x86)
+# runs under i386 emulation in a chroot; scan-web scans through it directly and
+# drops PDFs into the share, while AirSane reaches it over a localhost saned net
+# bridge for native macOS/iOS discovery.
 #
 # Overridable variables: see defaults/main.yaml. Depends on `base` (local_subnet,
-# ufw) and `scan-share` (scan_dir, scan_group must already exist).
+# firewall) and `scan-share` (scan_dir, scan_group, scan_web_user must exist).
 
-- name: Install SANE tools, ImageMagick, and scanbd
+- name: Install host scan packages (SANE, img2pdf, ImageMagick, qemu/debootstrap)
   apt:
     name: "{{ scan_packages }}"
     state: present
     update_cache: true
 
-# --- Brother scanner backend (open-source brscan) ----------------------------
-# Brother's proprietary brscan4 is x86-only, so on the Pi (arm64) we build the
-# reverse-engineered open-source backend from source (linking current system
-# libs). A udev rule grants the saned/scanbd user USB access to the device.
-- name: Install brscan build dependencies
-  apt:
-    name: "{{ brscan_build_packages }}"
-    state: present
-    update_cache: true
-
-- name: Render the open-source brscan installer
+# --- Brother brscan4 under i386 emulation ------------------------------------
+- name: Render the brscan4 emulation installer
   template:
-    src: install-brscan.sh.j2
-    dest: /usr/local/sbin/install-brscan.sh
+    src: install-brscan4-emu.sh.j2
+    dest: /usr/local/sbin/install-brscan4-emu.sh
     mode: "0755"
 
-- name: Install the open-source Brother SANE backend
+# Builds the i386 chroot (debootstrap) and installs Brother's driver. Slow on
+# the first run (~a few minutes); a no-op once the chroot is ready.
+- name: Build the brscan4 emulation chroot
   command:
-    cmd: /usr/local/sbin/install-brscan.sh
+    cmd: /usr/local/sbin/install-brscan4-emu.sh
 
-- name: Install the Brother scanner udev rule (USB access for saned/scanbd)
-  template:
-    src: 60-brother-scanner.rules.j2
-    dest: /etc/udev/rules.d/60-brother-scanner.rules
-    mode: "0644"
-  notify: Reload udev rules
-
-# Detection log only (never fails the run): lists scanners when the DCP-1511 is
-# connected and the backend can open it. Expected empty until plugged in.
-- name: Probe for scanners (informational)
-  command:
-    cmd: "sh -c 'scanimage -L || true'"
-
-# --- Button-triggered scan-to-share (scanbd) ---------------------------------
-# The scanbd package ships /etc/scanbd/scanbd.conf and scanner.d/ but not the
-# scriptdir our config points at, so create it before dropping the script in.
-- name: Ensure the scanbd scripts directory exists
+# --- Scan pipeline (scan-web scans in the chroot directly) -------------------
+- name: Create the scan-web / helper directory
   file:
-    path: /etc/scanbd/scripts
+    path: /usr/local/lib/scan-web
     state: directory
     mode: "0755"
 
-- name: Install the scan-to-share script
+- name: Install the PNM padder
   template:
-    src: scan-to-share.sh.j2
-    dest: /etc/scanbd/scripts/scan-to-share.sh
+    src: pad_pnm.py.j2
+    dest: /usr/local/lib/scan-web/pad_pnm.py
+    mode: "0644"
+
+- name: Install the root scan helper (chroot brscan4 -> PDF -> share)
+  template:
+    src: brscan-scan.sh.j2
+    dest: /usr/local/sbin/brscan-scan.sh
     mode: "0755"
 
-- name: Configure scanbd
+- name: Allow the scan-web user to run the scan helper as root
   template:
-    src: scanbd.conf.j2
-    dest: /etc/scanbd/scanbd.conf
+    src: brscan-sudoers.j2
+    dest: /etc/sudoers.d/brscan
+    mode: "0440"
+
+- name: Install the scan-to-share wrapper
+  template:
+    src: scan-to-share.sh.j2
+    dest: /usr/local/lib/scan-web/scan-to-share.sh
+    mode: "0755"
+
+- name: Install the chroot bind-mount unit
+  template:
+    src: brscan-mounts.service.j2
+    dest: /etc/systemd/system/brscan-mounts.service
     mode: "0644"
 
-# scanbd runs button scripts as the `saned` user; add it to the scan group so
-# scans can be written into the setgid share directory.
-- name: Allow the saned user to write to the scan share
+- name: Enable the chroot bind mounts
+  systemd:
+    name: brscan-mounts.service
+    state: started
+    enabled: true
+    daemon_reload: true
+
+# --- AirSane net bridge (chroot saned on localhost:saned_port) ----------------
+# Free saned's port from anything that squats it (sane-utils' saned.socket;
+# scanbd's scanbm/scanbd sockets; inetd) so our chroot saned can bind it.
+- name: Free saned's port (mask units that bind it)
   command:
-    cmd: "sh -c 'id -nG saned | tr \" \" \"\\n\" | grep -qx {{ scan_group }} || usermod -aG {{ scan_group }} saned'"
+    cmd: "sh -c 'systemctl mask --now saned.socket saned@.service scanbm.socket scanbd.socket scanbd.service openbsd-inetd inetd 2>/dev/null; true'"
 
-# --- Network pull scanning (saned) -------------------------------------------
-- name: Configure saned allowed hosts
+- name: Install the chroot saned socket + service
   template:
-    src: saned.conf.j2
-    dest: /etc/sane.d/saned.conf
+    src: "{{ item.src }}"
+    dest: "/etc/systemd/system/{{ item.dest }}"
     mode: "0644"
+  loop:
+    - { src: "brscan-saned.socket.j2", dest: "brscan-saned.socket" }
+    - { src: "brscan-saned@.service.j2", dest: "brscan-saned@.service" }
 
-# scanbd exists only to trigger scans from the printer's physical button, but
-# the DCP-1510's button can't drive the Pi (Brother's button daemon is x86-only
-# and the SANE backend exposes no button option), so scanbd is dead weight here.
-# Disable and mask it. The scan-to-share.sh script it would have called remains
-# installed for manual/scripted use; network scanning is served by AirSane.
-- name: Disable scanbd (physical-button scanning unsupported on this hardware)
+- name: Point host SANE at the chroot saned (net backend only)
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - { src: "host-dll.conf.j2", dest: "/etc/sane.d/dll.conf" }
+    - { src: "host-net.conf.j2", dest: "/etc/sane.d/net.conf" }
+
+- name: Enable the chroot saned socket
   systemd:
-    name: scanbd
-    state: stopped
-    enabled: false
-    masked: true
+    name: brscan-saned.socket
+    state: started
+    enabled: true
+    daemon_reload: true
 
-# The packaged saned.socket stays masked: network scanning is handled by AirSane
-# (eSCL), not classic SANE-net, so nothing should bind saned's port.
-- name: Disable the standalone saned.socket (AirSane handles network scanning)
-  systemd:
-    name: saned.socket
-    state: stopped
-    enabled: false
-    masked: true
-
-# Inserted above the base default-deny DROP (see the base role).
-- name: Open the firewall for SANE net from the LAN
-  iptables:
-    chain: INPUT
-    protocol: tcp
-    source: "{{ local_subnet }}"
-    destination_port: "{{ saned_port }}"
-    jump: ACCEPT
-    action: insert
-    comment: "scan: saned"
-    persist: true
-
-# --- AirSane: eSCL/AirScan server for macOS/iOS/Windows discovery ------------
-# Built from source and run as the saned user (covered by the scanner udev
-# rule). Publishes over the Avahi daemon the print role already enables.
+# --- AirSane (eSCL/AirScan server) -------------------------------------------
 - name: Install AirSane build dependencies
   apt:
     name: "{{ airsane_build_packages }}"
@@ -154,15 +143,6 @@
   when: airsane_enabled
 
 # --- Scan-to-share web UI ----------------------------------------------------
-# A tiny stdlib-Python web app: a Scan button that runs the reliable server-side
-# scan and drops a PDF into the share. Runs as scan_web_user.
-- name: Create the scan-web install directory
-  file:
-    path: /usr/local/lib/scan-web
-    state: directory
-    mode: "0755"
-  when: scan_web_enabled
-
 - name: Install the scan-web server
   template:
     src: scan-web.py.j2

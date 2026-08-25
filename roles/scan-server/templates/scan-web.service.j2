@@ -12,13 +12,16 @@ Environment=SCAN_WEB_DIR={{ .scan_dir }}
 Environment=SCAN_WEB_PORT={{ .scan_web_port }}
 Environment=SCAN_WEB_TITLE={{ .scan_web_title }}
 Environment=SCAN_WEB_SHARE={{ .scan_web_share }}
-Environment=SCAN_WEB_SCRIPT=/etc/scanbd/scripts/scan-to-share.sh
+Environment=SCAN_WEB_SCRIPT=/usr/local/lib/scan-web/scan-to-share.sh
 Environment=SCAN_WEB_DEFAULT_MODE={{ .scan_mode }}
 Environment=SCAN_WEB_DEFAULT_RES={{ .scan_resolution }}
 ExecStart=/usr/bin/python3 /usr/local/lib/scan-web/scan-web.py
 Restart=on-failure
 RestartSec=3
-NoNewPrivileges=true
+# Allow binding a privileged port (e.g. 80) as the non-root scans user.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+# NoNewPrivileges must stay OFF: scan-to-share.sh sudo's the root scan helper
+# (Brother's driver runs in the i386 chroot, which needs privilege).
 PrivateTmp=true
 
 [Install]

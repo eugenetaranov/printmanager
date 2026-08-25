@@ -1,44 +1,32 @@
-# Scanning stack: SANE tools, scanbd (button monitor + saned coordinator),
-# libtiff-tools for tiff2pdf (reliable TIFF→PDF; unlike ImageMagick it isn't
-# blocked by Ubuntu's policy.xml PDF restriction), and ImageMagick for the
-# non-PDF output formats.
+# Host packages for scanning. Brother's real driver runs inside an i386 chroot
+# (qemu-user-static + debootstrap), so the host only needs: sane-utils (saned,
+# for the AirSane net bridge), img2pdf + imagemagick (PNM->JPEG->PDF), and the
+# emulation toolchain.
 scan_packages:
   - sane-utils
-  - scanbd
-  - libtiff-tools
+  - img2pdf
   - imagemagick
+  - qemu-user-static
+  - binfmt-support
+  - debootstrap
 
-# Open-source Brother SANE backend (dmikushin/brscan) — a reverse-engineered,
-# clean-room replacement for Brother's proprietary (x86-only) brscan4. BUILT
-# FROM SOURCE rather than using the project's prebuilt release: those binaries
-# link libjpeg.so.62 and libusb-0.1 ABIs that Ubuntu 24.04 no longer ships, so
-# SANE silently fails to load them. Building on the Pi links the current
-# libjpeg.so.8 / libusb-0.1.so.4, which resolve.
-brscan_git_url: "https://github.com/dmikushin/brscan.git"
-brscan_git_ref: "master"
-# Build toolchain + dev libs. libusb-dev is the libusb-0.1 compat API the
-# backend's usb_find_devices() needs (pulls the libusb-0.1-4 runtime).
-brscan_build_packages:
-  - git
-  - cmake
-  - g++
-  - pkg-config
-  - libsane-dev
-  - libusb-dev
-  - libjpeg-dev
-  - libncurses-dev   # brother_advini.c includes <curses.h>
-
-# USB vendor/product IDs for the Brother DCP-1510/1511, used by the scanner
-# udev rule so the saned/scanbd user can open the device. (`lsusb`: 04f9:02d0.)
-brother_scanner_usb_vendor: "04f9"
-brother_scanner_usb_product: "02d0"
+# --- Brother brscan4 under i386 emulation ------------------------------------
+# The DCP-1510's scanner needs Brother's proprietary brscan4 driver. Brother
+# ships x86 only, and the reverse-engineered open-source backend can't reliably
+# drive this unit (corrupt/blank scans). So we run Brother's REAL driver in a
+# small i386 Debian chroot via qemu-user-static — it produces pixel-perfect
+# scans. `brscan4_deb_url` is Brother's current i386 .deb (find a fresh link on
+# support.brother.com if it 404s).
+brscan4_chroot: /opt/brscan4
+brscan4_deb_url: "https://download.brother.com/welcome/dlf105201/brscan4-0.4.11-1.i386.deb"
+brscan4_suite: bookworm
+brscan4_mirror: "http://deb.debian.org/debian"
 
 # --- AirSane: publish the scanner to macOS/iOS/Windows via AirScan/eSCL -------
-# The DCP-1510's physical Scan button cannot drive the Pi (Brother's button
-# daemon is x86-only, and the SANE backend exposes no button option to poll), so
-# scanning is network-initiated. AirSane advertises the SANE scanner over
-# mDNS/Avahi as an eSCL device that Apple Image Capture / iOS and Linux
-# (sane-airscan) discover natively. Built from source — no upstream package.
+# Advertises the scanner over mDNS as an eSCL device (native Apple Image Capture
+# / iOS). It reaches Brother's driver through the chroot saned net bridge on
+# saned_port. NOTE: the net path can truncate at high DPI (Brother short-reads
+# the last row); scan-web (below) is the robust path and pads around that.
 airsane_enabled: true
 airsane_git_url: "https://github.com/SimulPiscator/AirSane.git"
 airsane_git_ref: "master"
@@ -53,35 +41,29 @@ airsane_build_packages:
   - libavahi-client-dev
   - libusb-1.0-0-dev
 
-# Scan output settings for the scan-to-share script. NOTE: scan_mode must be one
-# of the brscan backend's exact names (check with `scanimage --help -d <dev>`):
+# Scan output settings. scan_mode must be one of brscan4's exact names:
 # "24bit Color", "True Gray", "Gray[Error Diffusion]", "Black & White".
 scan_resolution: 300
-scan_mode: "24bit Color"  # 24bit Color | True Gray | Black & White
-scan_format: pdf          # pdf | jpeg | tiff
+scan_mode: "24bit Color"
 
-# JPEG quality (1-100) used to compress the image inside PDF/JPEG output. 80 is
-# a sane document default: a 300 DPI page drops from ~25 MB (uncompressed) to a
-# few hundred KB with no visible loss. Raise toward 90-95 for photos; lower to
-# 60-70 for even smaller text-only scans.
-scan_jpeg_quality: 80
+# JPEG quality used inside the PDF. 92 with no chroma subsampling keeps text
+# edges crisp (q80 4:2:0 produces a diagonal sawtooth on black text). A 300 DPI
+# colour page is ~1-2 MB at 92. Lower to ~80 for smaller files, raise for photos.
+scan_jpeg_quality: 92
 
 # --- Scan-to-share web UI ----------------------------------------------------
-# A small dependency-free web page (stdlib Python, served on scan_web_port) with
-# a Scan button that runs the reliable server-side scan and drops a PDF into the
-# share. Works from any LAN browser (Mac/phone) — the robust alternative to eSCL
-# when a scanner's eSCL path is flaky. Runs as scan_web_user, which owns scan_dir
-# and can open the (0666) scanner.
+# A dependency-free stdlib-Python page with a Scan button that runs the scan
+# server-side (Brother's driver in the chroot) and drops a PDF into the share.
+# Reachable from any LAN browser/phone. On port 80 -> http://<pi>/.
 scan_web_enabled: true
-scan_web_port: 8080
+scan_web_port: 80
 scan_web_user: scans
 scan_web_title: printmanager
 scan_web_share: "smb://printmanager.local/scans"
 
-# SANE net (saned) listen port; opened to local_subnet in the firewall.
+# saned port for the AirSane net bridge (chroot saned on 127.0.0.1:this).
 saned_port: 6566
 
-# These must match the scan-share role so scans land in the shared directory
-# with the right group.
+# Must match the scan-share role (where scans land, and the owning group).
 scan_dir: /srv/scans
 scan_group: scans

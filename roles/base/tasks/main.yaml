@@ -27,6 +27,16 @@
     state: present
     update_cache: true
 
+# Generate en_US.UTF-8 so SSH sessions that forward LANG/LC_* don't warn
+# "cannot change locale". Idempotent (skips once the locale exists).
+- name: Ensure the en_US.UTF-8 locale exists
+  command:
+    cmd: >
+      sh -c 'locale -a 2>/dev/null | grep -qiE "^en_US\.utf-?8$" ||
+      { apt-get install -y locales >/dev/null 2>&1;
+      locale-gen en_US.UTF-8 >/dev/null 2>&1;
+      update-locale LANG=en_US.UTF-8 >/dev/null 2>&1; }'
+
 # --- Firewall: retire ufw, then build a default-deny baseline with iptables ----
 # Order is critical. `ufw-init stop` runs flush_builtins, which flushes the
 # INPUT chain entirely -- so ufw MUST be torn down BEFORE we add our rules,

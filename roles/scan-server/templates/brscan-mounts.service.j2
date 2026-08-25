@@ -1,0 +1,14 @@
+# Managed by Tack — roles/scan-server. Bind-mounts /dev,/proc,/sys into the
+# brscan4 i386 chroot so the emulated Brother driver can reach the USB scanner.
+[Unit]
+Description=Bind mounts for the brscan4 chroot
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'for m in dev proc sys; do mountpoint -q {{ .brscan4_chroot }}/$m || mount --bind /$m {{ .brscan4_chroot }}/$m; done'
+ExecStop=/bin/sh -c 'for m in dev proc sys; do umount -l {{ .brscan4_chroot }}/$m 2>/dev/null || true; done'
+
+[Install]
+WantedBy=multi-user.target
