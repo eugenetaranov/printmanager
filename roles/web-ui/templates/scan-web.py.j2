@@ -371,16 +371,6 @@ def do_print(obj):
     if not tpl:
         raise RuntimeError("Unknown label sheet")
     n = int(tpl["cols"]) * int(tpl["rows"])
-    cells = []
-    for v in obj.get("cells", []):
-        try:
-            iv = int(v)
-        except (TypeError, ValueError):
-            continue
-        if 0 <= iv < n and iv not in cells:
-            cells.append(iv)
-    if not cells:
-        raise RuntimeError("Select at least one cell")
 
     try:
         scale = float(obj.get("fontScale", 0.9))
@@ -392,31 +382,48 @@ def do_print(obj):
     except (TypeError, ValueError):
         cal = (0.0, 0.0)
 
+    raw_cells = obj.get("cells")
+    if not isinstance(raw_cells, dict) or not raw_cells:
+        raise RuntimeError("Add something to the sheet first")
+
+    total = 0
     tmp = tempfile.mkdtemp(prefix="label-")
     try:
-        if obj.get("mode") == "file":
+        from reportlab.lib.utils import ImageReader
+        cell_content = {}
+        for key, cc in raw_cells.items():
             try:
-                data = base64.b64decode(obj.get("dataB64") or "")
-            except Exception:
-                raise RuntimeError("Could not read the uploaded file")
-            if not data:
-                raise RuntimeError("Add an image or PDF to print")
-            if len(data) > 25 * 1024 * 1024:
-                raise RuntimeError("File is too large (max 25 MB)")
-            from reportlab.lib.utils import ImageReader
-            img_path = _prepare_image(data, obj.get("filename", ""), tmp)
-            content = {"type": "image", "reader": ImageReader(img_path)}
-        else:
-            text = (obj.get("text") or "").strip()
-            if not text:
-                raise RuntimeError("Enter some text to print")
-            content = {"type": "text", "text": text[:200]}
+                i = int(key)
+            except (TypeError, ValueError):
+                continue
+            if not (0 <= i < n) or not isinstance(cc, dict):
+                continue
+            if cc.get("mode") == "file":
+                try:
+                    data = base64.b64decode(cc.get("dataB64") or "")
+                except Exception:
+                    raise RuntimeError("Could not read an uploaded image")
+                if not data:
+                    continue
+                total += len(data)
+                if total > 40 * 1024 * 1024:
+                    raise RuntimeError("Too much image data (max 40 MB total)")
+                img_dir = tempfile.mkdtemp(dir=tmp)   # own dir per image (no name clashes)
+                img_path = _prepare_image(data, cc.get("filename", ""), img_dir)
+                cell_content[i] = {"type": "image", "reader": ImageReader(img_path)}
+            else:
+                text = (cc.get("text") or "").strip()
+                if text:
+                    cell_content[i] = {"type": "text", "text": text[:200]}
+
+        if not cell_content:
+            raise RuntimeError("Add something to the sheet first")
 
         pdf = os.path.join(tmp, "labels.pdf")
         with _print_lock:
-            build_label_pdf(tpl, cells, content, cal, scale, pdf)
+            build_label_pdf(tpl, cell_content, cal, scale, pdf)
             job = _submit_lp(pdf)
-        return {"queue": PRINT_QUEUE, "job": job, "count": len(cells)}
+        return {"queue": PRINT_QUEUE, "job": job, "count": len(cell_content)}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -449,7 +456,7 @@ def _prepare_image(data, filename, tmp):
         raise RuntimeError("Unsupported image file")
 
 
-def build_label_pdf(tpl, cells, content, cal, font_scale, out_path):
+def build_label_pdf(tpl, cell_content, cal, font_scale, out_path):
     from reportlab.pdfgen import canvas
     from reportlab.lib.units import mm
     pw, ph = 210.0, 297.0
@@ -460,7 +467,7 @@ def build_label_pdf(tpl, cells, content, cal, font_scale, out_path):
     calx, caly = cal
     pad = min(cw, ch) * 0.09  # inner padding, mm
     c = canvas.Canvas(out_path, pagesize=(pw * mm, ph * mm))
-    for i in cells:
+    for i, content in cell_content.items():
         r, col = divmod(i, cols)
         xl = ml + col * (cw + gx) + calx
         yt = mt + r * (ch + gy) + caly
@@ -550,9 +557,39 @@ def res_options(default):
                    % (v, " selected" if v == default else "", v) for v in RESOLUTIONS)
 
 
+def _initial_template():
+    """The sheet shown first: the favorite, else the first. The dropdown and the
+    server-rendered grid both use this so there's no swap on load."""
+    return (next((t for t in LABEL_TEMPLATES if t.get("fav")), None)
+            or (LABEL_TEMPLATES[0] if LABEL_TEMPLATES else None))
+
+
 def tpl_options():
-    return "".join('<option value="%s">%s</option>'
-                   % (html.escape(t["id"]), html.escape(t["name"])) for t in LABEL_TEMPLATES)
+    init = _initial_template()
+    initid = init["id"] if init else None
+    return "".join('<option value="%s"%s>%s</option>'
+                   % (html.escape(t["id"]), " selected" if t["id"] == initid else "",
+                      html.escape(t["name"])) for t in LABEL_TEMPLATES)
+
+
+def initial_sheet_svg():
+    """Paper + empty grid for the initial sheet, so the frame paints immediately
+    on load; the client re-renders it with content."""
+    tpl = _initial_template()
+    paper = '<rect class="paper" x="0" y="0" width="210" height="297" rx="2"/>'
+    if not tpl:
+        return paper
+    cols = int(tpl["cols"]); rows = int(tpl["rows"])
+    cw = float(tpl["cell_w"]); ch = float(tpl["cell_h"])
+    ml = float(tpl["margin_l"]); mt = float(tpl["margin_t"])
+    gx = float(tpl.get("gap_x", 0)); gy = float(tpl.get("gap_y", 0))
+    out = [paper]
+    for i in range(cols * rows):
+        r, c = divmod(i, cols)
+        x = ml + c * (cw + gx); y = mt + r * (ch + gy)
+        out.append('<rect class="cell" x="%s" y="%s" width="%s" height="%s" rx="0.8"/>'
+                   % (round(x, 2), round(y, 2), round(cw, 2), round(ch, 2)))
+    return "".join(out)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -707,6 +744,7 @@ def render_page(path="/"):
             .replace("__MODE_OPTS__", mode_options(DEF_MODE))
             .replace("__RES_OPTS__", res_options(DEF_RES))
             .replace("__PRINT_TEMPLATE_OPTS__", tpl_options())
+            .replace("__SHEET_INIT__", initial_sheet_svg())
             .replace("__TEMPLATES_JSON__", json.dumps(LABEL_TEMPLATES))
             .replace("__PRINT_HIDDEN__", "" if PRINT_ENABLED else " hidden"))
 
@@ -836,6 +874,11 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .sheet .cell:hover{fill:var(--accent-weak)}
 .sheet .cell.sel{fill:var(--accent-weak)}
 .sheet .seloutline{fill:none;stroke:var(--accent);stroke-width:.7;pointer-events:none}
+.sheet .cell.filled{fill:var(--accent-weak);fill-opacity:.4}
+.buildacts{display:flex;gap:10px;margin-top:4px}
+.buildacts .scan{flex:1}
+.buildacts .btn2{flex:none}
+.pdiv{border:none;border-top:1px solid var(--border);margin:18px 0}
 .sheet .ptext{fill:var(--accent);font-family:var(--sans);font-weight:700;text-anchor:middle;dominant-baseline:central;pointer-events:none}
 .sheet image{pointer-events:none} /* let clicks fall through to the cell rect so it stays toggleable */
 /* sheet management */
@@ -870,6 +913,7 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .linkbtn{display:block;width:100%;margin-top:12px;border:none;background:none;cursor:pointer;font:600 12.5px var(--mono);letter-spacing:.02em;padding:9px;border-radius:9px}
 .linkbtn.del{color:var(--danger)}
 .linkbtn.del.armed{color:#fff;background:var(--danger)}
+.linkbtn.armed{color:#fff;background:var(--danger)}
 .linkbtn.subtle{color:var(--faint)}
 .linkbtn.subtle:hover{color:var(--muted)}
 .linkbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -973,7 +1017,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
           <button type="button" class="mini" id="selNone">Clear</button>
         </span>
       </div>
-      <div class="sheet-wrap"><svg class="sheet" id="sheet" role="group" aria-label="Label sheet"></svg></div>
+      <div class="sheet-wrap"><svg class="sheet" id="sheet" viewBox="0 0 210 297" role="group" aria-label="Label sheet">__SHEET_INIT__</svg></div>
 
       <div class="seg" role="tablist" aria-label="Content type">
         <button type="button" class="seg-btn" id="segText" role="tab" aria-selected="true">Text</button>
@@ -993,6 +1037,13 @@ input[type=number]{font-variant-numeric:tabular-nums}
         <div class="hint">Tip: paste an image with ⌘V / Ctrl+V</div>
       </div>
 
+      <div class="buildacts">
+        <button class="scan" id="addBtn" type="button" disabled>Add to sheet</button>
+        <button class="btn2" id="eraseBtn" type="button" hidden>Erase</button>
+      </div>
+
+      <hr class="pdiv">
+
       <details class="adv">
         <summary>Alignment &amp; size</summary>
         <div class="controls">
@@ -1005,7 +1056,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
           <input id="fill" type="range" min="40" max="100" value="90"></label>
       </details>
 
-      <button class="scan" id="printBtn" type="button" disabled>Print</button>
+      <button class="scan" id="printBtn" type="button" disabled>Print sheet</button>
+      <button class="linkbtn subtle" id="clearSheetBtn" type="button" hidden>Clear sheet</button>
       <p class="note" id="pnote" aria-live="polite"></p>
     </div>
   </section>
@@ -1044,7 +1096,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         <label class="field"><span class="lbl">Row gap <span class="opt">mm</span></span>
           <input class="txt" id="eGY" type="number" min="0" max="50" step="1"></label>
       </div>
-      <div class="sheet-wrap"><svg class="sheet schematic" id="eSheet" role="img" aria-label="Sheet dimensions"></svg></div>
+      <div class="sheet-wrap"><svg class="sheet schematic" id="eSheet" viewBox="0 0 210 297" role="img" aria-label="Sheet dimensions"></svg></div>
       <p class="cellcap" id="eCap"></p>
       <div class="editacts">
         <button type="button" class="scan" id="eSave">Save sheet</button>
@@ -1209,6 +1261,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
   TEMPLATES.forEach(function(t){ TBYID[t.id]=t; });
   var tplSel=document.getElementById('tpl'), sheet=document.getElementById('sheet');
   var selInfo=document.getElementById('selInfo'), printBtn=document.getElementById('printBtn'), pnote=document.getElementById('pnote');
+  var addBtn=document.getElementById('addBtn'), eraseBtn=document.getElementById('eraseBtn'), clearSheetBtn=document.getElementById('clearSheetBtn');
   var ptext=document.getElementById('ptext');
   var segText=document.getElementById('segText'), segFile=document.getElementById('segFile');
   var textPane=document.getElementById('textPane'), filePane=document.getElementById('filePane');
@@ -1216,7 +1269,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
   var fileNameEl=document.getElementById('fileName'), fileClear=document.getElementById('fileClear'), filePv=document.getElementById('filePv');
   var calX=document.getElementById('calX'), calY=document.getElementById('calY');
   var fill=document.getElementById('fill'), fillVal=document.getElementById('fillVal');
-  var sel=new Set(), pmode='text', fileData=null, fileNm='', filePvUrl=null, fileAspect=1, printing=false;
+  var sel=new Set(), cellContent={}, pmode='text', fileData=null, fileNm='', filePvUrl=null, fileAspect=1, printing=false;
 
   function f2(n){ return Math.round(n*100)/100; }
   function makeThumb(dataUrl, cb){
@@ -1235,52 +1288,56 @@ input[type=number]{font-variant-numeric:tabular-nums}
   function textFit(EW, EH, maxlen, nl, lg){ return Math.min(EH*0.6, (EW*0.82)/(maxlen*0.58), (EH*0.82)/(0.72+(nl-1)*lg)); }
   function imgFit(W, H, aspect){ return Math.min(W/aspect, H); }
   function curTpl(){ return TBYID[tplSel.value] || TEMPLATES[0]; }
+  function pendingContent(){   // the content currently in the panel (or null)
+    if(pmode==='text'){ var v=ptext.value; return v.trim()?{mode:'text',text:v}:null; }
+    return fileData?{mode:'image',dataB64:fileData,filename:fileNm,aspect:fileAspect,thumbUrl:filePvUrl}:null;
+  }
+  function filledCount(){ return Object.keys(cellContent).length; }
+  // Draw one cell's content (text or image), auto-rotating when it fits larger.
+  function drawCellContent(content, x, y, cw, ch){
+    var cx=x+cw/2, cy=y+ch/2, ip=Math.min(cw,ch)*0.08, s='', lg=1.18;
+    if(content.mode==='image' && content.thumbUrl){
+      var asp=content.aspect||1, iRot=imgFit(ch,cw,asp)>imgFit(cw,ch,asp)*1.15;
+      if(iRot) s+='<g transform="rotate(-90 '+f2(cx)+' '+f2(cy)+')"><image href="'+content.thumbUrl+'" x="'+f2(cx-ch/2+ip)+'" y="'+f2(cy-cw/2+ip)+'" width="'+f2(ch-2*ip)+'" height="'+f2(cw-2*ip)+'" preserveAspectRatio="xMidYMid meet"/></g>';
+      else s+='<image href="'+content.thumbUrl+'" x="'+f2(x+ip)+'" y="'+f2(y+ip)+'" width="'+f2(cw-2*ip)+'" height="'+f2(ch-2*ip)+'" preserveAspectRatio="xMidYMid meet"/>';
+    } else if(content.mode==='text'){
+      var txt=(content.text||'').trim(); if(!txt) return '';
+      var lines=txt.split('\n'), nl=lines.length, maxlen=1;
+      for(var k=0;k<nl;k++){ if(lines[k].length>maxlen) maxlen=lines[k].length; }
+      var fN=textFit(cw,ch,maxlen,nl,lg), fR=textFit(ch,cw,maxlen,nl,lg), rot=fR>fN*1.15, fs=rot?fR:fN, lh=fs*lg, y0=cy-(nl-1)*lh/2, tt='';
+      for(var k2=0;k2<nl;k2++){ tt+='<text class="ptext" x="'+f2(cx)+'" y="'+f2(y0+k2*lh)+'" font-size="'+f2(fs)+'">'+esc(lines[k2])+'</text>'; }
+      s+= rot?('<g transform="rotate(-90 '+f2(cx)+' '+f2(cy)+')">'+tt+'</g>'):tt;
+    }
+    return s;
+  }
   function renderSheet(){
     var t=curTpl(); if(!t) return;
     var cols=t.cols, rows=t.rows, cw=t.cell_w, ch=t.cell_h, ml=t.margin_l, mt=t.margin_t, gx=t.gap_x||0, gy=t.gap_y||0;
-    var txt=(pmode==='text')?ptext.value.trim():'', lg=1.18;
-    // Precompute content layout once (cell size + content are the same for every
-    // cell); auto-rotate 90° when that clearly fits larger in a tall/narrow cell.
-    var lines=null, tfs=0, tRot=false, tlh=0;
-    if(txt){
-      lines=txt.split('\n'); var nl=lines.length, maxlen=1;
-      for(var k=0;k<nl;k++){ if(lines[k].length>maxlen) maxlen=lines[k].length; }
-      var fN=textFit(cw,ch,maxlen,nl,lg), fR=textFit(ch,cw,maxlen,nl,lg);
-      tRot=fR>fN*1.15; tfs=tRot?fR:fN; tlh=tfs*lg;
-    }
-    var iRot=(pmode==='file'&&filePvUrl) ? (imgFit(ch,cw,fileAspect)>imgFit(cw,ch,fileAspect)*1.15) : false;
-    // Two passes: all cell fills first, then selected outlines + content on top,
-    // so a selected cell's border is never dimmed by a hovered/adjacent neighbor.
+    var pend=pendingContent();
+    // Two passes: all cell fills first, then content + selection outlines on top,
+    // so a selected/filled cell's border is never dimmed by a neighbor.
     var base='', over='';
     for(var i=0;i<cols*rows;i++){
       var r=Math.floor(i/cols), c=i%cols;
-      var x=ml+c*(cw+gx), y=mt+r*(ch+gy), on=sel.has(i);
-      base+='<rect class="cell'+(on?' sel':'')+'" data-i="'+i+'" x="'+f2(x)+'" y="'+f2(y)+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.8"/>';
-      if(!on) continue;
-      var cx=x+cw/2, cy=y+ch/2;
-      over+='<rect class="seloutline" x="'+f2(x)+'" y="'+f2(y)+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.8"/>';
-      if(pmode==='file' && filePvUrl){
-        var ip=Math.min(cw,ch)*0.08;
-        if(iRot){ over+='<g transform="rotate(-90 '+f2(cx)+' '+f2(cy)+')"><image href="'+filePvUrl+'" x="'+f2(cx-ch/2+ip)+'" y="'+f2(cy-cw/2+ip)+'" width="'+f2(ch-2*ip)+'" height="'+f2(cw-2*ip)+'" preserveAspectRatio="xMidYMid meet"/></g>'; }
-        else { over+='<image href="'+filePvUrl+'" x="'+f2(x+ip)+'" y="'+f2(y+ip)+'" width="'+f2(cw-2*ip)+'" height="'+f2(ch-2*ip)+'" preserveAspectRatio="xMidYMid meet"/>'; }
-      }
-      if(txt){
-        var y0=cy-(lines.length-1)*tlh/2, tt='';
-        for(var k2=0;k2<lines.length;k2++){
-          tt+='<text class="ptext" x="'+f2(cx)+'" y="'+f2(y0+k2*tlh)+'" font-size="'+f2(tfs)+'">'+esc(lines[k2])+'</text>';
-        }
-        over += tRot ? ('<g transform="rotate(-90 '+f2(cx)+' '+f2(cy)+')">'+tt+'</g>') : tt;
-      }
+      var x=ml+c*(cw+gx), y=mt+r*(ch+gy), onSel=sel.has(i), filled=!!cellContent[i];
+      base+='<rect class="cell'+(onSel?' sel':(filled?' filled':''))+'" data-i="'+i+'" x="'+f2(x)+'" y="'+f2(y)+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.8"/>';
+      var show=(onSel && pend) ? pend : cellContent[i];   // preview pending on selected cells
+      if(show) over += drawCellContent(show, x, y, cw, ch);
+      if(onSel) over += '<rect class="seloutline" x="'+f2(x)+'" y="'+f2(y)+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.8"/>';
     }
-    sheet.setAttribute('viewBox','0 0 210 297');
     sheet.innerHTML='<rect class="paper" x="0" y="0" width="210" height="297" rx="2"/>'+base+over;
   }
-  function hasContent(){ return pmode==='text' ? !!ptext.value.trim() : !!fileData; }
   function updateUI(){
-    var n=sel.size;
-    selInfo.textContent = n ? (n+' cell'+(n===1?'':'s')+' selected') : 'Tap cells to place your label';
-    printBtn.disabled = printing || n===0 || !hasContent();
-    printBtn.textContent = printing ? 'Printing…' : (n ? ('Print '+n+' label'+(n===1?'':'s')) : 'Print');
+    var nSel=sel.size, nFilled=filledCount(), pend=pendingContent();
+    var selFilled=false; sel.forEach(function(i){ if(cellContent[i]) selFilled=true; });
+    selInfo.textContent = nSel ? (nSel+' cell'+(nSel===1?'':'s')+' selected')
+                        : (nFilled ? (nFilled+' filled — tap a cell to edit') : 'Tap cells to place your label');
+    addBtn.disabled = !(pend && nSel>0);
+    addBtn.textContent = (pend && nSel>0) ? ('Add to '+nSel+' cell'+(nSel===1?'':'s')) : 'Add to sheet';
+    eraseBtn.hidden = !selFilled;
+    printBtn.disabled = printing || nFilled===0;
+    printBtn.textContent = printing ? 'Printing…' : (nFilled ? ('Print sheet ('+nFilled+')') : 'Print sheet');
+    clearSheetBtn.hidden = nFilled===0;
   }
   function setMode(m){
     pmode=m;
@@ -1295,6 +1352,11 @@ input[type=number]{font-variant-numeric:tabular-nums}
       var r=e.target.closest('.cell'); if(!r) return;
       var i=+r.dataset.i;
       if(sel.has(i)) sel.delete(i); else sel.add(i);
+      // Tapping a single filled cell (with an empty panel) loads it to edit.
+      if(sel.size===1 && !pendingContent()){
+        var only=sel.values().next().value;
+        if(cellContent[only]) loadContentToPanel(cellContent[only]);
+      }
       renderSheet(); updateUI();
     });
     document.getElementById('selAll').addEventListener('click',function(){
@@ -1304,7 +1366,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
     });
     document.getElementById('selNone').addEventListener('click',function(){ sel=new Set(); renderSheet(); updateUI(); });
     tplSel.addEventListener('change',function(){
-      sel=new Set(); try{ localStorage.setItem('pm_tpl',tplSel.value); }catch(e){}
+      sel=new Set(); cellContent={};   // different layout -> start the sheet fresh
+      try{ localStorage.setItem('pm_tpl',tplSel.value); }catch(e){}
       renderSheet(); updateUI();
     });
     ptext.addEventListener('input',function(){ renderSheet(); updateUI(); });
@@ -1323,6 +1386,15 @@ input[type=number]{font-variant-numeric:tabular-nums}
         setMode('file'); updateUI();
       };
       reader.readAsDataURL(file);
+    }
+    function loadContentToPanel(content){   // put a cell's stored content back in the panel to edit
+      if(content.mode==='text'){ setMode('text'); ptext.value=content.text||''; }
+      else {
+        setMode('file');
+        fileData=content.dataB64; fileNm=content.filename||'image'; fileAspect=content.aspect||1; filePvUrl=content.thumbUrl||null;
+        fileNameEl.textContent=fileNm; fileChip.hidden=false;
+        if(filePvUrl){ filePv.src=filePvUrl; filePv.hidden=false; } else { filePv.hidden=true; }
+      }
     }
     pfile.addEventListener('change',function(){ var f=pfile.files[0]; if(f) loadFileForPrint(f); });
     // Paste an image from the clipboard (⌘V / Ctrl+V) while on the Print tab.
@@ -1344,23 +1416,44 @@ input[type=number]{font-variant-numeric:tabular-nums}
     function saveCal(){ try{ localStorage.setItem('pm_calx',calX.value); localStorage.setItem('pm_caly',calY.value); }catch(e){} }
     calX.addEventListener('change',saveCal); calY.addEventListener('change',saveCal);
 
+    // Build actions: stamp the current content into selected cells, or erase them.
+    addBtn.addEventListener('click',function(){
+      var pend=pendingContent(); if(!pend || sel.size===0) return;
+      sel.forEach(function(i){ cellContent[i]=pend; });   // shared ref is fine (never mutated)
+      sel=new Set();
+      pnote.className='note'; pnote.textContent='';
+      renderSheet(); updateUI();
+    });
+    eraseBtn.addEventListener('click',function(){
+      sel.forEach(function(i){ delete cellContent[i]; });
+      sel=new Set(); renderSheet(); updateUI();
+    });
+    clearSheetBtn.addEventListener('click',function(){
+      if(!clearSheetBtn.classList.contains('armed')){ clearSheetBtn.classList.add('armed'); clearSheetBtn.textContent='Click again to clear the sheet';
+        setTimeout(function(){ clearSheetBtn.classList.remove('armed'); clearSheetBtn.textContent='Clear sheet'; },3000); return; }
+      cellContent={}; sel=new Set(); clearSheetBtn.classList.remove('armed'); clearSheetBtn.textContent='Clear sheet';
+      renderSheet(); updateUI();
+    });
+
     printBtn.addEventListener('click',function(){
       if(printBtn.disabled) return;
-      printing=true; updateUI();
-      pnote.className='note'; pnote.textContent=''; setStatus('busy','Printing');
-      var count=sel.size;
-      var body={template:curTpl().id, cells:Array.from(sel), mode:pmode,
-                text:ptext.value, fontScale:(+fill.value||90)/100,
-                calX:+calX.value||0, calY:+calY.value||0};
-      if(pmode==='file'){ body.filename=fileNm; body.dataB64=fileData; }
-      fetch('/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      var keys=Object.keys(cellContent); if(!keys.length) return;
+      printing=true; updateUI(); pnote.className='note'; pnote.textContent=''; setStatus('busy','Printing');
+      var count=keys.length, cells={};
+      keys.forEach(function(k){
+        var cc=cellContent[k];
+        cells[k] = (cc.mode==='image') ? {mode:'file', dataB64:cc.dataB64, filename:cc.filename} : {mode:'text', text:cc.text};
+      });
+      var body={template:curTpl().id, calX:+calX.value||0, calY:+calY.value||0, fontScale:(+fill.value||90)/100, cells:cells};
+      var ctrl=new AbortController(), to=setTimeout(function(){ ctrl.abort(); }, 60000);
+      fetch('/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctrl.signal})
         .then(function(r){return r.json();})
-        .then(function(d){
+        .then(function(d){ clearTimeout(to);
           if(d.ok){ setStatus('idle','Ready'); pnote.className='note ok';
             pnote.textContent='Sent '+count+' label'+(count===1?'':'s')+' to '+d.queue+'.'; }
           else { setStatus('error','Failed'); pnote.className='note err'; pnote.textContent=d.error||'Print failed.'; }
         })
-        .catch(function(){ setStatus('error','Failed'); pnote.className='note err'; pnote.textContent='Could not reach the print service.'; })
+        .catch(function(){ clearTimeout(to); setStatus('error','Failed'); pnote.className='note err'; pnote.textContent='Could not reach the print service.'; })
         .finally(function(){ printing=false; updateUI(); });
     });
 
@@ -1539,11 +1632,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
     });
 
     // restore prefs + first render
-    var favT=TEMPLATES.filter(function(t){ return t.fav; })[0];
+    // The dropdown is already on the server-chosen sheet (favorite/first) and the
+    // grid was rendered for it — don't override it here, or the sheet would swap.
     try{
-      var savedT=localStorage.getItem('pm_tpl');
-      if(favT) tplSel.value=favT.id;                 // favorite wins, always preselected
-      else if(savedT&&TBYID[savedT]) tplSel.value=savedT;
       calX.value=localStorage.getItem('pm_calx')||'0';
       calY.value=localStorage.getItem('pm_caly')||'0';
     }catch(e){}
