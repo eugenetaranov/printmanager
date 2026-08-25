@@ -30,7 +30,7 @@ img2pdf "$tmp/p.jpg" -o "$tmp/img.pdf"
 if [ '{{ .scan_ocr_enabled }}' = 'true' ] && command -v ocrmypdf >/dev/null 2>&1; then
   # Add a searchable (invisible) OCR text layer; fall back to the image-only PDF
   # on any failure (e.g. a blank page). --optimize 0 leaves our JPEG untouched.
-  ocrmypdf -l '{{ .scan_ocr_lang }}' --output-type pdf --optimize 0 --quiet \
+  ocrmypdf -l '{{ range $i, $l := .scan_ocr_langs }}{{ if $i }}+{{ end }}{{ $l }}{{ end }}' --output-type pdf --optimize 0 --quiet \
     "$tmp/img.pdf" "$out" 2>"$tmp/ocr.log" || cp "$tmp/img.pdf" "$out"
 else
   cp "$tmp/img.pdf" "$out"

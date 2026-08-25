@@ -7,18 +7,21 @@ scan_packages:
   - img2pdf
   - imagemagick
   - ocrmypdf            # add an OCR text layer -> searchable PDFs
-  - tesseract-ocr-eng   # English OCR data (matches scan_ocr_lang)
   - qemu-user-static
   - binfmt-support
   - debootstrap
 
 # --- OCR: searchable PDFs -----------------------------------------------------
 # Every scan gets an invisible OCR text layer (ocrmypdf/Tesseract) so text in the
-# PDF is selectable and searchable. Falls back to an image-only PDF if OCR fails
-# (e.g. a blank page). scan_ocr_lang must have a matching tesseract-ocr-<lang>
-# package installed above. Set scan_ocr_enabled false to skip OCR entirely.
+# PDF is selectable and searchable. List the languages to recognize by their
+# Tesseract code — eng, ukr, tur, spa (Spanish), deu, fra, rus, … — and the
+# matching tesseract-ocr-<code> data packs are installed automatically and passed
+# to ocrmypdf as eng+ukr+tur. More languages = a bit slower per page. Falls back
+# to an image-only PDF if OCR fails (e.g. a blank page). scan_ocr_enabled false
+# skips OCR entirely.
 scan_ocr_enabled: true
-scan_ocr_lang: "eng"
+scan_ocr_langs:
+  - eng
 
 # --- Brother brscan4 under i386 emulation ------------------------------------
 # The DCP-1510's scanner needs Brother's proprietary brscan4 driver. Brother

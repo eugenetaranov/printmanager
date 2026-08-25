@@ -6,11 +6,19 @@
 # Overridable variables: see defaults/main.yaml. Depends on `base` (firewall) and
 # `scan-share` (scan_dir, scan_group, scan_web_user must exist).
 
-- name: Install host scan packages (SANE, img2pdf, ImageMagick, qemu/debootstrap)
+- name: Install host scan packages (SANE, img2pdf, ImageMagick, ocrmypdf, qemu)
   apt:
     name: "{{ scan_packages }}"
     state: present
     update_cache: true
+
+# One data pack per configured OCR language (tesseract-ocr-eng, -ukr, -tur, ...).
+- name: Install Tesseract OCR language data
+  apt:
+    name: "tesseract-ocr-{{ item }}"
+    state: present
+  loop: "{{ scan_ocr_langs }}"
+  when: scan_ocr_enabled
 
 # --- Brother brscan4 under i386 emulation ------------------------------------
 - name: Render the brscan4 emulation installer
