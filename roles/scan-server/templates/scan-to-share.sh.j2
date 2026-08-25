@@ -26,7 +26,15 @@ convert "$tmp/p.pnm" -sampling-factor 1x1 -quality "$QUALITY" "$tmp/p.jpg"
 if [ -n "$NAME" ]; then base="$DEST/$NAME"; else base="$DEST/scan-$(date +%Y%m%d-%H%M%S)"; fi
 out="$base.pdf"
 [ -e "$out" ] && out="$base-$(date +%H%M%S).pdf"   # don't clobber an existing name
-img2pdf "$tmp/p.jpg" -o "$out"
+img2pdf "$tmp/p.jpg" -o "$tmp/img.pdf"
+if [ '{{ .scan_ocr_enabled }}' = 'true' ] && command -v ocrmypdf >/dev/null 2>&1; then
+  # Add a searchable (invisible) OCR text layer; fall back to the image-only PDF
+  # on any failure (e.g. a blank page). --optimize 0 leaves our JPEG untouched.
+  ocrmypdf -l '{{ .scan_ocr_lang }}' --output-type pdf --optimize 0 --quiet \
+    "$tmp/img.pdf" "$out" 2>"$tmp/ocr.log" || cp "$tmp/img.pdf" "$out"
+else
+  cp "$tmp/img.pdf" "$out"
+fi
 chmod 0660 "$out" 2>/dev/null || true
 
 # Sidecar thumbnail + metadata (DPI/mode) for the web UI, kept out of the share.

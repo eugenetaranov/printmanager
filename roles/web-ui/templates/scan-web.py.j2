@@ -1044,18 +1044,6 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
       <hr class="pdiv">
 
-      <details class="adv">
-        <summary>Alignment &amp; size</summary>
-        <div class="controls">
-          <label class="field"><span class="lbl">Nudge X <span class="opt">mm</span></span>
-            <input class="txt" id="calX" type="number" step="0.5" value="0"></label>
-          <label class="field"><span class="lbl">Nudge Y <span class="opt">mm</span></span>
-            <input class="txt" id="calY" type="number" step="0.5" value="0"></label>
-        </div>
-        <label class="field"><span class="lbl">Fill <span class="opt" id="fillVal">90%</span></span>
-          <input id="fill" type="range" min="40" max="100" value="90"></label>
-      </details>
-
       <button class="scan" id="printBtn" type="button" disabled>Print sheet</button>
       <button class="linkbtn subtle" id="clearSheetBtn" type="button" hidden>Clear sheet</button>
       <p class="note" id="pnote" aria-live="polite"></p>
@@ -1267,8 +1255,6 @@ input[type=number]{font-variant-numeric:tabular-nums}
   var textPane=document.getElementById('textPane'), filePane=document.getElementById('filePane');
   var pfile=document.getElementById('pfile'), fileChip=document.getElementById('fileChip');
   var fileNameEl=document.getElementById('fileName'), fileClear=document.getElementById('fileClear'), filePv=document.getElementById('filePv');
-  var calX=document.getElementById('calX'), calY=document.getElementById('calY');
-  var fill=document.getElementById('fill'), fillVal=document.getElementById('fillVal');
   var sel=new Set(), cellContent={}, pmode='text', fileData=null, fileNm='', filePvUrl=null, fileAspect=1, printing=false;
 
   function f2(n){ return Math.round(n*100)/100; }
@@ -1412,9 +1398,6 @@ input[type=number]{font-variant-numeric:tabular-nums}
       }
     });
     fileClear.addEventListener('click',function(){ fileData=null; fileNm=''; filePvUrl=null; fileAspect=1; pfile.value=''; fileChip.hidden=true; filePv.hidden=true; renderSheet(); updateUI(); });
-    fill.addEventListener('input',function(){ fillVal.textContent=fill.value+'%'; });
-    function saveCal(){ try{ localStorage.setItem('pm_calx',calX.value); localStorage.setItem('pm_caly',calY.value); }catch(e){} }
-    calX.addEventListener('change',saveCal); calY.addEventListener('change',saveCal);
 
     // Build actions: stamp the current content into selected cells, or erase them.
     addBtn.addEventListener('click',function(){
@@ -1444,7 +1427,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         var cc=cellContent[k];
         cells[k] = (cc.mode==='image') ? {mode:'file', dataB64:cc.dataB64, filename:cc.filename} : {mode:'text', text:cc.text};
       });
-      var body={template:curTpl().id, calX:+calX.value||0, calY:+calY.value||0, fontScale:(+fill.value||90)/100, cells:cells};
+      var body={template:curTpl().id, calX:0, calY:0, fontScale:0.9, cells:cells};
       var ctrl=new AbortController(), to=setTimeout(function(){ ctrl.abort(); }, 60000);
       fetch('/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctrl.signal})
         .then(function(r){return r.json();})
@@ -1631,14 +1614,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
       }
     });
 
-    // restore prefs + first render
     // The dropdown is already on the server-chosen sheet (favorite/first) and the
     // grid was rendered for it — don't override it here, or the sheet would swap.
-    try{
-      calX.value=localStorage.getItem('pm_calx')||'0';
-      calY.value=localStorage.getItem('pm_caly')||'0';
-    }catch(e){}
-    fillVal.textContent=fill.value+'%';
     renderSheet(); updateUI();
   }
 

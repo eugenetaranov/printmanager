@@ -1,14 +1,24 @@
 # Host packages for scanning. Brother's real driver runs inside an i386 chroot
 # (qemu-user-static + debootstrap), so the host only needs: sane-utils (saned,
-# for the AirSane net bridge), img2pdf + imagemagick (PNM->JPEG->PDF), and the
-# emulation toolchain.
+# for the AirSane net bridge), img2pdf + imagemagick (PNM->JPEG->PDF), ocrmypdf +
+# a Tesseract language pack (searchable PDFs), and the emulation toolchain.
 scan_packages:
   - sane-utils
   - img2pdf
   - imagemagick
+  - ocrmypdf            # add an OCR text layer -> searchable PDFs
+  - tesseract-ocr-eng   # English OCR data (matches scan_ocr_lang)
   - qemu-user-static
   - binfmt-support
   - debootstrap
+
+# --- OCR: searchable PDFs -----------------------------------------------------
+# Every scan gets an invisible OCR text layer (ocrmypdf/Tesseract) so text in the
+# PDF is selectable and searchable. Falls back to an image-only PDF if OCR fails
+# (e.g. a blank page). scan_ocr_lang must have a matching tesseract-ocr-<lang>
+# package installed above. Set scan_ocr_enabled false to skip OCR entirely.
+scan_ocr_enabled: true
+scan_ocr_lang: "eng"
 
 # --- Brother brscan4 under i386 emulation ------------------------------------
 # The DCP-1510's scanner needs Brother's proprietary brscan4 driver. Brother
