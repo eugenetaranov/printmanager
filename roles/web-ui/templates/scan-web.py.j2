@@ -58,13 +58,13 @@ TEMPLATES_FILE = os.path.join(DATA_DIR, "sheets.json")
 
 DEFAULT_TEMPLATES = [
     {"id": "a4-44", "name": "A4 · 44 labels (4×11)", "cols": 4, "rows": 11,
-     "cell_w": 48.5, "cell_h": 25.4, "margin_l": 6.5, "margin_t": 9.5, "gap_x": 0, "gap_y": 0},
+     "cell_w": 48.5, "cell_h": 25.4, "margin_l": 7, "margin_t": 10, "gap_x": 0, "gap_y": 0},
     {"id": "a4-32", "name": "A4 · 32 labels (4×8)", "cols": 4, "rows": 8,
-     "cell_w": 48.5, "cell_h": 35.0, "margin_l": 6.5, "margin_t": 8.5, "gap_x": 0, "gap_y": 0},
+     "cell_w": 48.5, "cell_h": 35.0, "margin_l": 7, "margin_t": 9, "gap_x": 0, "gap_y": 0},
     {"id": "a4-21", "name": "A4 · 21 labels (3×7)", "cols": 3, "rows": 7,
-     "cell_w": 63.5, "cell_h": 38.1, "margin_l": 7.2, "margin_t": 15.1, "gap_x": 2.5, "gap_y": 0},
+     "cell_w": 63.5, "cell_h": 38.1, "margin_l": 7, "margin_t": 15, "gap_x": 3, "gap_y": 0},
     {"id": "a4-8", "name": "A4 · 8 labels (2×4)", "cols": 2, "rows": 4,
-     "cell_w": 99.1, "cell_h": 67.7, "margin_l": 5.9, "margin_t": 13.1, "gap_x": 0, "gap_y": 0},
+     "cell_w": 99.1, "cell_h": 67.7, "margin_l": 6, "margin_t": 13, "gap_x": 0, "gap_y": 0},
 ]
 
 _TEMPLATE_KEYS = ("id", "name", "cols", "rows", "margin_l", "margin_t",
@@ -129,7 +129,7 @@ def validate_template(obj):
                      (gx, "Column gap"), (gy, "Row gap")):
         if v < 0:
             raise ValueError("%s can't be negative" % label)
-    ml, mt, gx, gy = round(ml), round(mt), round(gx), round(gy)   # whole millimetres
+    ml, mt, gx, gy = (int(v + 0.5) for v in (ml, mt, gx, gy))   # whole mm, round half up
     cw, ch = derive_cells(page_w, page_h, cols, rows, ml, mt, gx, gy)
     if cw < MIN_CELL_MM or ch < MIN_CELL_MM:
         raise ValueError("Doesn't fit the page — reduce margins, gaps, or counts")
@@ -1344,7 +1344,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
       editingId = (mode==='edit') ? t.id : '';
       eName.value = mode==='edit' ? t.name : (mode==='duplicate' ? (t.name+' copy').slice(0,60) : '');
       eCols.value=t.cols; eRows.value=t.rows;
-      eML.value=t.margin_l; eMT.value=t.margin_t; eGX.value=t.gap_x||0; eGY.value=t.gap_y||0;
+      eML.value=Math.round(t.margin_l); eMT.value=Math.round(t.margin_t);
+      eGX.value=Math.round(t.gap_x||0); eGY.value=Math.round(t.gap_y||0);
       nameAuto = (!eName.value.trim() || eName.value===genName());
       syncName();
       eDelete.hidden = (mode!=='edit');
@@ -1361,7 +1362,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
                  '<button type="button" class="act" data-a="dup" title="Duplicate" aria-label="Duplicate">'+ICON.dup+'</button>'+
                  '<button type="button" class="act del" data-a="del" title="Delete" aria-label="Delete">'+ICON.rm+'</button>';
         row.innerHTML='<div class="info"><div class="nm">'+esc(t.name)+'</div>'+
-          '<div class="sub">'+t.cols+'×'+t.rows+' · '+r1(t.cell_w)+'×'+r1(t.cell_h)+'mm · L '+r1(t.margin_l)+' T '+r1(t.margin_t)+'</div></div>'+
+          '<div class="sub">'+t.cols+'×'+t.rows+' · '+r1(t.cell_w)+'×'+r1(t.cell_h)+'mm · L '+Math.round(t.margin_l)+' T '+Math.round(t.margin_t)+'</div></div>'+
           '<div class="ra">'+acts+'</div>';
         sheetList.appendChild(row);
       });
