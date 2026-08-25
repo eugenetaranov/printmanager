@@ -50,6 +50,24 @@ def list_scans(limit=30):
     return items[:limit]
 
 
+def clear_scans():
+    removed = 0
+    try:
+        for name in os.listdir(SCAN_DIR):
+            if not NAME_RE.fullmatch(name):
+                continue
+            path = os.path.join(SCAN_DIR, name)
+            if os.path.isfile(path):
+                try:
+                    os.remove(path)
+                    removed += 1
+                except OSError:
+                    pass
+    except FileNotFoundError:
+        pass
+    return removed
+
+
 def run_scan(mode, resolution, name=""):
     if mode not in MODE_VALUES:
         mode = DEF_MODE
@@ -131,7 +149,10 @@ class Handler(BaseHTTPRequestHandler):
                    {"Content-Disposition": 'inline; filename="%s"' % name})
 
     def do_POST(self):
-        if urllib.parse.urlparse(self.path).path != "/scan":
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/clear":
+            return self._json(200, {"ok": True, "removed": clear_scans()})
+        if path != "/scan":
             return self._send(404, "Not found", "text/plain")
         length = int(self.headers.get("Content-Length", "0") or "0")
         raw = self.rfile.read(length).decode("utf-8") if length else ""
@@ -233,7 +254,14 @@ select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-c
 .note.ok{color:var(--accent)}.note.err{color:var(--danger)}
 .note a{color:inherit}
 .recent{margin-top:34px}
+.recentHead{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .recent h2{margin:0 0 2px;font-size:13px;font-weight:640;letter-spacing:.02em}
+.clear{border:none;background:none;cursor:pointer;padding:2px 4px;border-radius:6px;
+  font:600 12px var(--mono);color:var(--faint);letter-spacing:.02em}
+.clear:hover{color:var(--danger)}
+.clear:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.clear.armed{color:#fff;background:var(--danger)}
+.clear.armed:hover{color:#fff;opacity:.9}
 .recent .path{font:500 12px var(--mono);color:var(--faint);word-break:break-all}
 .recent .path a{color:var(--accent);text-decoration:none}
 .recent .path a:hover{text-decoration:underline}
@@ -285,7 +313,10 @@ select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-c
   </form>
 
   <section class="recent">
-    <h2>Recent scans</h2>
+    <div class="recentHead">
+      <h2>Recent scans</h2>
+      <button type="button" class="clear" id="clearBtn">Clear all</button>
+    </div>
     <div class="path">Saved to <a href="__SHARE__">__SHARE__</a></div>
     <ul class="list" id="list">
       <li class="empty">No scans yet. Place a page on the glass and press Scan.</li>
@@ -370,6 +401,28 @@ select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-c
         scanning=false; form.classList.remove('scanning');
         btn.disabled=false; btn.textContent='Scan';
       });
+  });
+
+  var clearBtn=document.getElementById('clearBtn'), clearTimer=null;
+  function disarm(){ clearTimeout(clearTimer); clearBtn.classList.remove('armed'); clearBtn.textContent='Clear all'; }
+  clearBtn.addEventListener('click',function(){
+    if(scanning) return;
+    if(!clearBtn.classList.contains('armed')){
+      clearBtn.classList.add('armed');
+      clearBtn.textContent='Click again to delete all';
+      clearTimer=setTimeout(disarm, 4000);
+      return;
+    }
+    clearTimeout(clearTimer);
+    clearBtn.classList.remove('armed'); clearBtn.disabled=true; clearBtn.textContent='Clearing…';
+    fetch('/clear',{method:'POST'}).then(function(r){return r.json();})
+      .then(function(d){
+        note.className='note';
+        note.textContent=d.removed?('Removed '+d.removed+' scan'+(d.removed===1?'':'s')+'.'):'Nothing to remove.';
+        return refresh();
+      })
+      .catch(function(){ note.className='note err'; note.textContent='Could not clear the scans.'; })
+      .finally(function(){ clearBtn.disabled=false; clearBtn.textContent='Clear all'; });
   });
 
   refresh();
