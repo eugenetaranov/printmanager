@@ -58,7 +58,7 @@
   iptables:
     chain: INPUT
     protocol: tcp
-    source: "{{ local_subnet }}"
+    source: "{{ facts.default_ipv4 }}/24"
     destination_port: "{{ item }}"
     jump: ACCEPT
     action: insert

@@ -128,7 +128,7 @@
   iptables:
     chain: INPUT
     protocol: tcp
-    source: "{{ local_subnet }}"
+    source: "{{ facts.default_ipv4 }}/24"
     destination_port: "{{ airsane_port }}"
     jump: ACCEPT
     action: insert
@@ -166,7 +166,7 @@
   iptables:
     chain: INPUT
     protocol: tcp
-    source: "{{ local_subnet }}"
+    source: "{{ facts.default_ipv4 }}/24"
     destination_port: "{{ scan_web_port }}"
     jump: ACCEPT
     action: insert
