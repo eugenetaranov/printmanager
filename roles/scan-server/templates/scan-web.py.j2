@@ -50,12 +50,12 @@ def list_scans(limit=30):
     return items[:limit]
 
 
-def run_scan(mode, resolution):
+def run_scan(mode, resolution, name=""):
     if mode not in MODE_VALUES:
         mode = DEF_MODE
     if resolution not in RESOLUTIONS:
         resolution = DEF_RES
-    env = dict(os.environ, SCAN_MODE=mode, SCAN_RES=resolution, SCAN_FMT="pdf")
+    env = dict(os.environ, SCAN_MODE=mode, SCAN_RES=resolution, SCAN_NAME=name)
     with _scan_lock:
         proc = subprocess.run([SCRIPT], env=env, capture_output=True,
                               text=True, timeout=240)
@@ -138,12 +138,13 @@ class Handler(BaseHTTPRequestHandler):
         form = urllib.parse.parse_qs(raw)
         mode = form.get("mode", [DEF_MODE])[0]
         res = form.get("resolution", [DEF_RES])[0]
+        given = form.get("name", [""])[0][:80]
         t0 = time.time()
         try:
-            name = run_scan(mode, res)
-            if not name:
+            fname = run_scan(mode, res, given)
+            if not fname:
                 raise RuntimeError("No output file was produced")
-            self._json(200, {"ok": True, "file": name,
+            self._json(200, {"ok": True, "file": fname,
                              "seconds": round(time.time() - t0, 1)})
         except subprocess.TimeoutExpired:
             self._json(200, {"ok": False,
@@ -201,7 +202,13 @@ header.top{display:flex;align-items:flex-start;justify-content:space-between;gap
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;
   box-shadow:var(--shadow);padding:20px}
-.controls{display:flex;gap:12px;margin-bottom:16px}
+.controls{display:flex;gap:12px;margin-bottom:14px}
+.namefield{margin-bottom:16px}
+.lbl .opt{text-transform:none;letter-spacing:0;color:var(--faint);font-weight:500}
+.txt{width:100%;padding:10px 12px;font:500 14px var(--sans);color:var(--text);
+  background:var(--bg);border:1px solid var(--border);border-radius:10px}
+.txt::placeholder{color:var(--faint)}
+.txt:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-color:var(--accent)}
 .field{flex:1;display:flex;flex-direction:column;gap:6px}
 .field .lbl{font:600 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
 select{appearance:none;-webkit-appearance:none;width:100%;padding:10px 34px 10px 12px;
@@ -267,6 +274,11 @@ select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-c
       <label class="field"><span class="lbl">Resolution</span>
         <select name="resolution" id="resolution">__RES_OPTS__</select></label>
     </div>
+    <label class="field namefield">
+      <span class="lbl">Name <span class="opt">optional</span></span>
+      <input class="txt" type="text" name="name" id="name" maxlength="80"
+             autocomplete="off" placeholder="auto: scan-YYYYMMDD-HHMMSS">
+    </label>
     <button class="scan" id="scanBtn" type="submit">Scan</button>
     <div class="progress" aria-hidden="true"><div class="bar"></div></div>
     <p class="note" id="note" aria-live="polite"></p>
@@ -344,6 +356,7 @@ select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-c
           setStatus('idle','Ready');
           note.className='note ok';
           note.innerHTML='Saved '+d.file+' · '+d.seconds+'s — <a href="/file/'+encodeURIComponent(d.file)+'" target="_blank" rel="noopener">open</a>';
+          document.getElementById('name').value='';
           return refresh(d.file);
         }
         setStatus('error','Failed');

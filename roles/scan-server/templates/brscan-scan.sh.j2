@@ -4,12 +4,16 @@
 # (scan-web sudo's this — see /etc/sudoers.d/brscan). The whole pipeline is here
 # so there are no cross-user permission seams.
 #
-# Usage: brscan-scan.sh MODE RES QUALITY
+# Usage: brscan-scan.sh MODE RES QUALITY [NAME]
 set -e
 CHROOT='{{ .brscan4_chroot }}'
 DEST='{{ .scan_dir }}'
 GROUP='{{ .scan_group }}'
 MODE="$1"; RES="$2"; QUALITY="${3:-{{ .scan_jpeg_quality }}}"
+
+# Optional filename. Sanitize hard (this is a NOPASSWD sudo arg): keep only safe
+# characters, collapse spaces to dashes — no slashes/dots, so no path traversal.
+NAME="$(printf '%s' "${4:-}" | tr -cd 'A-Za-z0-9 _-' | sed 's/  */ /g; s/^ *//; s/ *$//; s/ /-/g')"
 
 # Validate inputs (these reach scanimage/convert; keep them to known values).
 case "$MODE" in "24bit Color"|"True Gray"|"Black & White"|"Gray[Error Diffusion]") ;; *) MODE="{{ .scan_mode }}";; esac
@@ -36,7 +40,9 @@ python3 /usr/local/lib/scan-web/pad_pnm.py "$work/p.pnm"
 # crisp; without it, q80 chroma subsampling produces a diagonal sawtooth.
 convert "$work/p.pnm" -sampling-factor 1x1 -quality "$QUALITY" "$work/p.jpg"
 
-out="$DEST/scan-$(date +%Y%m%d-%H%M%S).pdf"
+if [ -n "$NAME" ]; then base="$DEST/$NAME"; else base="$DEST/scan-$(date +%Y%m%d-%H%M%S)"; fi
+out="$base.pdf"
+[ -e "$out" ] && out="$base-$(date +%H%M%S).pdf"   # don't clobber an existing name
 img2pdf "$work/p.jpg" -o "$out"
 chgrp "$GROUP" "$out" 2>/dev/null || true
 chmod 0660 "$out" 2>/dev/null || true

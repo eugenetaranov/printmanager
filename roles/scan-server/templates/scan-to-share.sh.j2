@@ -7,4 +7,5 @@ set -eu
 sudo /usr/local/sbin/brscan-scan.sh \
   "${SCAN_MODE:-{{ .scan_mode }}}" \
   "${SCAN_RES:-{{ .scan_resolution }}}" \
-  "${SCAN_QUALITY:-{{ .scan_jpeg_quality }}}"
+  "${SCAN_QUALITY:-{{ .scan_jpeg_quality }}}" \
+  "${SCAN_NAME:-}"
