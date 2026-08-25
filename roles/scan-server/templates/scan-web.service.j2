@@ -20,8 +20,7 @@ Restart=on-failure
 RestartSec=3
 # Allow binding a privileged port (e.g. 80) as the non-root scans user.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
-# NoNewPrivileges must stay OFF: scan-to-share.sh sudo's the root scan helper
-# (Brother's driver runs in the i386 chroot, which needs privilege).
+NoNewPrivileges=true
 PrivateTmp=true
 
 [Install]

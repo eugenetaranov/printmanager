@@ -38,23 +38,7 @@
     dest: /usr/local/lib/scan-web/pad_pnm.py
     mode: "0644"
 
-- name: Install the root scan helper (chroot brscan4 -> PDF -> share)
-  template:
-    src: brscan-scan.sh.j2
-    dest: /usr/local/sbin/brscan-scan.sh
-    mode: "0755"
-
-# sudo ignores a sudoers.d file not owned by root, so force root ownership
-# (tack writes templated files as the connecting user by default).
-- name: Allow the scan-web user to run the scan helper as root
-  template:
-    src: brscan-sudoers.j2
-    dest: /etc/sudoers.d/brscan
-    mode: "0440"
-    owner: root
-    group: root
-
-- name: Install the scan-to-share wrapper
+- name: Install the scan-to-share script
   template:
     src: scan-to-share.sh.j2
     dest: /usr/local/lib/scan-web/scan-to-share.sh

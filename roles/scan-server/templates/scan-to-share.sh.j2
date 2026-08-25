@@ -1,11 +1,31 @@
 #!/bin/sh
-# Scan via Brother's driver (root chroot helper) and drop a compressed PDF into
-# the Samba scan share. Invoked by scan-web (as the scans user) and usable by
-# hand. Output settings come from the environment (scan-web sets them) or the
-# role defaults baked into the helper.
+# Scan via Brother's driver and write a compressed PDF into the Samba scan share.
+# Runs as the scans user (scan-web) — no privilege needed: it scans over the
+# localhost saned net bridge (host SANE dll.conf = net -> chroot saned ->
+# brscan4), and the scans user owns the share directory. (Scanning in the chroot
+# directly via -o truncates at high DPI; the net path delivers full data.)
 set -eu
-sudo /usr/local/sbin/brscan-scan.sh \
-  "${SCAN_MODE:-{{ .scan_mode }}}" \
-  "${SCAN_RES:-{{ .scan_resolution }}}" \
-  "${SCAN_QUALITY:-{{ .scan_jpeg_quality }}}" \
-  "${SCAN_NAME:-}"
+DEST='{{ .scan_dir }}'
+RES="${SCAN_RES:-{{ .scan_resolution }}}"
+MODE="${SCAN_MODE:-{{ .scan_mode }}}"
+QUALITY="${SCAN_QUALITY:-{{ .scan_jpeg_quality }}}"
+
+# Optional filename; keep only safe chars, spaces -> dashes (no slashes/dots, so
+# no path traversal).
+NAME="$(printf '%s' "${SCAN_NAME:-}" | tr -cd 'A-Za-z0-9 _-' | sed 's/  */ /g; s/^ *//; s/ *$//; s/ /-/g')"
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+# Scan to raw PNM, then pad to full size (Brother short-reads ~1 row).
+scanimage --mode "$MODE" --resolution "$RES" --format=pnm > "$tmp/p.pnm"
+python3 /usr/local/lib/scan-web/pad_pnm.py "$tmp/p.pnm"
+# -sampling-factor 1x1 (no chroma subsampling) keeps text edges crisp.
+convert "$tmp/p.pnm" -sampling-factor 1x1 -quality "$QUALITY" "$tmp/p.jpg"
+
+if [ -n "$NAME" ]; then base="$DEST/$NAME"; else base="$DEST/scan-$(date +%Y%m%d-%H%M%S)"; fi
+out="$base.pdf"
+[ -e "$out" ] && out="$base-$(date +%H%M%S).pdf"   # don't clobber an existing name
+img2pdf "$tmp/p.jpg" -o "$out"
+chmod 0660 "$out" 2>/dev/null || true
+echo "$out"

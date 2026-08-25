@@ -76,7 +76,7 @@ def run_scan(mode, resolution, name=""):
     env = dict(os.environ, SCAN_MODE=mode, SCAN_RES=resolution, SCAN_NAME=name)
     with _scan_lock:
         proc = subprocess.run([SCRIPT], env=env, capture_output=True,
-                              text=True, timeout=240)
+                              text=True, timeout=300)
     if proc.returncode != 0:
         msg = (proc.stderr or proc.stdout or "").strip()
         last = msg.splitlines()[-1] if msg else "scan failed"
