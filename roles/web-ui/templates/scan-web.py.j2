@@ -472,9 +472,20 @@ def build_label_pdf(tpl, cells, content, cal, font_scale, out_path):
         if content["type"] == "text":
             _draw_text(c, content["text"], bx, by, bw, bh, padpt, font_scale)
         else:
-            c.drawImage(content["reader"], bx + padpt, by + padpt,
-                        width=bw - 2 * padpt, height=bh - 2 * padpt,
-                        preserveAspectRatio=True, anchor="c", mask="auto")
+            img = content["reader"]
+            iw, ih = img.getSize()
+            aspect = iw / float(ih or 1)
+            bw2 = bw - 2 * padpt
+            bh2 = bh - 2 * padpt
+            if min(bh2 / aspect, bw2) > min(bw2 / aspect, bh2) * 1.15:  # rotate: clearly larger
+                cx = bx + bw / 2.0; cy = by + bh / 2.0
+                c.saveState(); c.translate(cx, cy); c.rotate(90)
+                c.drawImage(img, -bh2 / 2.0, -bw2 / 2.0, width=bh2, height=bw2,
+                            preserveAspectRatio=True, anchor="c", mask="auto")
+                c.restoreState()
+            else:
+                c.drawImage(img, bx + padpt, by + padpt, width=bw2, height=bh2,
+                            preserveAspectRatio=True, anchor="c", mask="auto")
     c.showPage()
     c.save()
 
@@ -486,21 +497,35 @@ def _draw_text(c, text, bx, by, bw, bh, pad, scale):
     maxw = max(1.0, bw - 2 * pad)
     maxh = max(1.0, bh - 2 * pad)
     line_gap = 1.18
-    # Fit the stacked lines vertically (cap height is ~72% of the point size),
-    # then shrink further if the widest line overflows the cell.
-    size = maxh / (0.72 + (n - 1) * line_gap)
-    widest = max((c.stringWidth(ln, font, size) for ln in lines), default=0.0)
-    if widest > maxw and widest > 0:
-        size *= maxw / widest
-    size = max(1.0, size * scale)
+
+    def fit(ew, eh):
+        # Fit the stacked lines vertically (cap height ~72% of point size), then
+        # shrink if the widest line overflows the width.
+        size = eh / (0.72 + (n - 1) * line_gap)
+        widest = max((c.stringWidth(ln, font, size) for ln in lines), default=0.0)
+        if widest > ew and widest > 0:
+            size *= ew / widest
+        return size
+
+    size_n = fit(maxw, maxh)
+    size_r = fit(maxh, maxw)
+    rot = size_r > size_n * 1.15   # rotate 90° when it clearly fits larger
+    size = max(1.0, (size_r if rot else size_n) * scale)
     c.setFont(font, size)
     c.setFillColorRGB(0, 0, 0)
     leading = size * line_gap
     cx = bx + bw / 2.0
     cy = by + bh / 2.0
-    for i, ln in enumerate(lines):
-        yb = cy + ((n - 1) / 2.0 - i) * leading - 0.35 * size
-        c.drawCentredString(cx, yb, ln)
+    if rot:
+        c.saveState()
+        c.translate(cx, cy)
+        c.rotate(90)
+        for i, ln in enumerate(lines):
+            c.drawCentredString(0, ((n - 1) / 2.0 - i) * leading - 0.35 * size, ln)
+        c.restoreState()
+    else:
+        for i, ln in enumerate(lines):
+            c.drawCentredString(cx, cy + ((n - 1) / 2.0 - i) * leading - 0.35 * size, ln)
 
 
 def _submit_lp(pdf_path):
@@ -569,7 +594,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
         if path in ("/", "/index.html", "/scan", "/print"):
-            self._send(200, render_page())
+            self._send(200, render_page(path))
         elif path == "/recent":
             self._json(200, {"scans": list_scans()})
         elif path == "/templates":
@@ -670,8 +695,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"ok": False, "error": str(e)})
 
 
-def render_page():
+def render_page(path="/"):
+    tab = "print" if (path == "/print" and PRINT_ENABLED) else "scan"
     return (PAGE
+            .replace("__SCAN_ACTIVE__", " active" if tab == "scan" else "")
+            .replace("__PRINT_ACTIVE__", " active" if tab == "print" else "")
+            .replace("__SCAN_SEL__", "true" if tab == "scan" else "false")
+            .replace("__PRINT_SEL__", "true" if tab == "print" else "false")
             .replace("__TITLE__", html.escape(TITLE))
             .replace("__SHARE__", html.escape(SHARE))
             .replace("__MODE_OPTS__", mode_options(DEF_MODE))
@@ -887,11 +917,11 @@ input[type=number]{font-variant-numeric:tabular-nums}
   </header>
 
   <nav class="tabs" role="tablist" aria-label="Tools">
-    <button class="tab-btn" id="tabScanBtn" data-tab="scan" role="tab" aria-selected="true" aria-controls="tab-scan">Scan</button>
-    <button class="tab-btn" id="tabPrintBtn" data-tab="print" role="tab" aria-selected="false" aria-controls="tab-print"__PRINT_HIDDEN__>Print</button>
+    <button class="tab-btn" id="tabScanBtn" data-tab="scan" role="tab" aria-selected="__SCAN_SEL__" aria-controls="tab-scan">Scan</button>
+    <button class="tab-btn" id="tabPrintBtn" data-tab="print" role="tab" aria-selected="__PRINT_SEL__" aria-controls="tab-print"__PRINT_HIDDEN__>Print</button>
   </nav>
 
-  <section class="tab-panel active" id="tab-scan" role="tabpanel" aria-labelledby="tabScanBtn">
+  <section class="tab-panel__SCAN_ACTIVE__" id="tab-scan" role="tabpanel" aria-labelledby="tabScanBtn">
     <form class="card" id="form">
       <div class="controls">
         <label class="field"><span class="lbl">Mode</span>
@@ -928,7 +958,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
     </section>
   </section>
 
-  <section class="tab-panel" id="tab-print" role="tabpanel" aria-labelledby="tabPrintBtn"__PRINT_HIDDEN__>
+  <section class="tab-panel__PRINT_ACTIVE__" id="tab-print" role="tabpanel" aria-labelledby="tabPrintBtn"__PRINT_HIDDEN__>
     <div class="card">
       <div class="controls tplrow">
         <label class="field"><span class="lbl">Label sheet</span>
@@ -1186,26 +1216,39 @@ input[type=number]{font-variant-numeric:tabular-nums}
   var fileNameEl=document.getElementById('fileName'), fileClear=document.getElementById('fileClear'), filePv=document.getElementById('filePv');
   var calX=document.getElementById('calX'), calY=document.getElementById('calY');
   var fill=document.getElementById('fill'), fillVal=document.getElementById('fillVal');
-  var sel=new Set(), pmode='text', fileData=null, fileNm='', filePvUrl=null, printing=false;
+  var sel=new Set(), pmode='text', fileData=null, fileNm='', filePvUrl=null, fileAspect=1, printing=false;
 
   function f2(n){ return Math.round(n*100)/100; }
   function makeThumb(dataUrl, cb){
     var img=new Image();
     img.onload=function(){
-      var max=200, w=img.width||1, h=img.height||1, s=Math.min(1, max/Math.max(w,h));
+      var w=img.width||1, h=img.height||1, max=200, s=Math.min(1, max/Math.max(w,h));
       var cv=document.createElement('canvas');
       cv.width=Math.max(1,Math.round(w*s)); cv.height=Math.max(1,Math.round(h*s));
-      try{ cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height); cb(cv.toDataURL('image/png')); }
-      catch(e){ cb(dataUrl); }
+      try{ cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height); cb(cv.toDataURL('image/png'), w/h); }
+      catch(e){ cb(dataUrl, w/h); }
     };
-    img.onerror=function(){ cb(null); };
+    img.onerror=function(){ cb(null, 1); };
     img.src=dataUrl;
   }
+  // Rotate content 90° when the rotated fit is clearly larger (tall/narrow cell).
+  function textFit(EW, EH, maxlen, nl, lg){ return Math.min(EH*0.6, (EW*0.82)/(maxlen*0.58), (EH*0.82)/(0.72+(nl-1)*lg)); }
+  function imgFit(W, H, aspect){ return Math.min(W/aspect, H); }
   function curTpl(){ return TBYID[tplSel.value] || TEMPLATES[0]; }
   function renderSheet(){
     var t=curTpl(); if(!t) return;
     var cols=t.cols, rows=t.rows, cw=t.cell_w, ch=t.cell_h, ml=t.margin_l, mt=t.margin_t, gx=t.gap_x||0, gy=t.gap_y||0;
-    var txt=(pmode==='text')?ptext.value.trim():'';
+    var txt=(pmode==='text')?ptext.value.trim():'', lg=1.18;
+    // Precompute content layout once (cell size + content are the same for every
+    // cell); auto-rotate 90° when that clearly fits larger in a tall/narrow cell.
+    var lines=null, tfs=0, tRot=false, tlh=0;
+    if(txt){
+      lines=txt.split('\n'); var nl=lines.length, maxlen=1;
+      for(var k=0;k<nl;k++){ if(lines[k].length>maxlen) maxlen=lines[k].length; }
+      var fN=textFit(cw,ch,maxlen,nl,lg), fR=textFit(ch,cw,maxlen,nl,lg);
+      tRot=fR>fN*1.15; tfs=tRot?fR:fN; tlh=tfs*lg;
+    }
+    var iRot=(pmode==='file'&&filePvUrl) ? (imgFit(ch,cw,fileAspect)>imgFit(cw,ch,fileAspect)*1.15) : false;
     // Two passes: all cell fills first, then selected outlines + content on top,
     // so a selected cell's border is never dimmed by a hovered/adjacent neighbor.
     var base='', over='';
@@ -1214,20 +1257,19 @@ input[type=number]{font-variant-numeric:tabular-nums}
       var x=ml+c*(cw+gx), y=mt+r*(ch+gy), on=sel.has(i);
       base+='<rect class="cell'+(on?' sel':'')+'" data-i="'+i+'" x="'+f2(x)+'" y="'+f2(y)+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.8"/>';
       if(!on) continue;
+      var cx=x+cw/2, cy=y+ch/2;
       over+='<rect class="seloutline" x="'+f2(x)+'" y="'+f2(y)+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.8"/>';
       if(pmode==='file' && filePvUrl){
         var ip=Math.min(cw,ch)*0.08;
-        over+='<image href="'+filePvUrl+'" x="'+f2(x+ip)+'" y="'+f2(y+ip)+'" width="'+f2(cw-2*ip)+'" height="'+f2(ch-2*ip)+'" preserveAspectRatio="xMidYMid meet"/>';
+        if(iRot){ over+='<g transform="rotate(-90 '+f2(cx)+' '+f2(cy)+')"><image href="'+filePvUrl+'" x="'+f2(cx-ch/2+ip)+'" y="'+f2(cy-cw/2+ip)+'" width="'+f2(ch-2*ip)+'" height="'+f2(cw-2*ip)+'" preserveAspectRatio="xMidYMid meet"/></g>'; }
+        else { over+='<image href="'+filePvUrl+'" x="'+f2(x+ip)+'" y="'+f2(y+ip)+'" width="'+f2(cw-2*ip)+'" height="'+f2(ch-2*ip)+'" preserveAspectRatio="xMidYMid meet"/>'; }
       }
       if(txt){
-        var lines=txt.split('\n'), nl=lines.length, maxlen=1;
-        for(var k=0;k<nl;k++){ if(lines[k].length>maxlen) maxlen=lines[k].length; }
-        var lg=1.18;
-        var fs=Math.min(ch*0.6, (cw*0.82)/(maxlen*0.58), (ch*0.82)/(0.72+(nl-1)*lg));
-        var lh=fs*lg, cx=x+cw/2, y0=y+ch/2-(nl-1)*lh/2;
-        for(var k2=0;k2<nl;k2++){
-          over+='<text class="ptext" x="'+f2(cx)+'" y="'+f2(y0+k2*lh)+'" font-size="'+f2(fs)+'">'+esc(lines[k2])+'</text>';
+        var y0=cy-(lines.length-1)*tlh/2, tt='';
+        for(var k2=0;k2<lines.length;k2++){
+          tt+='<text class="ptext" x="'+f2(cx)+'" y="'+f2(y0+k2*tlh)+'" font-size="'+f2(tfs)+'">'+esc(lines[k2])+'</text>';
         }
+        over += tRot ? ('<g transform="rotate(-90 '+f2(cx)+' '+f2(cy)+')">'+tt+'</g>') : tt;
       }
     }
     sheet.setAttribute('viewBox','0 0 210 297');
@@ -1276,7 +1318,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         fileNameEl.textContent=fileNm; fileChip.hidden=false;
         if(/^image\//.test(file.type)){
           filePv.src=res; filePv.hidden=false;
-          makeThumb(res,function(th){ filePvUrl=th; renderSheet(); });
+          makeThumb(res,function(th,asp){ filePvUrl=th; fileAspect=asp||1; renderSheet(); });
         } else { filePv.hidden=true; filePvUrl=null; }  // PDF: no in-cell preview
         setMode('file'); updateUI();
       };
@@ -1297,7 +1339,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         }
       }
     });
-    fileClear.addEventListener('click',function(){ fileData=null; fileNm=''; filePvUrl=null; pfile.value=''; fileChip.hidden=true; filePv.hidden=true; renderSheet(); updateUI(); });
+    fileClear.addEventListener('click',function(){ fileData=null; fileNm=''; filePvUrl=null; fileAspect=1; pfile.value=''; fileChip.hidden=true; filePv.hidden=true; renderSheet(); updateUI(); });
     fill.addEventListener('input',function(){ fillVal.textContent=fill.value+'%'; });
     function saveCal(){ try{ localStorage.setItem('pm_calx',calX.value); localStorage.setItem('pm_caly',calY.value); }catch(e){} }
     calX.addEventListener('change',saveCal); calY.addEventListener('change',saveCal);
