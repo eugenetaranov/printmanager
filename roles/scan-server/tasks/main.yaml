@@ -44,6 +44,12 @@
     dest: /usr/local/lib/scan-web/scan-to-share.sh
     mode: "0755"
 
+# Thumbnails + DPI/mode sidecars for the web UI's table, kept out of the share.
+# A command (not the file module) so it's reliably chowned to the scans user.
+- name: Create the scan-web data directory (thumbnails + metadata)
+  command:
+    cmd: "sh -c 'mkdir -p /var/lib/scan-web/thumbs /var/lib/scan-web/meta && chown -R {{ scan_web_user }}:{{ scan_group }} /var/lib/scan-web'"
+
 - name: Install the chroot bind-mount unit
   template:
     src: brscan-mounts.service.j2

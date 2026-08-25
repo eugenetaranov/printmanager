@@ -28,4 +28,11 @@ out="$base.pdf"
 [ -e "$out" ] && out="$base-$(date +%H%M%S).pdf"   # don't clobber an existing name
 img2pdf "$tmp/p.jpg" -o "$out"
 chmod 0660 "$out" 2>/dev/null || true
+
+# Sidecar thumbnail + metadata (DPI/mode) for the web UI, kept out of the share.
+b="$(basename "$out" .pdf)"
+mkdir -p /var/lib/scan-web/thumbs /var/lib/scan-web/meta 2>/dev/null || true
+convert "$tmp/p.jpg" -resize 480x -quality 70 "/var/lib/scan-web/thumbs/$b.jpg" 2>/dev/null || true
+printf '%s\t%s\n' "$RES" "$MODE" > "/var/lib/scan-web/meta/$b" 2>/dev/null || true
+
 echo "$out"

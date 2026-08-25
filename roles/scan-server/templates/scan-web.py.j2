@@ -1,70 +1,142 @@
 #!/usr/bin/env python3
 """Scan-to-share web UI for printmanager.
 
-Serves one page with a Scan button. Each scan runs the server-side
-scan-to-share.sh (reliable full-page scanimage -> tiff2pdf) and drops a PDF into
-the Samba share, then lists recent scans. Dependency-free (stdlib only).
-Configuration comes from the environment; see the systemd unit."""
+A Scan button + a table of recent scans (thumbnail, name, DPI, size, and
+per-file download / rename / remove). Each scan runs the server-side pipeline
+(Brother's driver over the saned net bridge) and drops a PDF into the Samba
+share. Dependency-free (stdlib only). Config comes from the environment."""
 import os
 import re
 import json
 import time
 import html
+import shutil
 import urllib.parse
 import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SCAN_DIR = os.environ.get("SCAN_WEB_DIR", "/srv/scans")
+DATA_DIR = os.environ.get("SCAN_WEB_DATA", "/var/lib/scan-web")
+THUMB_DIR = os.path.join(DATA_DIR, "thumbs")
+META_DIR = os.path.join(DATA_DIR, "meta")
 PORT = int(os.environ.get("SCAN_WEB_PORT", "8080"))
 TITLE = os.environ.get("SCAN_WEB_TITLE", "printmanager")
 SHARE = os.environ.get("SCAN_WEB_SHARE", "smb://printmanager.local/scans")
-SCRIPT = os.environ.get("SCAN_WEB_SCRIPT", "/etc/scanbd/scripts/scan-to-share.sh")
+SCRIPT = os.environ.get("SCAN_WEB_SCRIPT", "/usr/local/lib/scan-web/scan-to-share.sh")
 DEF_MODE = os.environ.get("SCAN_WEB_DEFAULT_MODE", "24bit Color")
 DEF_RES = os.environ.get("SCAN_WEB_DEFAULT_RES", "300")
 
-# (backend mode name, friendly label). The names must match the brscan backend
-# exactly (scanimage --help); friendly labels are shown in the UI.
 MODES = [("24bit Color", "Color"), ("True Gray", "Gray"), ("Black & White", "Black & white")]
 MODE_VALUES = [m[0] for m in MODES]
 RESOLUTIONS = ["150", "200", "300", "400", "600"]
 NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
+SAFE_RE = re.compile(r"[^A-Za-z0-9 _-]+")
 
 _scan_lock = threading.Lock()
 
 
-def list_scans(limit=30):
+def sanitize(raw):
+    s = SAFE_RE.sub("", raw or "").strip()
+    s = re.sub(r"\s+", "-", s)
+    return s[:80]
+
+
+def meta_for(base):
+    try:
+        with open(os.path.join(META_DIR, base)) as f:
+            parts = f.read().strip().split("\t")
+            return (parts[0] if parts else ""), (parts[1] if len(parts) > 1 else "")
+    except OSError:
+        return "", ""
+
+
+def list_scans(limit=300):
     items = []
     try:
         for name in os.listdir(SCAN_DIR):
-            if name.startswith("."):
+            if name.startswith(".") or not name.lower().endswith(".pdf"):
                 continue
             path = os.path.join(SCAN_DIR, name)
             if not os.path.isfile(path):
                 continue
             st = os.stat(path)
-            items.append({"name": name, "size": st.st_size, "mtime": int(st.st_mtime)})
+            base = name[:-4]
+            dpi, mode = meta_for(base)
+            items.append({"name": name, "size": st.st_size, "mtime": int(st.st_mtime),
+                          "dpi": dpi, "mode": mode,
+                          "thumb": os.path.isfile(os.path.join(THUMB_DIR, base + ".jpg"))})
     except FileNotFoundError:
         pass
     items.sort(key=lambda x: x["mtime"], reverse=True)
     return items[:limit]
 
 
+def ensure_thumb(base):
+    """Cached thumbnail path for a scan; render one from the PDF on demand."""
+    tp = os.path.join(THUMB_DIR, base + ".jpg")
+    if os.path.isfile(tp):
+        return tp
+    pdf = os.path.join(SCAN_DIR, base + ".pdf")
+    if not os.path.isfile(pdf):
+        return None
+    try:
+        os.makedirs(THUMB_DIR, exist_ok=True)
+        subprocess.run(["pdftoppm", "-jpeg", "-r", "25", "-singlefile", pdf, tp[:-4]],
+                       timeout=40, check=True)
+    except Exception:
+        return None
+    return tp if os.path.isfile(tp) else None
+
+
+def _rm(*paths):
+    for p in paths:
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+
+
+def remove_scan(name):
+    if not NAME_RE.fullmatch(name) or not name.lower().endswith(".pdf"):
+        return False
+    base = name[:-4]
+    _rm(os.path.join(SCAN_DIR, name),
+        os.path.join(THUMB_DIR, base + ".jpg"),
+        os.path.join(META_DIR, base))
+    return True
+
+
+def rename_scan(name, newbase):
+    if not NAME_RE.fullmatch(name) or not name.lower().endswith(".pdf"):
+        return None, "bad name"
+    newbase = sanitize(newbase)
+    if not newbase:
+        return None, "empty name"
+    src = os.path.join(SCAN_DIR, name)
+    dst = os.path.join(SCAN_DIR, newbase + ".pdf")
+    if not os.path.isfile(src):
+        return None, "not found"
+    if os.path.exists(dst):
+        return None, "a scan with that name already exists"
+    ob = name[:-4]
+    try:
+        os.rename(src, dst)
+    except OSError as e:
+        return None, str(e)
+    for d, ext in ((THUMB_DIR, ".jpg"), (META_DIR, "")):
+        try:
+            os.rename(os.path.join(d, ob + ext), os.path.join(d, newbase + ext))
+        except OSError:
+            pass
+    return newbase + ".pdf", None
+
+
 def clear_scans():
     removed = 0
-    try:
-        for name in os.listdir(SCAN_DIR):
-            if not NAME_RE.fullmatch(name):
-                continue
-            path = os.path.join(SCAN_DIR, name)
-            if os.path.isfile(path):
-                try:
-                    os.remove(path)
-                    removed += 1
-                except OSError:
-                    pass
-    except FileNotFoundError:
-        pass
+    for s in list_scans(10000):
+        if remove_scan(s["name"]):
+            removed += 1
     return removed
 
 
@@ -85,26 +157,19 @@ def run_scan(mode, resolution, name=""):
     return os.path.basename(out[-1]) if out else ""
 
 
-def options(values, default, suffix=""):
-    parts = []
-    for v in values:
-        sel = " selected" if v == default else ""
-        parts.append('<option value="%s"%s>%s%s</option>'
-                     % (html.escape(v), sel, html.escape(v), suffix))
-    return "".join(parts)
-
-
 def mode_options(default):
-    parts = []
-    for val, label in MODES:
-        sel = " selected" if val == default else ""
-        parts.append('<option value="%s"%s>%s</option>'
-                     % (html.escape(val), sel, html.escape(label)))
-    return "".join(parts)
+    return "".join('<option value="%s"%s>%s</option>'
+                   % (html.escape(v), " selected" if v == default else "", html.escape(lbl))
+                   for v, lbl in MODES)
+
+
+def res_options(default):
+    return "".join('<option value="%s"%s>%s dpi</option>'
+                   % (v, " selected" if v == default else "", v) for v in RESOLUTIONS)
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "scan-web/1"
+    server_version = "scan-web/2"
 
     def log_message(self, *a):
         pass
@@ -125,6 +190,11 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
         self._send(code, json.dumps(obj), "application/json")
 
+    def _form(self):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length else ""
+        return urllib.parse.parse_qs(raw)
+
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
         if path in ("/", "/index.html"):
@@ -132,11 +202,13 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/recent":
             self._json(200, {"scans": list_scans()})
         elif path.startswith("/file/"):
-            self._serve_file(urllib.parse.unquote(path[len("/file/"):]))
+            self._serve_pdf(urllib.parse.unquote(path[len("/file/"):]))
+        elif path.startswith("/thumb/"):
+            self._serve_thumb(urllib.parse.unquote(path[len("/thumb/"):]))
         else:
             self._send(404, "Not found", "text/plain")
 
-    def _serve_file(self, name):
+    def _serve_pdf(self, name):
         if not NAME_RE.fullmatch(name):
             return self._send(400, "Bad name", "text/plain")
         path = os.path.join(SCAN_DIR, name)
@@ -144,22 +216,36 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, "Not found", "text/plain")
         with open(path, "rb") as f:
             data = f.read()
-        ctype = "application/pdf" if name.lower().endswith(".pdf") else "application/octet-stream"
-        self._send(200, data, ctype,
+        self._send(200, data, "application/pdf",
                    {"Content-Disposition": 'inline; filename="%s"' % name})
+
+    def _serve_thumb(self, name):
+        if not NAME_RE.fullmatch(name) or not name.lower().endswith(".pdf"):
+            return self._send(400, "Bad name", "text/plain")
+        tp = ensure_thumb(name[:-4])
+        if not tp:
+            return self._send(404, "No thumbnail", "text/plain")
+        with open(tp, "rb") as f:
+            data = f.read()
+        self._send(200, data, "image/jpeg", {"Cache-Control": "max-age=86400"})
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
         if path == "/clear":
             return self._json(200, {"ok": True, "removed": clear_scans()})
+        if path == "/remove":
+            name = self._form().get("name", [""])[0]
+            return self._json(200, {"ok": remove_scan(name)})
+        if path == "/rename":
+            f = self._form()
+            new, err = rename_scan(f.get("name", [""])[0], f.get("to", [""])[0])
+            return self._json(200, {"ok": bool(new), "file": new, "error": err})
         if path != "/scan":
             return self._send(404, "Not found", "text/plain")
-        length = int(self.headers.get("Content-Length", "0") or "0")
-        raw = self.rfile.read(length).decode("utf-8") if length else ""
-        form = urllib.parse.parse_qs(raw)
-        mode = form.get("mode", [DEF_MODE])[0]
-        res = form.get("resolution", [DEF_RES])[0]
-        given = form.get("name", [""])[0][:80]
+        f = self._form()
+        mode = f.get("mode", [DEF_MODE])[0]
+        res = f.get("resolution", [DEF_RES])[0]
+        given = sanitize(f.get("name", [""])[0])
         t0 = time.time()
         try:
             fname = run_scan(mode, res, given)
@@ -179,10 +265,10 @@ def render_page():
             .replace("__TITLE__", html.escape(TITLE))
             .replace("__SHARE__", html.escape(SHARE))
             .replace("__MODE_OPTS__", mode_options(DEF_MODE))
-            .replace("__RES_OPTS__", options(RESOLUTIONS, DEF_RES, " dpi")))
+            .replace("__RES_OPTS__", res_options(DEF_RES)))
 
 
-PAGE = """<!doctype html>
+PAGE = r"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -194,6 +280,7 @@ PAGE = """<!doctype html>
   --muted:#6f6e67; --faint:#9c9b92; --accent:#0f7a63; --accent-weak:#e8f3ef;
   --primary:#1b1b18; --primary-ink:#ffffff; --danger:#b03a2c;
   --shadow:0 1px 2px rgba(20,20,16,.05),0 8px 24px -14px rgba(20,20,16,.2);
+  --pop:0 8px 30px -8px rgba(20,20,16,.35);
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;
 }
@@ -203,87 +290,82 @@ PAGE = """<!doctype html>
     --muted:#9d9c96; --faint:#6d6c66; --accent:#43c3a4; --accent-weak:#16302a;
     --primary:#eceae6; --primary-ink:#151518; --danger:#e2745f;
     --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -16px rgba(0,0,0,.6);
+    --pop:0 10px 34px -6px rgba(0,0,0,.7);
   }
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);
   line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
-.wrap{max-width:540px;margin:0 auto;padding:clamp(22px,5vw,44px) 20px 96px}
+.wrap{max-width:720px;margin:0 auto;padding:clamp(22px,5vw,44px) 20px 96px}
 header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:26px}
 .brand{font-weight:640;font-size:19px;letter-spacing:-.01em}
-.brand small{display:block;margin-top:3px;font:500 12px/1.4 var(--mono);
-  color:var(--faint);letter-spacing:.01em}
-.status{flex:none;display:inline-flex;align-items:center;gap:7px;
-  font:500 12px/1 var(--mono);color:var(--muted);padding-top:4px}
-.status .led{width:7px;height:7px;border-radius:50%;background:var(--accent);
-  box-shadow:0 0 0 0 var(--accent)}
+.brand small{display:block;margin-top:3px;font:500 12px/1.4 var(--mono);color:var(--faint);letter-spacing:.01em}
+.status{flex:none;display:inline-flex;align-items:center;gap:7px;font:500 12px/1 var(--mono);color:var(--muted);padding-top:4px}
+.status .led{width:7px;height:7px;border-radius:50%;background:var(--accent)}
 .status[data-state="busy"] .led{animation:pulse 1.2s ease-in-out infinite}
 .status[data-state="error"] .led{background:var(--danger)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;
-  box-shadow:var(--shadow);padding:20px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:20px;max-width:540px}
 .controls{display:flex;gap:12px;margin-bottom:14px}
-.namefield{margin-bottom:16px}
-.lbl .opt{text-transform:none;letter-spacing:0;color:var(--faint);font-weight:500}
-.txt{width:100%;padding:10px 12px;font:500 14px var(--sans);color:var(--text);
-  background:var(--bg);border:1px solid var(--border);border-radius:10px}
-.txt::placeholder{color:var(--faint)}
-.txt:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-color:var(--accent)}
 .field{flex:1;display:flex;flex-direction:column;gap:6px}
 .field .lbl{font:600 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
-select{appearance:none;-webkit-appearance:none;width:100%;padding:10px 34px 10px 12px;
-  font:500 14px var(--sans);color:var(--text);background:var(--bg);
-  border:1px solid var(--border);border-radius:10px;cursor:pointer;
+.lbl .opt{text-transform:none;letter-spacing:0;color:var(--faint);font-weight:500}
+select,.txt{width:100%;padding:10px 12px;font:500 14px var(--sans);color:var(--text);
+  background:var(--bg);border:1px solid var(--border);border-radius:10px}
+select{appearance:none;-webkit-appearance:none;padding-right:34px;cursor:pointer;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%239c9b92' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   background-repeat:no-repeat;background-position:right 12px center}
-select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-color:var(--accent)}
-.scan{width:100%;padding:15px 20px;border:none;border-radius:11px;
-  background:var(--primary);color:var(--primary-ink);font:640 16px var(--sans);
-  letter-spacing:-.01em;cursor:pointer;transition:opacity .15s,transform .05s}
-.scan:hover{opacity:.9}.scan:active{transform:translateY(1px)}
-.scan:disabled{opacity:.5;cursor:default}
+.namefield{margin-bottom:16px}
+select:focus-visible,.txt:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-color:var(--accent)}
+.txt::placeholder{color:var(--faint)}
+.scan{width:100%;padding:15px 20px;border:none;border-radius:11px;background:var(--primary);
+  color:var(--primary-ink);font:640 16px var(--sans);letter-spacing:-.01em;cursor:pointer;transition:opacity .15s,transform .05s}
+.scan:hover{opacity:.9}.scan:active{transform:translateY(1px)}.scan:disabled{opacity:.5;cursor:default}
 .scan:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-.progress{height:2px;margin-top:12px;border-radius:2px;background:var(--border);
-  overflow:hidden;opacity:0;transition:opacity .2s}
+.progress{height:2px;margin-top:12px;border-radius:2px;background:var(--border);overflow:hidden;opacity:0;transition:opacity .2s}
 .scanning .progress{opacity:1}
-.progress .bar{height:100%;width:34%;border-radius:2px;background:var(--accent);
-  transform:translateX(-120%);animation:indet 1.15s ease-in-out infinite}
+.progress .bar{height:100%;width:34%;border-radius:2px;background:var(--accent);transform:translateX(-120%);animation:indet 1.15s ease-in-out infinite}
 @keyframes indet{0%{transform:translateX(-120%)}100%{transform:translateX(380%)}}
 .note{margin:14px 2px 0;min-height:18px;font:500 13px var(--mono);color:var(--muted)}
 .note.ok{color:var(--accent)}.note.err{color:var(--danger)}
 .note a{color:inherit}
-.recent{margin-top:34px}
+.recent{margin-top:36px}
 .recentHead{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .recent h2{margin:0 0 2px;font-size:13px;font-weight:640;letter-spacing:.02em}
-.clear{border:none;background:none;cursor:pointer;padding:2px 4px;border-radius:6px;
-  font:600 12px var(--mono);color:var(--faint);letter-spacing:.02em}
-.clear:hover{color:var(--danger)}
-.clear:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.clear.armed{color:#fff;background:var(--danger)}
-.clear.armed:hover{color:#fff;opacity:.9}
 .recent .path{font:500 12px var(--mono);color:var(--faint);word-break:break-all}
 .recent .path a{color:var(--accent);text-decoration:none}
 .recent .path a:hover{text-decoration:underline}
-.list{list-style:none;margin:16px 0 0;padding:0}
-.row{display:flex;align-items:center;gap:12px;padding:12px 2px;border-top:1px solid var(--border)}
-.row:first-child{border-top:none}
-.row .name{flex:1;min-width:0;font:500 13px var(--mono);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row .size{flex:none;font:500 12px var(--mono);color:var(--faint);
-  font-variant-numeric:tabular-nums}
-.row .ago{flex:none;width:70px;text-align:right;font:500 12px var(--mono);
-  color:var(--faint);font-variant-numeric:tabular-nums}
-.row .dl{flex:none;color:var(--muted);text-decoration:none;padding:4px;border-radius:6px;line-height:0}
-.row .dl:hover{color:var(--text);background:var(--bg)}
-.row .dl:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.empty{padding:14px 2px;color:var(--muted);font-size:14px}
-.new{animation:in .35s ease both}
-@keyframes in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
-@media (prefers-reduced-motion:reduce){
-  *{animation-duration:.001ms!important;animation-iteration-count:1!important}
-  .progress .bar{width:100%;transform:none}
-}
+.clear{border:none;background:none;cursor:pointer;padding:2px 4px;border-radius:6px;font:600 12px var(--mono);color:var(--faint);letter-spacing:.02em}
+.clear:hover{color:var(--danger)}
+.clear:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.clear.armed{color:#fff;background:var(--danger)}
+.tablewrap{margin-top:14px;overflow-x:auto}
+table.scans{width:100%;border-collapse:collapse;font-size:13px}
+table.scans th{text-align:left;font:600 11px var(--mono);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--faint);padding:0 10px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+table.scans td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+table.scans tr.new td{animation:in .35s ease both}
+@keyframes in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+.thumb{width:34px;height:44px;object-fit:cover;border-radius:3px;border:1px solid var(--border);
+  background:var(--bg);display:block;cursor:zoom-in}
+.th-thumb{width:36px}
+.fname{font:500 13px var(--mono);word-break:break-all}
+.fname .edit{width:100%;min-width:160px;padding:4px 6px;font:500 13px var(--mono);
+  color:var(--text);background:var(--bg);border:1px solid var(--accent);border-radius:6px}
+.dpi,.size,.when{font:500 12px var(--mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.when{color:var(--faint)}
+.acts{display:flex;gap:2px;justify-content:flex-end;white-space:nowrap}
+.act{border:none;background:none;cursor:pointer;color:var(--muted);padding:5px;border-radius:6px;line-height:0;text-decoration:none}
+.act:hover{color:var(--text);background:var(--bg)}
+.act:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.act.remove.armed{color:#fff;background:var(--danger)}
+.empty{padding:16px 2px;color:var(--muted);font-size:14px}
+.preview{position:fixed;z-index:50;pointer-events:none;background:var(--surface);
+  border:1px solid var(--border);border-radius:8px;box-shadow:var(--pop);padding:4px}
+.preview img{display:block;width:300px;height:auto;border-radius:5px}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important}.progress .bar{width:100%;transform:none}}
+@media (max-width:560px){.th-when,.when{display:none}.preview img{width:220px}}
 </style>
 </head>
 <body>
@@ -318,115 +400,151 @@ select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-c
       <button type="button" class="clear" id="clearBtn">Clear all</button>
     </div>
     <div class="path">Saved to <a href="__SHARE__">__SHARE__</a></div>
-    <ul class="list" id="list">
-      <li class="empty">No scans yet. Place a page on the glass and press Scan.</li>
-    </ul>
+    <div class="tablewrap">
+      <table class="scans">
+        <thead><tr>
+          <th class="th-thumb"></th><th>Name</th><th>DPI</th><th>Size</th>
+          <th class="th-when">When</th><th></th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <p class="empty" id="empty" hidden>No scans yet. Place a page on the glass and press Scan.</p>
   </section>
 </div>
+<div class="preview" id="preview" hidden><img id="previewImg" alt=""></div>
 
 <script>
 (function(){
-  var form=document.getElementById('form');
-  var btn=document.getElementById('scanBtn');
-  var status=document.getElementById('status');
-  var statusText=document.getElementById('statusText');
-  var note=document.getElementById('note');
-  var list=document.getElementById('list');
-  var scanning=false, firstLoad=null;
+  var form=document.getElementById('form'), btn=document.getElementById('scanBtn');
+  var status=document.getElementById('status'), statusText=document.getElementById('statusText');
+  var note=document.getElementById('note'), tbody=document.getElementById('tbody');
+  var empty=document.getElementById('empty'), preview=document.getElementById('preview'), previewImg=document.getElementById('previewImg');
+  var scanning=false;
+  var ICON={
+    dl:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg>',
+    rn:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3l2 2-7 7-3 1 1-3z"/></svg>',
+    rm:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10M6 4V3h4v1M5 4l1 9h4l1-9"/></svg>'
+  };
+  function esc(s){return (s+'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function fmtSize(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(b<10240?1:0)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+  function ago(sec){ var d=Math.max(0,Math.floor(Date.now()/1000)-sec);
+    if(d<60)return 'just now'; if(d<3600)return Math.floor(d/60)+'m ago'; if(d<86400)return Math.floor(d/3600)+'h ago'; return Math.floor(d/86400)+'d ago'; }
 
-  function fmtSize(b){
-    if(b<1024) return b+' B';
-    if(b<1048576) return (b/1024).toFixed(b<10240?1:0)+' KB';
-    return (b/1048576).toFixed(1)+' MB';
-  }
-  function ago(sec){
-    var d=Math.max(0,Math.floor(Date.now()/1000)-sec);
-    if(d<60) return 'just now';
-    if(d<3600) return Math.floor(d/60)+'m ago';
-    if(d<86400) return Math.floor(d/3600)+'h ago';
-    return Math.floor(d/86400)+'d ago';
-  }
   function render(scans, newest){
-    if(!scans.length){
-      list.innerHTML='<li class="empty">No scans yet. Place a page on the glass and press Scan.</li>';
-      return;
-    }
-    list.innerHTML='';
+    tbody.innerHTML='';
+    empty.hidden = scans.length>0;
     scans.forEach(function(s){
-      var li=document.createElement('li');
-      li.className='row'+(s.name===newest?' new':'');
-      var a='/file/'+encodeURIComponent(s.name);
-      li.innerHTML='<span class="name" title="'+s.name+'">'+s.name+'</span>'+
-        '<span class="size">'+fmtSize(s.size)+'</span>'+
-        '<span class="ago">'+ago(s.mtime)+'</span>'+
-        '<a class="dl" href="'+a+'" target="_blank" rel="noopener" title="Open" aria-label="Open '+s.name+'">'+
-        '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg></a>';
-      list.appendChild(li);
+      var enc=encodeURIComponent(s.name);
+      var tr=document.createElement('tr');
+      tr.className = (s.name===newest?'new':'');
+      tr.dataset.name=s.name;
+      tr.innerHTML=
+        '<td><img class="thumb" loading="lazy" src="/thumb/'+enc+'" alt="" data-src="/thumb/'+enc+'"></td>'+
+        '<td><span class="fname">'+esc(s.name)+'</span></td>'+
+        '<td class="dpi">'+(s.dpi?esc(s.dpi):'—')+'</td>'+
+        '<td class="size">'+fmtSize(s.size)+'</td>'+
+        '<td class="when">'+ago(s.mtime)+'</td>'+
+        '<td><div class="acts">'+
+          '<a class="act" href="/file/'+enc+'" download title="Download" aria-label="Download">'+ICON.dl+'</a>'+
+          '<button type="button" class="act" data-act="rename" title="Rename" aria-label="Rename">'+ICON.rn+'</button>'+
+          '<button type="button" class="act remove" data-act="remove" title="Remove" aria-label="Remove">'+ICON.rm+'</button>'+
+        '</div></td>';
+      tbody.appendChild(tr);
     });
   }
   function refresh(newest){
     return fetch('/recent').then(function(r){return r.json();})
-      .then(function(d){render(d.scans||[], newest);})
-      .catch(function(){});
+      .then(function(d){render(d.scans||[], newest);}).catch(function(){});
   }
-  function setStatus(state,text){ status.dataset.state=state; statusText.textContent=text; }
+  function setStatus(st,t){ status.dataset.state=st; statusText.textContent=t; }
 
+  // --- scan ---
   form.addEventListener('submit',function(e){
-    e.preventDefault();
-    if(scanning) return;
-    scanning=true;
-    form.classList.add('scanning');
-    btn.disabled=true; btn.textContent='Scanning…';
-    note.className='note'; note.textContent='';
-    setStatus('busy','Scanning');
-    var body=new URLSearchParams(new FormData(form)).toString();
-    fetch('/scan',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body})
+    e.preventDefault(); if(scanning) return;
+    scanning=true; form.classList.add('scanning'); btn.disabled=true; btn.textContent='Scanning…';
+    note.className='note'; note.textContent=''; setStatus('busy','Scanning');
+    fetch('/scan',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams(new FormData(form)).toString()})
       .then(function(r){return r.json();})
       .then(function(d){
-        if(d.ok){
-          setStatus('idle','Ready');
-          note.className='note ok';
-          note.innerHTML='Saved '+d.file+' · '+d.seconds+'s — <a href="/file/'+encodeURIComponent(d.file)+'" target="_blank" rel="noopener">open</a>';
-          document.getElementById('name').value='';
-          return refresh(d.file);
-        }
-        setStatus('error','Failed');
-        note.className='note err'; note.textContent=d.error||'Scan failed.';
+        if(d.ok){ setStatus('idle','Ready'); note.className='note ok';
+          note.innerHTML='Saved '+esc(d.file)+' · '+d.seconds+'s — <a href="/file/'+encodeURIComponent(d.file)+'" target="_blank" rel="noopener">open</a>';
+          document.getElementById('name').value=''; return refresh(d.file); }
+        setStatus('error','Failed'); note.className='note err'; note.textContent=d.error||'Scan failed.';
       })
-      .catch(function(){
-        setStatus('error','Failed');
-        note.className='note err'; note.textContent='Could not reach the scanner service.';
-      })
-      .finally(function(){
-        scanning=false; form.classList.remove('scanning');
-        btn.disabled=false; btn.textContent='Scan';
-      });
+      .catch(function(){ setStatus('error','Failed'); note.className='note err'; note.textContent='Could not reach the scanner service.'; })
+      .finally(function(){ scanning=false; form.classList.remove('scanning'); btn.disabled=false; btn.textContent='Scan'; });
   });
 
+  // --- row actions (rename / remove) ---
+  tbody.addEventListener('click',function(e){
+    var b=e.target.closest('[data-act]'); if(!b) return;
+    var tr=b.closest('tr'), name=tr.dataset.name;
+    if(b.dataset.act==='remove'){
+      if(!b.classList.contains('armed')){
+        b.classList.add('armed'); b.title='Click again to delete';
+        setTimeout(function(){ b.classList.remove('armed'); b.title='Remove'; }, 3000);
+        return;
+      }
+      fetch('/remove',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:'name='+encodeURIComponent(name)}).then(function(){ refresh(); });
+    } else if(b.dataset.act==='rename'){
+      startRename(tr, name);
+    }
+  });
+  function startRename(tr, name){
+    var span=tr.querySelector('.fname');
+    if(tr.querySelector('.edit')) return;
+    var base=name.replace(/\.pdf$/i,'');
+    var inp=document.createElement('input');
+    inp.className='edit'; inp.type='text'; inp.value=base; inp.maxLength=80;
+    span.replaceWith(inp); inp.focus(); inp.select();
+    function done(save){
+      var to=inp.value.trim();
+      if(!save || !to || to===base){ refresh(); return; }
+      fetch('/rename',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:'name='+encodeURIComponent(name)+'&to='+encodeURIComponent(to)})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          if(!d.ok){ note.className='note err'; note.textContent=d.error||'Rename failed.'; }
+          return refresh(d.file);
+        }).catch(function(){ refresh(); });
+    }
+    inp.addEventListener('keydown',function(ev){ if(ev.key==='Enter'){ev.preventDefault();done(true);} else if(ev.key==='Escape'){done(false);} });
+    inp.addEventListener('blur',function(){ done(true); });
+  }
+
+  // --- hover preview ---
+  tbody.addEventListener('mouseover',function(e){
+    var img=e.target.closest('.thumb'); if(!img) return;
+    previewImg.src=img.dataset.src; preview.hidden=false; movePreview(e);
+  });
+  tbody.addEventListener('mousemove',function(e){ if(!preview.hidden && e.target.closest('.thumb')) movePreview(e); });
+  tbody.addEventListener('mouseout',function(e){ if(e.target.closest('.thumb')) preview.hidden=true; });
+  function movePreview(e){
+    var pad=16, w=preview.offsetWidth||316, h=preview.offsetHeight||420;
+    var x=e.clientX+pad, y=e.clientY+pad;
+    if(x+w>window.innerWidth) x=e.clientX-w-pad;
+    if(y+h>window.innerHeight) y=Math.max(8, window.innerHeight-h-8);
+    preview.style.left=x+'px'; preview.style.top=y+'px';
+  }
+
+  // --- clear all ---
   var clearBtn=document.getElementById('clearBtn'), clearTimer=null;
   function disarm(){ clearTimeout(clearTimer); clearBtn.classList.remove('armed'); clearBtn.textContent='Clear all'; }
   clearBtn.addEventListener('click',function(){
     if(scanning) return;
-    if(!clearBtn.classList.contains('armed')){
-      clearBtn.classList.add('armed');
-      clearBtn.textContent='Click again to delete all';
-      clearTimer=setTimeout(disarm, 4000);
-      return;
-    }
-    clearTimeout(clearTimer);
-    clearBtn.classList.remove('armed'); clearBtn.disabled=true; clearBtn.textContent='Clearing…';
+    if(!clearBtn.classList.contains('armed')){ clearBtn.classList.add('armed'); clearBtn.textContent='Click again to delete all'; clearTimer=setTimeout(disarm,4000); return; }
+    clearTimeout(clearTimer); clearBtn.classList.remove('armed'); clearBtn.disabled=true; clearBtn.textContent='Clearing…';
     fetch('/clear',{method:'POST'}).then(function(r){return r.json();})
-      .then(function(d){
-        note.className='note';
-        note.textContent=d.removed?('Removed '+d.removed+' scan'+(d.removed===1?'':'s')+'.'):'Nothing to remove.';
-        return refresh();
-      })
+      .then(function(d){ note.className='note'; note.textContent=d.removed?('Removed '+d.removed+' scan'+(d.removed===1?'':'s')+'.'):'Nothing to remove.'; return refresh(); })
       .catch(function(){ note.className='note err'; note.textContent='Could not clear the scans.'; })
       .finally(function(){ clearBtn.disabled=false; clearBtn.textContent='Clear all'; });
   });
 
   refresh();
-  setInterval(function(){ if(!scanning) refresh(); }, 15000);
+  setInterval(function(){ if(!scanning && !tbody.querySelector('.edit')) refresh(); }, 15000);
 })();
 </script>
 </body>

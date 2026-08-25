@@ -6,6 +6,7 @@ scan_packages:
   - sane-utils
   - img2pdf
   - imagemagick
+  - poppler-utils      # pdftoppm: thumbnails for the web UI's table
   - qemu-user-static
   - binfmt-support
   - debootstrap
