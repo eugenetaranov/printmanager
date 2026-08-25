@@ -16,8 +16,8 @@ scan_samba_user: scans
 # Allow unauthenticated (guest) access to the [scans] share. When true, clients
 # reach the share without a password, mapped to scan_samba_user (the owner of
 # scan_dir) so they can read and write scans. Suitable for a trusted LAN, where
-# access is already restricted to local_subnet by hosts allow/deny. Set false to
-# require the Samba password below instead.
+# access is already restricted to the LAN subnet by hosts allow/deny. Set false
+# to require the Samba password below instead.
 scan_samba_guest: true
 
 # Samba password for scan_samba_user. This is a SECRET — leave empty here and

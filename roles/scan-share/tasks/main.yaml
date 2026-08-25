@@ -1,8 +1,8 @@
 # Samba share that holds scanned documents. Authored before scan-server so the
 # destination directory and group exist before the scanner writes into them.
 #
-# Overridable variables: see defaults/main.yaml. Depends on `base` for
-# local_subnet and ufw.
+# Overridable variables: see defaults/main.yaml. Depends on `base` for the
+# firewall baseline.
 
 - name: Install Samba
   apt:

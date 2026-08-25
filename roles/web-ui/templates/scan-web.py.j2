@@ -813,6 +813,9 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .schematic{max-width:280px}
 .schematic .mband{fill:var(--accent-weak)}
 .schematic .cell{fill:transparent;stroke:var(--border);stroke-width:.4;pointer-events:none}
+.schematic .hlband{fill:var(--danger);fill-opacity:.2}
+.schematic .cell.hl{fill:var(--danger);fill-opacity:.14;stroke:var(--danger);stroke-width:.6}
+.schematic .hlgap{fill:var(--danger);fill-opacity:.32}
 .schematic .dim{fill:var(--muted);font-family:var(--mono);font-weight:600;text-anchor:middle}
 .seg{display:inline-flex;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:3px;margin-bottom:14px}
 .seg-btn{border:none;background:none;padding:6px 14px;border-radius:7px;font:600 12.5px var(--sans);color:var(--muted);cursor:pointer}
@@ -1309,18 +1312,22 @@ input[type=number]{font-variant-numeric:tabular-nums}
         margin_l:parseFloat(eML.value), margin_t:parseFloat(eMT.value),
         gap_x:parseFloat(eGX.value), gap_y:parseFloat(eGY.value)};
     }
-    function buildSchematic(v){
+    var curHl=null;   // which field is focused -> red highlight in the schematic
+    function buildSchematic(v, hl){
       eSheet.setAttribute('viewBox','0 0 210 297');
       var s='<rect class="paper" x="0" y="0" width="210" height="297" rx="2"/>';
       if(v){
         var d=deriveCells(v), cw=d.cw, ch=d.ch, ml=v.margin_l, mt=v.margin_t, gx=v.gap_x, gy=v.gap_y;
         if(cw>0 && ch>0){
-          s+='<rect class="mband" x="0" y="0" width="210" height="'+f2(mt)+'"/>';
-          s+='<rect class="mband" x="0" y="0" width="'+f2(ml)+'" height="297"/>';
+          s+='<rect class="'+(hl==='mt'?'hlband':'mband')+'" x="0" y="0" width="210" height="'+f2(mt)+'"/>';
+          s+='<rect class="'+(hl==='ml'?'hlband':'mband')+'" x="0" y="0" width="'+f2(ml)+'" height="297"/>';
           for(var i=0;i<v.cols*v.rows;i++){
             var r=Math.floor(i/v.cols), c=i%v.cols;
-            s+='<rect class="cell" x="'+f2(ml+c*(cw+gx))+'" y="'+f2(mt+r*(ch+gy))+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.6"/>';
+            var cls='cell'+(((hl==='cols'&&r===0)||(hl==='rows'&&c===0))?' hl':'');
+            s+='<rect class="'+cls+'" x="'+f2(ml+c*(cw+gx))+'" y="'+f2(mt+r*(ch+gy))+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.6"/>';
           }
+          if(hl==='gx' && gx>0){ for(var c2=0;c2<v.cols-1;c2++){ s+='<rect class="hlgap" x="'+f2(ml+c2*(cw+gx)+cw)+'" y="'+f2(mt)+'" width="'+f2(gx)+'" height="'+f2(297-2*mt)+'"/>'; } }
+          if(hl==='gy' && gy>0){ for(var r2=0;r2<v.rows-1;r2++){ s+='<rect class="hlgap" x="'+f2(ml)+'" y="'+f2(mt+r2*(ch+gy)+ch)+'" width="'+f2(210-2*ml)+'" height="'+f2(gy)+'"/>'; } }
         }
       }
       eSheet.innerHTML=s;
@@ -1333,7 +1340,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         v.margin_l>=0 && v.margin_t>=0 && v.gap_x>=0 && v.gap_y>=0;
       var fits=false, cw, ch;
       if(valid){ var d=deriveCells(v); cw=d.cw; ch=d.ch; fits=(cw>=5 && ch>=5); }
-      buildSchematic(valid?v:null);
+      buildSchematic(valid?v:null, curHl);
       if(!named){ eCap.className='cellcap'; eCap.textContent='Name your sheet to save it.'; }
       else if(!valid){ eCap.className='cellcap err'; eCap.textContent='Enter valid numbers (cols 1–50, rows 1–100, margins/gaps ≥ 0).'; }
       else if(!fits){ eCap.className='cellcap err'; eCap.textContent="Doesn't fit A4 — reduce margins, gaps, or counts."; }
@@ -1383,15 +1390,24 @@ input[type=number]{font-variant-numeric:tabular-nums}
     eCols.addEventListener('input',function(){ syncName(); updateEditor(); });
     eRows.addEventListener('input',function(){ syncName(); updateEditor(); });
     [eML,eMT,eGX,eGY].forEach(function(el){ el.addEventListener('input',updateEditor); });
+    // Highlight the matching part of the diagram in red while a field is focused.
+    var HLMAP={eCols:'cols',eRows:'rows',eML:'ml',eMT:'mt',eGX:'gx',eGY:'gy'};
+    [eCols,eRows,eML,eMT,eGX,eGY].forEach(function(el){
+      el.addEventListener('focus',function(){ curHl=HLMAP[el.id]||null; updateEditor(); });
+      el.addEventListener('blur',function(){ curHl=null; updateEditor(); });
+    });
     eCancel.addEventListener('click',backToList);
     eSave.addEventListener('click',function(){
       if(eSave.disabled) return;
-      var old=eSave.textContent; eSave.disabled=true; eSave.textContent='Saving…';
-      fetch('/templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(readForm())})
+      eSave.disabled=true; eSave.textContent='Saving…';
+      function fail(msg){ eCap.className='cellcap err'; eCap.textContent=msg; eSave.disabled=false; eSave.textContent='Save sheet'; }
+      var ctrl=new AbortController(), to=setTimeout(function(){ ctrl.abort(); }, 12000);
+      fetch('/templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(readForm()),signal:ctrl.signal})
         .then(function(r){return r.json();}).then(function(d){
+          clearTimeout(to);
           if(d.ok){ applyTemplates(d.templates, d.id); backToList(); }
-          else { eCap.className='cellcap err'; eCap.textContent=d.error||'Could not save.'; eSave.disabled=false; eSave.textContent=old; }
-        }).catch(function(){ eCap.className='cellcap err'; eCap.textContent='Could not reach the server.'; eSave.disabled=false; eSave.textContent=old; });
+          else fail(d.error||'Could not save.');
+        }).catch(function(){ clearTimeout(to); fail('Could not save — please try again.'); });
     });
     restoreBtn.addEventListener('click',function(){
       fetch('/templates/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})

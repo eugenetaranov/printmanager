@@ -4,7 +4,7 @@
 # ACCEPT rules above the trailing DROP this role appends.
 #
 # Required/overridable variables live in defaults/main.yaml:
-#   local_subnet, base_packages, base_firewall_enabled, base_ssh_port,
+#   base_packages, base_firewall_enabled, base_ssh_port,
 #   base_ensure_updates_pocket
 
 # Runs before the package install below so its `update_cache` refresh picks up
@@ -37,25 +37,8 @@
       locale-gen en_US.UTF-8 >/dev/null 2>&1;
       update-locale LANG=en_US.UTF-8 >/dev/null 2>&1; }'
 
-# --- Firewall: retire ufw, then build a default-deny baseline with iptables ----
-# Order is critical. `ufw-init stop` runs flush_builtins, which flushes the
-# INPUT chain entirely -- so ufw MUST be torn down BEFORE we add our rules,
-# otherwise stopping it would wipe them. After the flush the chain policy is
-# ACCEPT (open) until the trailing DROP below lands, so the live SSH session is
-# never at risk during the switch.
-- name: Stop and disable ufw (replaced by iptables)
-  systemd:
-    name: ufw
-    state: stopped
-    enabled: false
-  when: base_firewall_enabled
-
-- name: Remove the ufw package
-  apt:
-    name: ufw
-    state: absent
-  when: base_firewall_enabled
-
+# --- Firewall: default-deny baseline (iptables; restored on boot by ------------
+# iptables-persistent) ---------------------------------------------------------
 # Allow rules are appended first (so they sit above the DROP), SSH included,
 # BEFORE the default-deny rule is added -- this is what prevents a lockout.
 # Service roles run after base and INSERT their own ACCEPT rules, which land
@@ -96,9 +79,9 @@
     persist: true
   when: base_firewall_enabled
 
-# IPv6 gets the same baseline: dropping ufw would otherwise leave v6 wide open.
-# No LAN service ports here -- the LAN is IPv4 (local_subnet) -- but SSH and the
-# established/loopback allowances keep the host reachable and self-consistent.
+# IPv6 gets the same baseline so v6 isn't left wide open. No LAN service ports
+# here -- the LAN is IPv4 -- but SSH and the established/loopback allowances keep
+# the host reachable and self-consistent.
 - name: Allow loopback traffic (IPv6)
   iptables:
     chain: INPUT

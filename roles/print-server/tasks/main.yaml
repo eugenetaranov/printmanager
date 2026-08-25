@@ -1,8 +1,8 @@
 # Network print server: CUPS + brlaser driver for the USB Brother DCP-1511,
 # shared to the LAN and advertised over Avahi/mDNS (AirPrint).
 #
-# Overridable variables: see defaults/main.yaml. Depends on `base` for
-# local_subnet and ufw.
+# Overridable variables: see defaults/main.yaml. Depends on `base` for the
+# firewall baseline.
 
 - name: Install CUPS, brlaser driver, and Avahi
   apt:
@@ -46,7 +46,7 @@
       /usr/local/sbin/setup-printer-queue.sh
 
 # Two direct tasks rather than a loop: tack renders templates in a single pass,
-# so a loop item like "{{ cups_listen_port }}/tcp" would reach ufw unrendered.
+# so a loop item like "{{ cups_listen_port }}/tcp" would reach iptables unrendered.
 # action: insert places these ACCEPTs above the default-deny DROP the base role
 # appends to INPUT, regardless of role run order.
 - name: Open the firewall for IPP (CUPS) from the LAN
