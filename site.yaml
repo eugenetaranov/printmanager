@@ -9,8 +9,10 @@ ssh:
   key: ~/.ssh/identities/local_servers/default
 
 roles:
-  # Order matters: base sets up ufw + common packages; scan-share creates the
-  # scan directory and group that scan-server writes into.
+  # Order matters: base sets up the firewall + common packages; scan-share
+  # creates the scan directory and group that scan-server writes into; web-ui
+  # runs last because it shells out to scan-server's pipeline and print-server's
+  # CUPS queue.
   - role: base
     tags: [base]
   - role: print-server
@@ -19,4 +21,6 @@ roles:
     tags: [scan, share]
   - role: scan-server
     tags: [scan]
+  - role: web-ui
+    tags: [web]
 

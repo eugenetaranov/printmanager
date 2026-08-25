@@ -1,0 +1,57 @@
+# printmanager web UI (Scan + Print). Serves the stdlib-Python app on port 80 as
+# the unprivileged scans user (CAP_NET_BIND_SERVICE). Shells out to the scan
+# pipeline (scan-server) and the CUPS queue (print-server), so it runs after
+# both. Overridable variables: see defaults/main.yaml.
+
+- name: Install web UI packages (reportlab, Pillow, poppler, CUPS client)
+  apt:
+    name: "{{ web_packages }}"
+    state: present
+    update_cache: true
+  when: scan_web_enabled
+
+# Shared with scan-server, which also drops the scan pipeline scripts here.
+# Ensured independently so this role does not rely on run order for the path.
+- name: Ensure the web app directory exists
+  file:
+    path: /usr/local/lib/scan-web
+    state: directory
+    mode: "0755"
+  when: scan_web_enabled
+
+- name: Install the scan-web server
+  template:
+    src: scan-web.py.j2
+    dest: /usr/local/lib/scan-web/scan-web.py
+    mode: "0755"
+  when: scan_web_enabled
+  notify: Restart scan-web
+
+- name: Install the scan-web systemd unit
+  template:
+    src: scan-web.service.j2
+    dest: /etc/systemd/system/scan-web.service
+    mode: "0644"
+  when: scan_web_enabled
+  notify: Restart scan-web
+
+- name: Ensure scan-web is running and enabled
+  systemd:
+    name: scan-web
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: scan_web_enabled
+
+# Inserted above the base default-deny DROP (see the base role).
+- name: Open the firewall for the web UI from the LAN
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    source: "{{ facts.default_ipv4_subnet }}"
+    destination_port: "{{ scan_web_port }}"
+    jump: ACCEPT
+    action: insert
+    comment: "web: scan+print ui"
+    persist: true
+  when: scan_web_enabled

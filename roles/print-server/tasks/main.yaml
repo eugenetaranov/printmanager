@@ -53,7 +53,7 @@
   iptables:
     chain: INPUT
     protocol: tcp
-    source: "{{ facts.default_ipv4 }}/24"
+    source: "{{ facts.default_ipv4_subnet }}"
     destination_port: "{{ cups_listen_port }}"
     jump: ACCEPT
     action: insert
@@ -64,7 +64,7 @@
   iptables:
     chain: INPUT
     protocol: udp
-    source: "{{ facts.default_ipv4 }}/24"
+    source: "{{ facts.default_ipv4_subnet }}"
     destination_port: 5353
     jump: ACCEPT
     action: insert

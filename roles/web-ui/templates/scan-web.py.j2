@@ -1,0 +1,1416 @@
+#!/usr/bin/env python3
+"""Scan + print web UI for printmanager.
+
+Two tools on one page:
+  * Scan  — a Scan button + a table of recent scans (thumbnail, name, DPI, size,
+    per-file download / rename / remove). Each scan runs the server-side pipeline
+    (Brother's driver over the saned net bridge) and drops a PDF into the share.
+  * Print — a label-sheet printer: pick an A4 label layout, click the cells on the
+    rendered sheet, drop in text (e.g. a number) or an image/PDF, and it composes
+    an A4 PDF and submits it to the local CUPS queue.
+
+Stdlib only, except reportlab/Pillow (imported lazily, and only on the print
+path). Config comes from the environment."""
+import os
+import re
+import io
+import json
+import time
+import html
+import base64
+import shutil
+import tempfile
+import urllib.parse
+import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+SCAN_DIR = os.environ.get("SCAN_WEB_DIR", "/srv/scans")
+DATA_DIR = os.environ.get("SCAN_WEB_DATA", "/var/lib/scan-web")
+THUMB_DIR = os.path.join(DATA_DIR, "thumbs")
+META_DIR = os.path.join(DATA_DIR, "meta")
+PORT = int(os.environ.get("SCAN_WEB_PORT", "8080"))
+TITLE = os.environ.get("SCAN_WEB_TITLE", "printmanager")
+SHARE = os.environ.get("SCAN_WEB_SHARE", "smb://printmanager.local/scans")
+SCRIPT = os.environ.get("SCAN_WEB_SCRIPT", "/usr/local/lib/scan-web/scan-to-share.sh")
+DEF_MODE = os.environ.get("SCAN_WEB_DEFAULT_MODE", "24bit Color")
+DEF_RES = os.environ.get("SCAN_WEB_DEFAULT_RES", "300")
+
+PRINT_ENABLED = os.environ.get("SCAN_WEB_PRINT_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+PRINT_QUEUE = os.environ.get("SCAN_WEB_PRINT_QUEUE", "DCP1511")
+
+MODES = [("24bit Color", "Color"), ("True Gray", "Gray"), ("Black & White", "Black & white")]
+MODE_VALUES = [m[0] for m in MODES]
+RESOLUTIONS = ["150", "200", "300", "400", "600"]
+NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
+SAFE_RE = re.compile(r"[^A-Za-z0-9 _-]+")
+
+# --- Label sheets: built-in presets + user-managed sheets --------------------
+# Built-in A4 presets (mm, approximate real stock). The UI can edit ANY sheet
+# (presets included — margins usually need a test print or two to dial in) and
+# add new ones; changes persist to TEMPLATES_FILE. Editing a preset stores an
+# override under its id; "reset" drops the override and restores the seed here.
+# Sheets use symmetric margins: right = left, bottom = top, so cell size is
+# derived. Override the built-in seed wholesale via SCAN_WEB_LABEL_TEMPLATES.
+PAGE_W, PAGE_H = 210.0, 297.0        # A4 default page size (stored per template)
+MIN_CELL_MM = 5.0
+TEMPLATES_FILE = os.path.join(DATA_DIR, "sheets.json")
+
+DEFAULT_TEMPLATES = [
+    {"id": "a4-44", "name": "A4 · 44 labels (4×11)", "cols": 4, "rows": 11,
+     "cell_w": 48.5, "cell_h": 25.4, "margin_l": 6.5, "margin_t": 9.5, "gap_x": 0, "gap_y": 0},
+    {"id": "a4-32", "name": "A4 · 32 labels (4×8)", "cols": 4, "rows": 8,
+     "cell_w": 48.5, "cell_h": 35.0, "margin_l": 6.5, "margin_t": 8.5, "gap_x": 0, "gap_y": 0},
+    {"id": "a4-21", "name": "A4 · 21 labels (3×7)", "cols": 3, "rows": 7,
+     "cell_w": 63.5, "cell_h": 38.1, "margin_l": 7.2, "margin_t": 15.1, "gap_x": 2.5, "gap_y": 0},
+    {"id": "a4-8", "name": "A4 · 8 labels (2×4)", "cols": 2, "rows": 4,
+     "cell_w": 99.1, "cell_h": 67.7, "margin_l": 5.9, "margin_t": 13.1, "gap_x": 0, "gap_y": 0},
+]
+
+_TEMPLATE_KEYS = ("id", "name", "cols", "rows", "margin_l", "margin_t",
+                  "gap_x", "gap_y", "cell_w", "cell_h", "page_w", "page_h")
+
+
+def _with_defaults(t):
+    t = dict(t)
+    t.setdefault("page_w", PAGE_W)
+    t.setdefault("page_h", PAGE_H)
+    t.setdefault("gap_x", 0)
+    t.setdefault("gap_y", 0)
+    return t
+
+
+try:
+    _tj = os.environ.get("SCAN_WEB_LABEL_TEMPLATES")
+    _BUILTIN_SRC = json.loads(_tj) if _tj else DEFAULT_TEMPLATES
+except Exception:
+    _BUILTIN_SRC = DEFAULT_TEMPLATES
+BUILTIN_TEMPLATES = [_with_defaults(t) for t in _BUILTIN_SRC]
+BUILTIN_IDS = {t["id"] for t in BUILTIN_TEMPLATES}
+
+LABEL_TEMPLATES = list(BUILTIN_TEMPLATES)
+TEMPLATES_BY_ID = {t["id"]: t for t in LABEL_TEMPLATES}
+
+_scan_lock = threading.Lock()
+_print_lock = threading.Lock()
+_templates_lock = threading.Lock()
+
+
+def derive_cells(page_w, page_h, cols, rows, ml, mt, gx, gy):
+    """Symmetric margins: right = left, bottom = top -> derive cell size."""
+    cw = (page_w - 2 * ml - (cols - 1) * gx) / cols
+    ch = (page_h - 2 * mt - (rows - 1) * gy) / rows
+    return cw, ch
+
+
+def _tnum(v, label):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        raise ValueError("%s must be a number" % label)
+
+
+def validate_template(obj):
+    """Normalize a submitted sheet (no id/flags) or raise ValueError."""
+    name = (obj.get("name") or "").strip()[:60]
+    if not name:
+        raise ValueError("Name is required")
+    cols = int(_tnum(obj.get("cols"), "Columns"))
+    rows = int(_tnum(obj.get("rows"), "Rows"))
+    if not (1 <= cols <= 50) or not (1 <= rows <= 100):
+        raise ValueError("Columns must be 1–50 and rows 1–100")
+    page_w = _tnum(obj.get("page_w", PAGE_W), "Page width") or PAGE_W
+    page_h = _tnum(obj.get("page_h", PAGE_H), "Page height") or PAGE_H
+    ml = _tnum(obj.get("margin_l", 0), "Left margin")
+    mt = _tnum(obj.get("margin_t", 0), "Top margin")
+    gx = _tnum(obj.get("gap_x", 0), "Column gap")
+    gy = _tnum(obj.get("gap_y", 0), "Row gap")
+    for v, label in ((ml, "Left margin"), (mt, "Top margin"),
+                     (gx, "Column gap"), (gy, "Row gap")):
+        if v < 0:
+            raise ValueError("%s can't be negative" % label)
+    gx, gy = round(gx), round(gy)   # gaps are whole millimetres
+    cw, ch = derive_cells(page_w, page_h, cols, rows, ml, mt, gx, gy)
+    if cw < MIN_CELL_MM or ch < MIN_CELL_MM:
+        raise ValueError("Doesn't fit the page — reduce margins, gaps, or counts")
+    return {"name": name, "cols": cols, "rows": rows,
+            "margin_l": round(ml, 2), "margin_t": round(mt, 2),
+            "gap_x": round(gx, 2), "gap_y": round(gy, 2),
+            "cell_w": round(cw, 2), "cell_h": round(ch, 2),
+            "page_w": page_w, "page_h": page_h}
+
+
+def _slug(name, taken):
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "sheet"
+    tid, i = base, 2
+    while tid in taken:
+        tid, i = "%s-%d" % (base, i), i + 1
+    return tid
+
+
+def load_all():
+    """The full sheet list, seeded from the built-in presets on first run so
+    every sheet (presets included) is editable and deletable."""
+    if not os.path.exists(TEMPLATES_FILE):
+        save_all(BUILTIN_TEMPLATES)
+    try:
+        with open(TEMPLATES_FILE) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return [dict(t) for t in BUILTIN_TEMPLATES]
+    return [_with_defaults(t) for t in (data if isinstance(data, list) else [])
+            if isinstance(t, dict) and t.get("id")]
+
+
+def save_all(items):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    tmp = TEMPLATES_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump([{k: t.get(k) for k in _TEMPLATE_KEYS} for t in items], f, indent=2)
+    os.replace(tmp, TEMPLATES_FILE)
+
+
+def refresh_templates():
+    global LABEL_TEMPLATES, TEMPLATES_BY_ID
+    items = load_all()
+    for t in items:
+        t["builtin"] = t["id"] in BUILTIN_IDS   # informational "Preset" badge only
+    LABEL_TEMPLATES = items
+    TEMPLATES_BY_ID = {t["id"]: t for t in items}
+
+
+def upsert_template(obj):
+    """Create a sheet, or update the one whose id is sent. Returns the id."""
+    with _templates_lock:
+        items = load_all()
+        norm = validate_template(obj)
+        ids = {t["id"] for t in items}
+        tid = (obj.get("id") or "").strip()
+        if tid and tid in ids:
+            norm["id"] = tid
+            items = [norm if t["id"] == tid else t for t in items]
+        else:
+            norm["id"] = _slug(norm["name"], ids | BUILTIN_IDS)
+            items.append(norm)
+        save_all(items)
+        refresh_templates()
+        return norm["id"]
+
+
+def delete_template(tid):
+    with _templates_lock:
+        save_all([t for t in load_all() if t["id"] != tid])
+        refresh_templates()
+
+
+def restore_presets():
+    """Re-add any built-in presets that have been deleted."""
+    with _templates_lock:
+        items = load_all()
+        have = {t["id"] for t in items}
+        items += [dict(b) for b in BUILTIN_TEMPLATES if b["id"] not in have]
+        save_all(items)
+        refresh_templates()
+
+
+refresh_templates()
+
+
+def sanitize(raw):
+    s = SAFE_RE.sub("", raw or "").strip()
+    s = re.sub(r"\s+", "-", s)
+    return s[:80]
+
+
+def meta_for(base):
+    try:
+        with open(os.path.join(META_DIR, base)) as f:
+            parts = f.read().strip().split("\t")
+            return (parts[0] if parts else ""), (parts[1] if len(parts) > 1 else "")
+    except OSError:
+        return "", ""
+
+
+def list_scans(limit=300):
+    items = []
+    try:
+        for name in os.listdir(SCAN_DIR):
+            if name.startswith(".") or not name.lower().endswith(".pdf"):
+                continue
+            path = os.path.join(SCAN_DIR, name)
+            if not os.path.isfile(path):
+                continue
+            st = os.stat(path)
+            base = name[:-4]
+            dpi, mode = meta_for(base)
+            items.append({"name": name, "size": st.st_size, "mtime": int(st.st_mtime),
+                          "dpi": dpi, "mode": mode,
+                          "thumb": os.path.isfile(os.path.join(THUMB_DIR, base + ".jpg"))})
+    except FileNotFoundError:
+        pass
+    items.sort(key=lambda x: x["mtime"], reverse=True)
+    return items[:limit]
+
+
+def ensure_thumb(base):
+    """Cached thumbnail path for a scan; render one from the PDF on demand."""
+    tp = os.path.join(THUMB_DIR, base + ".jpg")
+    if os.path.isfile(tp):
+        return tp
+    pdf = os.path.join(SCAN_DIR, base + ".pdf")
+    if not os.path.isfile(pdf):
+        return None
+    try:
+        os.makedirs(THUMB_DIR, exist_ok=True)
+        subprocess.run(["pdftoppm", "-jpeg", "-r", "25", "-singlefile", pdf, tp[:-4]],
+                       timeout=40, check=True)
+    except Exception:
+        return None
+    return tp if os.path.isfile(tp) else None
+
+
+def _rm(*paths):
+    for p in paths:
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+
+
+def remove_scan(name):
+    if not NAME_RE.fullmatch(name) or not name.lower().endswith(".pdf"):
+        return False
+    base = name[:-4]
+    _rm(os.path.join(SCAN_DIR, name),
+        os.path.join(THUMB_DIR, base + ".jpg"),
+        os.path.join(META_DIR, base))
+    return True
+
+
+def rename_scan(name, newbase):
+    if not NAME_RE.fullmatch(name) or not name.lower().endswith(".pdf"):
+        return None, "bad name"
+    newbase = sanitize(newbase)
+    if not newbase:
+        return None, "empty name"
+    src = os.path.join(SCAN_DIR, name)
+    dst = os.path.join(SCAN_DIR, newbase + ".pdf")
+    if not os.path.isfile(src):
+        return None, "not found"
+    if os.path.exists(dst):
+        return None, "a scan with that name already exists"
+    ob = name[:-4]
+    try:
+        os.rename(src, dst)
+    except OSError as e:
+        return None, str(e)
+    for d, ext in ((THUMB_DIR, ".jpg"), (META_DIR, "")):
+        try:
+            os.rename(os.path.join(d, ob + ext), os.path.join(d, newbase + ext))
+        except OSError:
+            pass
+    return newbase + ".pdf", None
+
+
+def clear_scans():
+    removed = 0
+    for s in list_scans(10000):
+        if remove_scan(s["name"]):
+            removed += 1
+    return removed
+
+
+def run_scan(mode, resolution, name=""):
+    if mode not in MODE_VALUES:
+        mode = DEF_MODE
+    if resolution not in RESOLUTIONS:
+        resolution = DEF_RES
+    env = dict(os.environ, SCAN_MODE=mode, SCAN_RES=resolution, SCAN_NAME=name)
+    with _scan_lock:
+        proc = subprocess.run([SCRIPT], env=env, capture_output=True,
+                              text=True, timeout=300)
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout or "").strip()
+        last = msg.splitlines()[-1] if msg else "scan failed"
+        raise RuntimeError(last)
+    out = proc.stdout.strip().splitlines()
+    return os.path.basename(out[-1]) if out else ""
+
+
+# --- Label printing ----------------------------------------------------------
+def do_print(obj):
+    if not PRINT_ENABLED:
+        raise RuntimeError("Printing is disabled")
+    tpl = TEMPLATES_BY_ID.get(obj.get("template"))
+    if not tpl:
+        raise RuntimeError("Unknown label sheet")
+    n = int(tpl["cols"]) * int(tpl["rows"])
+    cells = []
+    for v in obj.get("cells", []):
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= iv < n and iv not in cells:
+            cells.append(iv)
+    if not cells:
+        raise RuntimeError("Select at least one cell")
+
+    try:
+        scale = float(obj.get("fontScale", 0.9))
+    except (TypeError, ValueError):
+        scale = 0.9
+    scale = min(1.0, max(0.2, scale))
+    try:
+        cal = (float(obj.get("calX", 0)), float(obj.get("calY", 0)))
+    except (TypeError, ValueError):
+        cal = (0.0, 0.0)
+
+    tmp = tempfile.mkdtemp(prefix="label-")
+    try:
+        if obj.get("mode") == "file":
+            try:
+                data = base64.b64decode(obj.get("dataB64") or "")
+            except Exception:
+                raise RuntimeError("Could not read the uploaded file")
+            if not data:
+                raise RuntimeError("Add an image or PDF to print")
+            if len(data) > 25 * 1024 * 1024:
+                raise RuntimeError("File is too large (max 25 MB)")
+            from reportlab.lib.utils import ImageReader
+            img_path = _prepare_image(data, obj.get("filename", ""), tmp)
+            content = {"type": "image", "reader": ImageReader(img_path)}
+        else:
+            text = (obj.get("text") or "").strip()
+            if not text:
+                raise RuntimeError("Enter some text to print")
+            content = {"type": "text", "text": text[:200]}
+
+        pdf = os.path.join(tmp, "labels.pdf")
+        with _print_lock:
+            build_label_pdf(tpl, cells, content, cal, scale, pdf)
+            job = _submit_lp(pdf)
+        return {"queue": PRINT_QUEUE, "job": job, "count": len(cells)}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _prepare_image(data, filename, tmp):
+    """Return a path to a raster image for reportlab: rasterize a PDF's first
+    page, or normalize an image's orientation via Pillow."""
+    is_pdf = (filename or "").lower().endswith(".pdf") or data[:5] == b"%PDF-"
+    if is_pdf:
+        src = os.path.join(tmp, "in.pdf")
+        with open(src, "wb") as fh:
+            fh.write(data)
+        subprocess.run(["pdftoppm", "-png", "-r", "200", "-singlefile",
+                        "-f", "1", "-l", "1", src, os.path.join(tmp, "page")],
+                       check=True, timeout=90, capture_output=True)
+        out = os.path.join(tmp, "page.png")
+        if not os.path.isfile(out):
+            raise RuntimeError("Could not render the PDF")
+        return out
+    try:
+        from PIL import Image, ImageOps
+        im = Image.open(io.BytesIO(data))
+        im = ImageOps.exif_transpose(im)
+        if im.mode not in ("RGB", "RGBA", "L"):
+            im = im.convert("RGBA")
+        out = os.path.join(tmp, "img.png")
+        im.save(out)
+        return out
+    except Exception:
+        raise RuntimeError("Unsupported image file")
+
+
+def build_label_pdf(tpl, cells, content, cal, font_scale, out_path):
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.units import mm
+    pw, ph = 210.0, 297.0
+    cols = int(tpl["cols"])
+    cw = float(tpl["cell_w"]); ch = float(tpl["cell_h"])
+    ml = float(tpl["margin_l"]); mt = float(tpl["margin_t"])
+    gx = float(tpl.get("gap_x", 0)); gy = float(tpl.get("gap_y", 0))
+    calx, caly = cal
+    pad = min(cw, ch) * 0.09  # inner padding, mm
+    c = canvas.Canvas(out_path, pagesize=(pw * mm, ph * mm))
+    for i in cells:
+        r, col = divmod(i, cols)
+        xl = ml + col * (cw + gx) + calx
+        yt = mt + r * (ch + gy) + caly
+        bx = xl * mm
+        by = (ph - (yt + ch)) * mm
+        bw = cw * mm
+        bh = ch * mm
+        padpt = pad * mm
+        if content["type"] == "text":
+            _draw_text(c, content["text"], bx, by, bw, bh, padpt, font_scale)
+        else:
+            c.drawImage(content["reader"], bx + padpt, by + padpt,
+                        width=bw - 2 * padpt, height=bh - 2 * padpt,
+                        preserveAspectRatio=True, anchor="c", mask="auto")
+    c.showPage()
+    c.save()
+
+
+def _draw_text(c, text, bx, by, bw, bh, pad, scale):
+    font = "Helvetica"
+    lines = text.split("\n") or [text]
+    n = len(lines)
+    maxw = max(1.0, bw - 2 * pad)
+    maxh = max(1.0, bh - 2 * pad)
+    line_gap = 1.18
+    # Fit the stacked lines vertically (cap height is ~72% of the point size),
+    # then shrink further if the widest line overflows the cell.
+    size = maxh / (0.72 + (n - 1) * line_gap)
+    widest = max((c.stringWidth(ln, font, size) for ln in lines), default=0.0)
+    if widest > maxw and widest > 0:
+        size *= maxw / widest
+    size = max(1.0, size * scale)
+    c.setFont(font, size)
+    c.setFillColorRGB(0, 0, 0)
+    leading = size * line_gap
+    cx = bx + bw / 2.0
+    cy = by + bh / 2.0
+    for i, ln in enumerate(lines):
+        yb = cy + ((n - 1) / 2.0 - i) * leading - 0.35 * size
+        c.drawCentredString(cx, yb, ln)
+
+
+def _submit_lp(pdf_path):
+    cmd = ["lp", "-d", PRINT_QUEUE, "-o", "media=A4", "-o", "fit-to-page=false", pdf_path]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout or "lp failed").strip()
+        return_last = msg.splitlines()[-1] if msg else "lp failed"
+        raise RuntimeError(return_last)
+    m = re.search(r"request id is (\S+)", proc.stdout or "")
+    return m.group(1) if m else ""
+
+
+def mode_options(default):
+    return "".join('<option value="%s"%s>%s</option>'
+                   % (html.escape(v), " selected" if v == default else "", html.escape(lbl))
+                   for v, lbl in MODES)
+
+
+def res_options(default):
+    return "".join('<option value="%s"%s>%s dpi</option>'
+                   % (v, " selected" if v == default else "", v) for v in RESOLUTIONS)
+
+
+def tpl_options():
+    return "".join('<option value="%s">%s</option>'
+                   % (html.escape(t["id"]), html.escape(t["name"])) for t in LABEL_TEMPLATES)
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "scan-web/3"
+
+    def log_message(self, *a):
+        pass
+
+    def _send(self, code, body, ctype="text/html; charset=utf-8", extra=None):
+        if isinstance(body, str):
+            body = body.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _json(self, code, obj):
+        self._send(code, json.dumps(obj), "application/json")
+
+    def _form(self):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length else ""
+        return urllib.parse.parse_qs(raw)
+
+    def _json_body(self):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0:
+            return {}
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception:
+            return {}
+
+    def do_GET(self):
+        path = urllib.parse.urlparse(self.path).path
+        if path in ("/", "/index.html"):
+            self._send(200, render_page())
+        elif path == "/recent":
+            self._json(200, {"scans": list_scans()})
+        elif path == "/templates":
+            self._json(200, {"templates": LABEL_TEMPLATES})
+        elif path.startswith("/file/"):
+            self._serve_pdf(urllib.parse.unquote(path[len("/file/"):]))
+        elif path.startswith("/thumb/"):
+            self._serve_thumb(urllib.parse.unquote(path[len("/thumb/"):]))
+        else:
+            self._send(404, "Not found", "text/plain")
+
+    def _serve_pdf(self, name):
+        if not NAME_RE.fullmatch(name):
+            return self._send(400, "Bad name", "text/plain")
+        path = os.path.join(SCAN_DIR, name)
+        if not os.path.isfile(path):
+            return self._send(404, "Not found", "text/plain")
+        with open(path, "rb") as f:
+            data = f.read()
+        self._send(200, data, "application/pdf",
+                   {"Content-Disposition": 'inline; filename="%s"' % name})
+
+    def _serve_thumb(self, name):
+        if not NAME_RE.fullmatch(name) or not name.lower().endswith(".pdf"):
+            return self._send(400, "Bad name", "text/plain")
+        tp = ensure_thumb(name[:-4])
+        if not tp:
+            return self._send(404, "No thumbnail", "text/plain")
+        with open(tp, "rb") as f:
+            data = f.read()
+        self._send(200, data, "image/jpeg", {"Cache-Control": "max-age=86400"})
+
+    def do_POST(self):
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/clear":
+            return self._json(200, {"ok": True, "removed": clear_scans()})
+        if path == "/remove":
+            name = self._form().get("name", [""])[0]
+            return self._json(200, {"ok": remove_scan(name)})
+        if path == "/rename":
+            f = self._form()
+            new, err = rename_scan(f.get("name", [""])[0], f.get("to", [""])[0])
+            return self._json(200, {"ok": bool(new), "file": new, "error": err})
+        if path == "/templates":
+            try:
+                tid = upsert_template(self._json_body())
+                return self._json(200, {"ok": True, "id": tid, "templates": LABEL_TEMPLATES})
+            except ValueError as e:
+                return self._json(200, {"ok": False, "error": str(e)})
+            except Exception as e:
+                return self._json(200, {"ok": False, "error": str(e)})
+        if path == "/templates/delete":
+            tid = (self._json_body() or {}).get("id", "")
+            try:
+                delete_template(tid)
+                return self._json(200, {"ok": True, "templates": LABEL_TEMPLATES})
+            except Exception as e:
+                return self._json(200, {"ok": False, "error": str(e)})
+        if path == "/templates/restore":
+            try:
+                restore_presets()
+                return self._json(200, {"ok": True, "templates": LABEL_TEMPLATES})
+            except Exception as e:
+                return self._json(200, {"ok": False, "error": str(e)})
+        if path == "/print":
+            obj = self._json_body()
+            try:
+                res = do_print(obj)
+                return self._json(200, dict(res, ok=True))
+            except subprocess.TimeoutExpired:
+                return self._json(200, {"ok": False, "error": "The printer did not respond in time."})
+            except Exception as e:
+                return self._json(200, {"ok": False, "error": str(e)})
+        if path != "/scan":
+            return self._send(404, "Not found", "text/plain")
+        f = self._form()
+        mode = f.get("mode", [DEF_MODE])[0]
+        res = f.get("resolution", [DEF_RES])[0]
+        given = sanitize(f.get("name", [""])[0])
+        t0 = time.time()
+        try:
+            fname = run_scan(mode, res, given)
+            if not fname:
+                raise RuntimeError("No output file was produced")
+            self._json(200, {"ok": True, "file": fname,
+                             "seconds": round(time.time() - t0, 1)})
+        except subprocess.TimeoutExpired:
+            self._json(200, {"ok": False,
+                             "error": "Scan timed out. Is a page on the glass and the scanner awake?"})
+        except Exception as e:
+            self._json(200, {"ok": False, "error": str(e)})
+
+
+def render_page():
+    return (PAGE
+            .replace("__TITLE__", html.escape(TITLE))
+            .replace("__SHARE__", html.escape(SHARE))
+            .replace("__MODE_OPTS__", mode_options(DEF_MODE))
+            .replace("__RES_OPTS__", res_options(DEF_RES))
+            .replace("__PRINT_TEMPLATE_OPTS__", tpl_options())
+            .replace("__TEMPLATES_JSON__", json.dumps(LABEL_TEMPLATES))
+            .replace("__PRINT_HIDDEN__", "" if PRINT_ENABLED else " hidden"))
+
+
+PAGE = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>__TITLE__</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230f7a63'/><g fill='%23ffffff'><rect x='7.5' y='7.5' width='7' height='7' rx='1.6'/><rect x='17.5' y='7.5' width='7' height='7' rx='1.6'/><rect x='7.5' y='17.5' width='7' height='7' rx='1.6'/><rect x='17.5' y='17.5' width='7' height='7' rx='1.6'/></g></svg>">
+<meta name="theme-color" content="#0f7a63">
+<style>
+:root{
+  --bg:#fbfbf9; --surface:#ffffff; --border:#e7e6e1; --text:#1b1b18;
+  --muted:#6f6e67; --faint:#9c9b92; --accent:#0f7a63; --accent-weak:#e8f3ef;
+  --primary:#1b1b18; --primary-ink:#ffffff; --danger:#b03a2c;
+  --shadow:0 1px 2px rgba(20,20,16,.05),0 8px 24px -14px rgba(20,20,16,.2);
+  --pop:0 8px 30px -8px rgba(20,20,16,.35);
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#151518; --surface:#1e1e22; --border:#2e2e34; --text:#eceae6;
+    --muted:#9d9c96; --faint:#6d6c66; --accent:#43c3a4; --accent-weak:#16302a;
+    --primary:#eceae6; --primary-ink:#151518; --danger:#e2745f;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -16px rgba(0,0,0,.6);
+    --pop:0 10px 34px -6px rgba(0,0,0,.7);
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important} /* class display rules must not defeat the attribute */
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);
+  line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.wrap{max-width:640px;margin:0 auto;padding:clamp(22px,5vw,44px) 20px 96px}
+header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px}
+.brand{font-weight:640;font-size:19px;letter-spacing:-.01em}
+.brand small{display:block;margin-top:3px;font:500 12px/1.4 var(--mono);color:var(--faint);letter-spacing:.01em}
+.status{flex:none;display:inline-flex;align-items:center;gap:7px;font:500 12px/1 var(--mono);color:var(--muted);padding-top:4px}
+.status .led{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.status[data-state="busy"] .led{animation:pulse 1.2s ease-in-out infinite}
+.status[data-state="error"] .led{background:var(--danger)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.tabs{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px;box-shadow:var(--shadow);margin-bottom:24px}
+.tab-btn{border:none;background:none;padding:8px 18px;border-radius:9px;font:640 13.5px var(--sans);letter-spacing:-.01em;color:var(--muted);cursor:pointer;transition:color .15s,background .15s}
+.tab-btn[aria-selected="true"]{background:var(--accent-weak);color:var(--accent)}
+.tab-btn:hover{color:var(--text)}
+.tab-btn[aria-selected="true"]:hover{color:var(--accent)}
+.tab-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:20px}
+.controls{display:flex;gap:12px;margin-bottom:14px}
+.field{flex:1;display:flex;flex-direction:column;gap:6px}
+.field .lbl{font:600 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.lbl .opt{text-transform:none;letter-spacing:0;color:var(--faint);font-weight:500}
+select,.txt{width:100%;padding:10px 12px;font:500 14px var(--sans);color:var(--text);
+  background:var(--bg);border:1px solid var(--border);border-radius:10px}
+select{appearance:none;-webkit-appearance:none;padding-right:34px;cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%239c9b92' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 12px center}
+.namefield{margin-bottom:16px}
+select:focus-visible,.txt:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-color:var(--accent)}
+.txt::placeholder{color:var(--faint)}
+textarea.txt{min-height:74px;line-height:1.4;resize:vertical;display:block}
+/* Reserve equal height for both content panes so toggling Text <-> Image/PDF
+   doesn't shift the Print button. */
+#textPane,#filePane{min-height:96px}
+.scan{width:100%;padding:15px 20px;border:none;border-radius:11px;background:var(--primary);
+  color:var(--primary-ink);font:640 16px var(--sans);letter-spacing:-.01em;cursor:pointer;transition:opacity .15s,transform .05s}
+.scan:hover{opacity:.9}.scan:active{transform:translateY(1px)}.scan:disabled{opacity:.5;cursor:default}
+.scan:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.progress{height:2px;margin-top:12px;border-radius:2px;background:var(--border);overflow:hidden;opacity:0;transition:opacity .2s}
+.scanning .progress{opacity:1}
+.progress .bar{height:100%;width:34%;border-radius:2px;background:var(--accent);transform:translateX(-120%);animation:indet 1.15s ease-in-out infinite}
+@keyframes indet{0%{transform:translateX(-120%)}100%{transform:translateX(380%)}}
+.note{margin:14px 2px 0;min-height:18px;font:500 13px var(--mono);color:var(--muted)}
+.note.ok{color:var(--accent)}.note.err{color:var(--danger)}
+.note a{color:inherit}
+.recent{margin-top:36px}
+.recentHead{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.recent h2{margin:0 0 2px;font-size:13px;font-weight:640;letter-spacing:.02em}
+.recent .path{font:500 12px var(--mono);color:var(--faint);word-break:break-all}
+.recent .path a{color:var(--accent);text-decoration:none}
+.recent .path a:hover{text-decoration:underline}
+.clear{border:none;background:none;cursor:pointer;padding:2px 4px;border-radius:6px;font:600 12px var(--mono);color:var(--faint);letter-spacing:.02em}
+.clear:hover{color:var(--danger)}
+.clear:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.clear.armed{color:#fff;background:var(--danger)}
+.tablewrap{margin-top:14px;overflow-x:auto}
+table.scans{width:100%;border-collapse:collapse;font-size:13px}
+table.scans th{text-align:left;font:600 11px var(--mono);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--faint);padding:0 10px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+table.scans td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+table.scans tr.new td{animation:in .35s ease both}
+@keyframes in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+.thumb{width:34px;height:44px;object-fit:cover;border-radius:3px;border:1px solid var(--border);
+  background:var(--bg);display:block;cursor:zoom-in}
+.th-thumb{width:36px}
+.fname{font:500 13px var(--mono);word-break:break-all}
+.fname .edit{width:100%;min-width:160px;padding:4px 6px;font:500 13px var(--mono);
+  color:var(--text);background:var(--bg);border:1px solid var(--accent);border-radius:6px}
+.dpi,.size,.when{font:500 12px var(--mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.when{color:var(--faint)}
+.acts{display:flex;gap:2px;justify-content:flex-end;white-space:nowrap}
+.act{border:none;background:none;cursor:pointer;color:var(--muted);padding:5px;border-radius:6px;line-height:0;text-decoration:none}
+.act:hover{color:var(--text);background:var(--bg)}
+.act:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.act.remove.armed{color:#fff;background:var(--danger)}
+.empty{padding:16px 2px;color:var(--muted);font-size:14px}
+.preview{position:fixed;z-index:50;pointer-events:none;background:var(--surface);
+  border:1px solid var(--border);border-radius:8px;box-shadow:var(--pop);padding:4px}
+.preview img{display:block;width:300px;height:auto;border-radius:5px}
+/* --- Print / labels --- */
+.sheetHead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:2px 0 10px}
+.sheetHead .lbl{font:600 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.sheetActs{display:flex;gap:4px;flex:none}
+.mini{border:none;background:var(--bg);cursor:pointer;padding:4px 10px;border-radius:7px;font:600 11px var(--mono);letter-spacing:.03em;color:var(--muted)}
+.mini:hover{color:var(--text)}
+.mini:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.sheet-wrap{display:flex;justify-content:center;margin-bottom:18px}
+svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:manipulation}
+.sheet .paper{fill:var(--bg);stroke:var(--border);stroke-width:.5}
+.sheet .cell{fill:transparent;stroke:var(--border);stroke-width:.35;cursor:pointer;transition:fill .1s}
+.sheet .cell:hover{fill:var(--accent-weak)}
+.sheet .cell.sel{fill:var(--accent-weak);stroke:var(--accent);stroke-width:.7}
+.sheet .ptext{fill:var(--accent);font-family:var(--sans);font-weight:700;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+/* sheet management */
+.tplrow{align-items:flex-end}
+.manage{flex:none;height:40px;padding:0 14px;white-space:nowrap}
+.modal{position:fixed;inset:0;z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto;background:rgba(20,20,16,.44)}
+@media (prefers-color-scheme:dark){.modal{background:rgba(0,0,0,.6)}}
+.modal-card{width:100%;max-width:460px;margin:auto}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.modal-head strong{font-size:15px;font-weight:640;letter-spacing:-.01em}
+.mclose{border:none;background:none;cursor:pointer;color:var(--muted);font-size:22px;line-height:1;padding:0 4px;border-radius:6px}
+.mclose:hover{color:var(--text)}
+.mclose:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sheetlist{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.srow{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px}
+.srow .info{flex:1;min-width:0}
+.srow .nm{font-weight:600;font-size:13.5px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.srow .sub{font:500 11.5px var(--mono);color:var(--faint);margin-top:3px}
+.badge{font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent);background:var(--accent-weak);padding:2px 6px;border-radius:5px}
+.badge.ed{color:var(--muted);background:var(--bg)}
+.srow .ra{display:flex;gap:2px;flex:none}
+.scan.alt{background:var(--surface);color:var(--text);border:1px dashed var(--border)}
+.scan.alt:hover{opacity:1;border-color:var(--accent);color:var(--accent)}
+.editacts{display:flex;align-items:stretch;gap:10px;margin-top:18px}
+.editacts .scan{flex:1;padding:14px 20px}
+.btn2{flex:none;padding:0 22px;border:1px solid var(--border);border-radius:11px;background:var(--surface);color:var(--text);font:640 15px var(--sans);letter-spacing:-.01em;cursor:pointer;transition:border-color .15s,color .15s}
+.btn2:hover{border-color:var(--accent);color:var(--accent)}
+.btn2:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.act.del.armed{color:#fff;background:var(--danger)}
+.linkbtn{display:block;width:100%;margin-top:12px;border:none;background:none;cursor:pointer;font:600 12.5px var(--mono);letter-spacing:.02em;padding:9px;border-radius:9px}
+.linkbtn.del{color:var(--danger)}
+.linkbtn.del.armed{color:#fff;background:var(--danger)}
+.linkbtn.subtle{color:var(--faint)}
+.linkbtn.subtle:hover{color:var(--muted)}
+.linkbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cellcap{margin:10px 2px 0;min-height:16px;font:500 12px var(--mono);color:var(--muted)}
+.cellcap.err{color:var(--danger)}
+.hint{margin-top:10px;font:500 11.5px var(--mono);color:var(--faint)}
+.schematic{max-width:280px}
+.schematic .mband{fill:var(--accent-weak)}
+.schematic .cell{fill:transparent;stroke:var(--border);stroke-width:.4;pointer-events:none}
+.schematic .dim{fill:var(--muted);font-family:var(--mono);font-weight:600;text-anchor:middle}
+.seg{display:inline-flex;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:3px;margin-bottom:14px}
+.seg-btn{border:none;background:none;padding:6px 14px;border-radius:7px;font:600 12.5px var(--sans);color:var(--muted);cursor:pointer}
+.seg-btn[aria-selected="true"]{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+.seg-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.filein{width:100%;font:500 13px var(--sans);color:var(--muted)}
+.filein::file-selector-button{font:600 12px var(--sans);color:var(--text);background:var(--bg);
+  border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-right:10px;cursor:pointer}
+.chip{display:inline-flex;align-items:center;gap:8px;margin-top:10px;padding:6px 8px 6px 12px;
+  background:var(--accent-weak);border-radius:8px;font:500 12px var(--mono);color:var(--accent);max-width:100%}
+.chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip button{border:none;background:none;color:inherit;cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
+.filepv{display:block;max-width:120px;max-height:120px;margin-top:12px;border-radius:6px;border:1px solid var(--border)}
+.adv{margin:6px 0 16px;border-top:1px solid var(--border);padding-top:4px}
+.adv summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding:8px 0;list-style:none}
+.adv summary::-webkit-details-marker{display:none}
+.adv summary:hover{color:var(--muted)}
+.adv[open] summary{color:var(--muted);margin-bottom:8px}
+.adv .controls{margin-bottom:2px}
+input[type=range]{accent-color:var(--accent);width:100%;margin-top:8px}
+input[type=number]{font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important}.progress .bar{width:100%;transform:none}}
+@media (max-width:560px){.th-when,.when{display:none}.preview img{width:220px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">__TITLE__<small>Brother DCP-1511 · LAN</small></div>
+    <span class="status" id="status" data-state="idle" role="status" aria-live="polite">
+      <i class="led"></i><span id="statusText">Ready</span>
+    </span>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Tools">
+    <button class="tab-btn" id="tabScanBtn" data-tab="scan" role="tab" aria-selected="true" aria-controls="tab-scan">Scan</button>
+    <button class="tab-btn" id="tabPrintBtn" data-tab="print" role="tab" aria-selected="false" aria-controls="tab-print"__PRINT_HIDDEN__>Print</button>
+  </nav>
+
+  <section class="tab-panel active" id="tab-scan" role="tabpanel" aria-labelledby="tabScanBtn">
+    <form class="card" id="form">
+      <div class="controls">
+        <label class="field"><span class="lbl">Mode</span>
+          <select name="mode" id="mode">__MODE_OPTS__</select></label>
+        <label class="field"><span class="lbl">Resolution</span>
+          <select name="resolution" id="resolution">__RES_OPTS__</select></label>
+      </div>
+      <label class="field namefield">
+        <span class="lbl">Name <span class="opt">optional</span></span>
+        <input class="txt" type="text" name="name" id="name" maxlength="80"
+               autocomplete="off" placeholder="auto: scan-YYYYMMDD-HHMMSS">
+      </label>
+      <button class="scan" id="scanBtn" type="submit">Scan</button>
+      <div class="progress" aria-hidden="true"><div class="bar"></div></div>
+      <p class="note" id="note" aria-live="polite"></p>
+    </form>
+
+    <section class="recent">
+      <div class="recentHead">
+        <h2>Recent scans</h2>
+        <button type="button" class="clear" id="clearBtn">Clear all</button>
+      </div>
+      <div class="path">Saved to <a href="__SHARE__">__SHARE__</a></div>
+      <div class="tablewrap">
+        <table class="scans">
+          <thead><tr>
+            <th class="th-thumb"></th><th>Name</th><th>DPI</th><th>Size</th>
+            <th class="th-when">When</th><th></th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="empty" hidden>No scans yet. Place a page on the glass and press Scan.</p>
+    </section>
+  </section>
+
+  <section class="tab-panel" id="tab-print" role="tabpanel" aria-labelledby="tabPrintBtn"__PRINT_HIDDEN__>
+    <div class="card">
+      <div class="controls tplrow">
+        <label class="field"><span class="lbl">Label sheet</span>
+          <select id="tpl">__PRINT_TEMPLATE_OPTS__</select></label>
+        <button type="button" class="mini manage" id="manageBtn">Manage</button>
+      </div>
+
+      <div class="sheetHead">
+        <span class="lbl" id="selInfo">Tap cells to place your label</span>
+        <span class="sheetActs">
+          <button type="button" class="mini" id="selAll">All</button>
+          <button type="button" class="mini" id="selNone">Clear</button>
+        </span>
+      </div>
+      <div class="sheet-wrap"><svg class="sheet" id="sheet" role="group" aria-label="Label sheet"></svg></div>
+
+      <div class="seg" role="tablist" aria-label="Content type">
+        <button type="button" class="seg-btn" id="segText" role="tab" aria-selected="true">Text</button>
+        <button type="button" class="seg-btn" id="segFile" role="tab" aria-selected="false">Image / PDF</button>
+      </div>
+
+      <div id="textPane">
+        <label class="field"><span class="lbl">Text <span class="opt">one line per row</span></span>
+          <textarea class="txt" id="ptext" rows="2" maxlength="200" autocomplete="off"
+                    placeholder="e.g. 42 — or a short&#10;label on two lines"></textarea></label>
+      </div>
+      <div id="filePane" hidden>
+        <label class="field"><span class="lbl">Image or PDF</span>
+          <input class="filein" id="pfile" type="file" accept="image/*,application/pdf"></label>
+        <div class="chip" id="fileChip" hidden><span id="fileName"></span><button type="button" id="fileClear" aria-label="Remove file">×</button></div>
+        <img class="filepv" id="filePv" hidden alt="">
+        <div class="hint">Tip: paste an image with ⌘V / Ctrl+V</div>
+      </div>
+
+      <details class="adv">
+        <summary>Alignment &amp; size</summary>
+        <div class="controls">
+          <label class="field"><span class="lbl">Nudge X <span class="opt">mm</span></span>
+            <input class="txt" id="calX" type="number" step="0.5" value="0"></label>
+          <label class="field"><span class="lbl">Nudge Y <span class="opt">mm</span></span>
+            <input class="txt" id="calY" type="number" step="0.5" value="0"></label>
+        </div>
+        <label class="field"><span class="lbl">Fill <span class="opt" id="fillVal">90%</span></span>
+          <input id="fill" type="range" min="40" max="100" value="90"></label>
+      </details>
+
+      <button class="scan" id="printBtn" type="button" disabled>Print</button>
+      <p class="note" id="pnote" aria-live="polite"></p>
+    </div>
+  </section>
+</div>
+<div class="modal" id="sheetModal" hidden>
+  <div class="modal-card card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head">
+      <strong id="modalTitle">Label sheets</strong>
+      <button type="button" class="mclose" id="modalClose" aria-label="Close">×</button>
+    </div>
+
+    <div id="listView">
+      <div class="sheetlist" id="sheetList"></div>
+      <button type="button" class="scan alt" id="newSheet">New sheet</button>
+      <button type="button" class="linkbtn subtle" id="restoreBtn">Restore default sheets</button>
+    </div>
+
+    <div id="editView" hidden>
+      <label class="field namefield"><span class="lbl">Name</span>
+        <input class="txt" id="eName" maxlength="60" autocomplete="off" placeholder="e.g. My 40-up"></label>
+      <div class="controls">
+        <label class="field"><span class="lbl">Columns</span>
+          <input class="txt" id="eCols" type="number" min="1" max="50" step="1"></label>
+        <label class="field"><span class="lbl">Rows</span>
+          <input class="txt" id="eRows" type="number" min="1" max="100" step="1"></label>
+      </div>
+      <div class="controls">
+        <label class="field"><span class="lbl">Left margin <span class="opt">mm</span></span>
+          <input class="txt" id="eML" type="number" min="0" step="0.1"></label>
+        <label class="field"><span class="lbl">Top margin <span class="opt">mm</span></span>
+          <input class="txt" id="eMT" type="number" min="0" step="0.1"></label>
+      </div>
+      <div class="controls">
+        <label class="field"><span class="lbl">Column gap <span class="opt">mm</span></span>
+          <input class="txt" id="eGX" type="number" min="0" max="50" step="1"></label>
+        <label class="field"><span class="lbl">Row gap <span class="opt">mm</span></span>
+          <input class="txt" id="eGY" type="number" min="0" max="50" step="1"></label>
+      </div>
+      <div class="sheet-wrap"><svg class="sheet schematic" id="eSheet" role="img" aria-label="Sheet dimensions"></svg></div>
+      <p class="cellcap" id="eCap"></p>
+      <div class="editacts">
+        <button type="button" class="scan" id="eSave">Save sheet</button>
+        <button type="button" class="btn2" id="eCancel">Cancel</button>
+      </div>
+      <button type="button" class="linkbtn del" id="eDelete" hidden>Delete this sheet</button>
+    </div>
+  </div>
+</div>
+<div class="preview" id="preview" hidden><img id="previewImg" alt=""></div>
+
+<script>
+(function(){
+  var form=document.getElementById('form'), btn=document.getElementById('scanBtn');
+  var status=document.getElementById('status'), statusText=document.getElementById('statusText');
+  var note=document.getElementById('note'), tbody=document.getElementById('tbody');
+  var empty=document.getElementById('empty'), preview=document.getElementById('preview'), previewImg=document.getElementById('previewImg');
+  var scanning=false;
+  var ICON={
+    dl:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg>',
+    rn:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3l2 2-7 7-3 1 1-3z"/></svg>',
+    rm:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10M6 4V3h4v1M5 4l1 9h4l1-9"/></svg>',
+    dup:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M2.5 10.5V3.5a1 1 0 011-1h7"/></svg>',
+    rs:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 11-1.5-3.6"/><path d="M13 2v3h-3"/></svg>'
+  };
+  function esc(s){return (s+'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function fmtSize(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(b<10240?1:0)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+  function ago(sec){ var d=Math.max(0,Math.floor(Date.now()/1000)-sec);
+    if(d<60)return 'just now'; if(d<3600)return Math.floor(d/60)+'m ago'; if(d<86400)return Math.floor(d/3600)+'h ago'; return Math.floor(d/86400)+'d ago'; }
+  function setStatus(st,t){ status.dataset.state=st; statusText.textContent=t; }
+
+  // --- tabs ---
+  var tabBtns=Array.prototype.slice.call(document.querySelectorAll('.tab-btn'));
+  tabBtns.forEach(function(b){
+    b.addEventListener('click',function(){
+      tabBtns.forEach(function(x){ x.setAttribute('aria-selected', x===b ? 'true':'false'); });
+      Array.prototype.forEach.call(document.querySelectorAll('.tab-panel'),function(p){
+        p.classList.toggle('active', p.id==='tab-'+b.dataset.tab); });
+      try{ localStorage.setItem('pm_tab', b.dataset.tab); }catch(e){}
+    });
+  });
+
+  function render(scans, newest){
+    tbody.innerHTML='';
+    empty.hidden = scans.length>0;
+    scans.forEach(function(s){
+      var enc=encodeURIComponent(s.name);
+      var tr=document.createElement('tr');
+      tr.className = (s.name===newest?'new':'');
+      tr.dataset.name=s.name;
+      tr.innerHTML=
+        '<td><img class="thumb" loading="lazy" src="/thumb/'+enc+'" alt="" data-src="/thumb/'+enc+'"></td>'+
+        '<td><span class="fname">'+esc(s.name)+'</span></td>'+
+        '<td class="dpi">'+(s.dpi?esc(s.dpi):'—')+'</td>'+
+        '<td class="size">'+fmtSize(s.size)+'</td>'+
+        '<td class="when">'+ago(s.mtime)+'</td>'+
+        '<td><div class="acts">'+
+          '<a class="act" href="/file/'+enc+'" download title="Download" aria-label="Download">'+ICON.dl+'</a>'+
+          '<button type="button" class="act" data-act="rename" title="Rename" aria-label="Rename">'+ICON.rn+'</button>'+
+          '<button type="button" class="act remove" data-act="remove" title="Remove" aria-label="Remove">'+ICON.rm+'</button>'+
+        '</div></td>';
+      tbody.appendChild(tr);
+    });
+  }
+  function refresh(newest){
+    return fetch('/recent').then(function(r){return r.json();})
+      .then(function(d){render(d.scans||[], newest);}).catch(function(){});
+  }
+
+  // --- scan ---
+  form.addEventListener('submit',function(e){
+    e.preventDefault(); if(scanning) return;
+    scanning=true; form.classList.add('scanning'); btn.disabled=true; btn.textContent='Scanning…';
+    note.className='note'; note.textContent=''; setStatus('busy','Scanning');
+    fetch('/scan',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams(new FormData(form)).toString()})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(d.ok){ setStatus('idle','Ready'); note.className='note ok';
+          note.innerHTML='Saved '+esc(d.file)+' · '+d.seconds+'s — <a href="/file/'+encodeURIComponent(d.file)+'" target="_blank" rel="noopener">open</a>';
+          document.getElementById('name').value=''; return refresh(d.file); }
+        setStatus('error','Failed'); note.className='note err'; note.textContent=d.error||'Scan failed.';
+      })
+      .catch(function(){ setStatus('error','Failed'); note.className='note err'; note.textContent='Could not reach the scanner service.'; })
+      .finally(function(){ scanning=false; form.classList.remove('scanning'); btn.disabled=false; btn.textContent='Scan'; });
+  });
+
+  // --- row actions (rename / remove) ---
+  tbody.addEventListener('click',function(e){
+    var b=e.target.closest('[data-act]'); if(!b) return;
+    var tr=b.closest('tr'), name=tr.dataset.name;
+    if(b.dataset.act==='remove'){
+      if(!b.classList.contains('armed')){
+        b.classList.add('armed'); b.title='Click again to delete';
+        setTimeout(function(){ b.classList.remove('armed'); b.title='Remove'; }, 3000);
+        return;
+      }
+      fetch('/remove',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:'name='+encodeURIComponent(name)}).then(function(){ refresh(); });
+    } else if(b.dataset.act==='rename'){
+      startRename(tr, name);
+    }
+  });
+  function startRename(tr, name){
+    var span=tr.querySelector('.fname');
+    if(tr.querySelector('.edit')) return;
+    var base=name.replace(/\.pdf$/i,'');
+    var inp=document.createElement('input');
+    inp.className='edit'; inp.type='text'; inp.value=base; inp.maxLength=80;
+    span.replaceWith(inp); inp.focus(); inp.select();
+    function done(save){
+      var to=inp.value.trim();
+      if(!save || !to || to===base){ refresh(); return; }
+      fetch('/rename',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:'name='+encodeURIComponent(name)+'&to='+encodeURIComponent(to)})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          if(!d.ok){ note.className='note err'; note.textContent=d.error||'Rename failed.'; }
+          return refresh(d.file);
+        }).catch(function(){ refresh(); });
+    }
+    inp.addEventListener('keydown',function(ev){ if(ev.key==='Enter'){ev.preventDefault();done(true);} else if(ev.key==='Escape'){done(false);} });
+    inp.addEventListener('blur',function(){ done(true); });
+  }
+
+  // --- hover preview ---
+  tbody.addEventListener('mouseover',function(e){
+    var img=e.target.closest('.thumb'); if(!img) return;
+    previewImg.src=img.dataset.src; preview.hidden=false; movePreview(e);
+  });
+  tbody.addEventListener('mousemove',function(e){ if(!preview.hidden && e.target.closest('.thumb')) movePreview(e); });
+  tbody.addEventListener('mouseout',function(e){ if(e.target.closest('.thumb')) preview.hidden=true; });
+  function movePreview(e){
+    var pad=16, w=preview.offsetWidth||316, h=preview.offsetHeight||420;
+    var x=e.clientX+pad, y=e.clientY+pad;
+    if(x+w>window.innerWidth) x=e.clientX-w-pad;
+    if(y+h>window.innerHeight) y=Math.max(8, window.innerHeight-h-8);
+    preview.style.left=x+'px'; preview.style.top=y+'px';
+  }
+
+  // --- clear all ---
+  var clearBtn=document.getElementById('clearBtn'), clearTimer=null;
+  function disarm(){ clearTimeout(clearTimer); clearBtn.classList.remove('armed'); clearBtn.textContent='Clear all'; }
+  clearBtn.addEventListener('click',function(){
+    if(scanning) return;
+    if(!clearBtn.classList.contains('armed')){ clearBtn.classList.add('armed'); clearBtn.textContent='Click again to delete all'; clearTimer=setTimeout(disarm,4000); return; }
+    clearTimeout(clearTimer); clearBtn.classList.remove('armed'); clearBtn.disabled=true; clearBtn.textContent='Clearing…';
+    fetch('/clear',{method:'POST'}).then(function(r){return r.json();})
+      .then(function(d){ note.className='note'; note.textContent=d.removed?('Removed '+d.removed+' scan'+(d.removed===1?'':'s')+'.'):'Nothing to remove.'; return refresh(); })
+      .catch(function(){ note.className='note err'; note.textContent='Could not clear the scans.'; })
+      .finally(function(){ clearBtn.disabled=false; clearBtn.textContent='Clear all'; });
+  });
+
+  // --- print / labels ---
+  var TEMPLATES=__TEMPLATES_JSON__, TBYID={};
+  TEMPLATES.forEach(function(t){ TBYID[t.id]=t; });
+  var tplSel=document.getElementById('tpl'), sheet=document.getElementById('sheet');
+  var selInfo=document.getElementById('selInfo'), printBtn=document.getElementById('printBtn'), pnote=document.getElementById('pnote');
+  var ptext=document.getElementById('ptext');
+  var segText=document.getElementById('segText'), segFile=document.getElementById('segFile');
+  var textPane=document.getElementById('textPane'), filePane=document.getElementById('filePane');
+  var pfile=document.getElementById('pfile'), fileChip=document.getElementById('fileChip');
+  var fileNameEl=document.getElementById('fileName'), fileClear=document.getElementById('fileClear'), filePv=document.getElementById('filePv');
+  var calX=document.getElementById('calX'), calY=document.getElementById('calY');
+  var fill=document.getElementById('fill'), fillVal=document.getElementById('fillVal');
+  var sel=new Set(), pmode='text', fileData=null, fileNm='', printing=false;
+
+  function f2(n){ return Math.round(n*100)/100; }
+  function curTpl(){ return TBYID[tplSel.value] || TEMPLATES[0]; }
+  function renderSheet(){
+    var t=curTpl(); if(!t) return;
+    var cols=t.cols, rows=t.rows, cw=t.cell_w, ch=t.cell_h, ml=t.margin_l, mt=t.margin_t, gx=t.gap_x||0, gy=t.gap_y||0;
+    var txt=(pmode==='text')?ptext.value.trim():'';
+    var s='<rect class="paper" x="0" y="0" width="210" height="297" rx="2"/>';
+    for(var i=0;i<cols*rows;i++){
+      var r=Math.floor(i/cols), c=i%cols;
+      var x=ml+c*(cw+gx), y=mt+r*(ch+gy), on=sel.has(i);
+      s+='<rect class="cell'+(on?' sel':'')+'" data-i="'+i+'" x="'+f2(x)+'" y="'+f2(y)+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.8"/>';
+      if(on && txt){
+        var lines=txt.split('\n'), nl=lines.length, maxlen=1;
+        for(var k=0;k<nl;k++){ if(lines[k].length>maxlen) maxlen=lines[k].length; }
+        var lg=1.18;
+        var fs=Math.min(ch*0.6, (cw*0.82)/(maxlen*0.58), (ch*0.82)/(0.72+(nl-1)*lg));
+        var lh=fs*lg, cx=x+cw/2, y0=y+ch/2-(nl-1)*lh/2;
+        for(var k=0;k<nl;k++){
+          s+='<text class="ptext" x="'+f2(cx)+'" y="'+f2(y0+k*lh)+'" font-size="'+f2(fs)+'">'+esc(lines[k])+'</text>';
+        }
+      }
+    }
+    sheet.setAttribute('viewBox','0 0 210 297');
+    sheet.innerHTML=s;
+  }
+  function hasContent(){ return pmode==='text' ? !!ptext.value.trim() : !!fileData; }
+  function updateUI(){
+    var n=sel.size;
+    selInfo.textContent = n ? (n+' cell'+(n===1?'':'s')+' selected') : 'Tap cells to place your label';
+    printBtn.disabled = printing || n===0 || !hasContent();
+    printBtn.textContent = printing ? 'Printing…' : (n ? ('Print '+n+' label'+(n===1?'':'s')) : 'Print');
+  }
+  function setMode(m){
+    pmode=m;
+    segText.setAttribute('aria-selected', m==='text'?'true':'false');
+    segFile.setAttribute('aria-selected', m==='file'?'true':'false');
+    textPane.hidden = m!=='text'; filePane.hidden = m!=='file';
+    renderSheet(); updateUI();
+  }
+
+  if(sheet){
+    sheet.addEventListener('click',function(e){
+      var r=e.target.closest('.cell'); if(!r) return;
+      var i=+r.dataset.i;
+      if(sel.has(i)) sel.delete(i); else sel.add(i);
+      renderSheet(); updateUI();
+    });
+    document.getElementById('selAll').addEventListener('click',function(){
+      var t=curTpl(); sel=new Set();
+      for(var i=0;i<t.cols*t.rows;i++) sel.add(i);
+      renderSheet(); updateUI();
+    });
+    document.getElementById('selNone').addEventListener('click',function(){ sel=new Set(); renderSheet(); updateUI(); });
+    tplSel.addEventListener('change',function(){
+      sel=new Set(); try{ localStorage.setItem('pm_tpl',tplSel.value); }catch(e){}
+      renderSheet(); updateUI();
+    });
+    ptext.addEventListener('input',function(){ renderSheet(); updateUI(); });
+    segText.addEventListener('click',function(){ setMode('text'); });
+    segFile.addEventListener('click',function(){ setMode('file'); });
+    function loadFileForPrint(file, name){
+      fileNm = name || file.name || 'image';
+      var reader=new FileReader();
+      reader.onload=function(){
+        var res=reader.result; fileData=res.slice(res.indexOf(',')+1);
+        fileNameEl.textContent=fileNm; fileChip.hidden=false;
+        if(/^image\//.test(file.type)){ filePv.src=res; filePv.hidden=false; } else { filePv.hidden=true; }
+        setMode('file'); updateUI();
+      };
+      reader.readAsDataURL(file);
+    }
+    pfile.addEventListener('change',function(){ var f=pfile.files[0]; if(f) loadFileForPrint(f); });
+    // Paste an image from the clipboard (⌘V / Ctrl+V) while on the Print tab.
+    document.addEventListener('paste',function(e){
+      if(!printTabActive() || !sheetModal.hidden) return;
+      var items=(e.clipboardData&&e.clipboardData.items)||[];
+      for(var i=0;i<items.length;i++){
+        if(items[i].type && items[i].type.indexOf('image/')===0){
+          var blob=items[i].getAsFile(); if(!blob) continue;
+          e.preventDefault();
+          loadFileForPrint(blob, 'pasted-image.png');
+          pnote.className='note ok'; pnote.textContent='Pasted image ready to print.';
+          return;
+        }
+      }
+    });
+    fileClear.addEventListener('click',function(){ fileData=null; fileNm=''; pfile.value=''; fileChip.hidden=true; filePv.hidden=true; updateUI(); });
+    fill.addEventListener('input',function(){ fillVal.textContent=fill.value+'%'; });
+    function saveCal(){ try{ localStorage.setItem('pm_calx',calX.value); localStorage.setItem('pm_caly',calY.value); }catch(e){} }
+    calX.addEventListener('change',saveCal); calY.addEventListener('change',saveCal);
+
+    printBtn.addEventListener('click',function(){
+      if(printBtn.disabled) return;
+      printing=true; updateUI();
+      pnote.className='note'; pnote.textContent=''; setStatus('busy','Printing');
+      var count=sel.size;
+      var body={template:curTpl().id, cells:Array.from(sel), mode:pmode,
+                text:ptext.value, fontScale:(+fill.value||90)/100,
+                calX:+calX.value||0, calY:+calY.value||0};
+      if(pmode==='file'){ body.filename=fileNm; body.dataB64=fileData; }
+      fetch('/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          if(d.ok){ setStatus('idle','Ready'); pnote.className='note ok';
+            pnote.textContent='Sent '+count+' label'+(count===1?'':'s')+' to '+d.queue+'.'; }
+          else { setStatus('error','Failed'); pnote.className='note err'; pnote.textContent=d.error||'Print failed.'; }
+        })
+        .catch(function(){ setStatus('error','Failed'); pnote.className='note err'; pnote.textContent='Could not reach the print service.'; })
+        .finally(function(){ printing=false; updateUI(); });
+    });
+
+    // --- manage sheets (add / edit / delete) ---
+    ICON.ed = ICON.rn;
+    var manageBtn=document.getElementById('manageBtn'), sheetModal=document.getElementById('sheetModal');
+    var modalClose=document.getElementById('modalClose'), modalTitle=document.getElementById('modalTitle');
+    var listView=document.getElementById('listView'), sheetList=document.getElementById('sheetList'), newSheet=document.getElementById('newSheet');
+    var editView=document.getElementById('editView');
+    var eName=document.getElementById('eName'), eCols=document.getElementById('eCols'), eRows=document.getElementById('eRows');
+    var eML=document.getElementById('eML'), eMT=document.getElementById('eMT'), eGX=document.getElementById('eGX'), eGY=document.getElementById('eGY');
+    var eSheet=document.getElementById('eSheet'), eCap=document.getElementById('eCap');
+    var eSave=document.getElementById('eSave'), eDelete=document.getElementById('eDelete'), eCancel=document.getElementById('eCancel');
+    var restoreBtn=document.getElementById('restoreBtn');
+    var editingId='';
+
+    function printTabActive(){ var p=document.getElementById('tab-print'); return !!(p && p.classList.contains('active')); }
+    function r1(n){ return Math.round(n*10)/10; }
+    function applyTemplates(list, selId){
+      if(list) TEMPLATES=list;
+      TBYID={}; TEMPLATES.forEach(function(t){ TBYID[t.id]=t; });
+      var cur=selId||tplSel.value;
+      tplSel.innerHTML=TEMPLATES.map(function(t){ return '<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>'; }).join('');
+      if(TBYID[cur]) tplSel.value=cur; else if(TEMPLATES[0]) tplSel.value=TEMPLATES[0].id;
+      sel=new Set(); renderSheet(); updateUI();
+    }
+    function deriveCells(v){
+      var pw=v.page_w||210, ph=v.page_h||297;
+      return {cw:(pw-2*v.margin_l-(v.cols-1)*v.gap_x)/v.cols, ch:(ph-2*v.margin_t-(v.rows-1)*v.gap_y)/v.rows};
+    }
+    function readForm(){
+      return {id:editingId||'', name:eName.value, page_w:210, page_h:297,
+        cols:parseInt(eCols.value,10), rows:parseInt(eRows.value,10),
+        margin_l:parseFloat(eML.value), margin_t:parseFloat(eMT.value),
+        gap_x:parseFloat(eGX.value), gap_y:parseFloat(eGY.value)};
+    }
+    function buildSchematic(v){
+      eSheet.setAttribute('viewBox','0 0 210 297');
+      var s='<rect class="paper" x="0" y="0" width="210" height="297" rx="2"/>';
+      if(v){
+        var d=deriveCells(v), cw=d.cw, ch=d.ch, ml=v.margin_l, mt=v.margin_t, gx=v.gap_x, gy=v.gap_y;
+        if(cw>0 && ch>0){
+          s+='<rect class="mband" x="0" y="0" width="210" height="'+f2(mt)+'"/>';
+          s+='<rect class="mband" x="0" y="0" width="'+f2(ml)+'" height="297"/>';
+          for(var i=0;i<v.cols*v.rows;i++){
+            var r=Math.floor(i/v.cols), c=i%v.cols;
+            s+='<rect class="cell" x="'+f2(ml+c*(cw+gx))+'" y="'+f2(mt+r*(ch+gy))+'" width="'+f2(cw)+'" height="'+f2(ch)+'" rx="0.6"/>';
+          }
+        }
+      }
+      eSheet.innerHTML=s;
+    }
+    function updateEditor(){
+      var v=readForm(), nums=[v.cols,v.rows,v.margin_l,v.margin_t,v.gap_x,v.gap_y];
+      var named=!!v.name.trim();
+      var valid=named && nums.every(function(x){ return !isNaN(x); }) &&
+        v.cols>=1 && v.cols<=50 && v.rows>=1 && v.rows<=100 &&
+        v.margin_l>=0 && v.margin_t>=0 && v.gap_x>=0 && v.gap_y>=0;
+      var fits=false, cw, ch;
+      if(valid){ var d=deriveCells(v); cw=d.cw; ch=d.ch; fits=(cw>=5 && ch>=5); }
+      buildSchematic(valid?v:null);
+      if(!named){ eCap.className='cellcap'; eCap.textContent='Name your sheet to save it.'; }
+      else if(!valid){ eCap.className='cellcap err'; eCap.textContent='Enter valid numbers (cols 1–50, rows 1–100, margins/gaps ≥ 0).'; }
+      else if(!fits){ eCap.className='cellcap err'; eCap.textContent="Doesn't fit A4 — reduce margins, gaps, or counts."; }
+      else { eCap.className='cellcap'; eCap.textContent='Each label '+r1(cw)+' × '+r1(ch)+' mm · '+(v.cols*v.rows)+' per sheet'; }
+      eSave.disabled=!(valid && fits);
+    }
+    function openEditor(t, mode){
+      editingId = (mode==='edit') ? t.id : '';
+      eName.value = mode==='edit' ? t.name : (mode==='duplicate' ? (t.name+' copy').slice(0,60) : '');
+      eCols.value=t.cols; eRows.value=t.rows;
+      eML.value=t.margin_l; eMT.value=t.margin_t; eGX.value=t.gap_x||0; eGY.value=t.gap_y||0;
+      eDelete.hidden = (mode!=='edit');
+      eDelete.classList.remove('armed'); eDelete.textContent='Delete this sheet';
+      modalTitle.textContent = mode==='new' ? 'New sheet' : (mode==='duplicate' ? 'Duplicate sheet' : 'Edit sheet');
+      listView.hidden=true; editView.hidden=false;
+      updateEditor(); eName.focus();
+    }
+    function renderList(){
+      sheetList.innerHTML='';
+      TEMPLATES.forEach(function(t){
+        var row=document.createElement('div'); row.className='srow'; row.dataset.id=t.id;
+        var badge = t.builtin ? '<span class="badge">Preset</span>' : '';
+        var acts='<button type="button" class="act" data-a="edit" title="Edit" aria-label="Edit">'+ICON.ed+'</button>'+
+                 '<button type="button" class="act" data-a="dup" title="Duplicate" aria-label="Duplicate">'+ICON.dup+'</button>'+
+                 '<button type="button" class="act del" data-a="del" title="Delete" aria-label="Delete">'+ICON.rm+'</button>';
+        row.innerHTML='<div class="info"><div class="nm">'+esc(t.name)+badge+'</div>'+
+          '<div class="sub">'+t.cols+'×'+t.rows+' · '+r1(t.cell_w)+'×'+r1(t.cell_h)+'mm · L '+r1(t.margin_l)+' T '+r1(t.margin_t)+'</div></div>'+
+          '<div class="ra">'+acts+'</div>';
+        sheetList.appendChild(row);
+      });
+    }
+    function backToList(){ editView.hidden=true; listView.hidden=false; modalTitle.textContent='Label sheets'; renderList(); }
+    function openModal(){ renderList(); listView.hidden=false; editView.hidden=true; modalTitle.textContent='Label sheets'; sheetModal.hidden=false; modalClose.focus(); }
+    function closeModal(){ sheetModal.hidden=true; }
+    function delReq(id, then){
+      fetch('/templates/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
+        .then(function(r){return r.json();}).then(function(d){ if(d.ok){ applyTemplates(d.templates); then&&then(); } }).catch(function(){});
+    }
+    manageBtn.addEventListener('click',openModal);
+    modalClose.addEventListener('click',closeModal);
+    sheetModal.addEventListener('click',function(e){ if(e.target===sheetModal) closeModal(); });
+    document.addEventListener('keydown',function(e){ if(e.key==='Escape' && !sheetModal.hidden) closeModal(); });
+    newSheet.addEventListener('click',function(){ openEditor(curTpl(),'new'); });
+    [eName,eCols,eRows,eML,eMT,eGX,eGY].forEach(function(el){ el.addEventListener('input',updateEditor); });
+    eCancel.addEventListener('click',backToList);
+    eSave.addEventListener('click',function(){
+      if(eSave.disabled) return;
+      var old=eSave.textContent; eSave.disabled=true; eSave.textContent='Saving…';
+      fetch('/templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(readForm())})
+        .then(function(r){return r.json();}).then(function(d){
+          if(d.ok){ applyTemplates(d.templates, d.id); backToList(); }
+          else { eCap.className='cellcap err'; eCap.textContent=d.error||'Could not save.'; eSave.disabled=false; eSave.textContent=old; }
+        }).catch(function(){ eCap.className='cellcap err'; eCap.textContent='Could not reach the server.'; eSave.disabled=false; eSave.textContent=old; });
+    });
+    restoreBtn.addEventListener('click',function(){
+      fetch('/templates/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+        .then(function(r){return r.json();}).then(function(d){ if(d.ok){ applyTemplates(d.templates); renderList(); } }).catch(function(){});
+    });
+    eDelete.addEventListener('click',function(){
+      if(!editingId) return;
+      if(!eDelete.classList.contains('armed')){ eDelete.classList.add('armed'); eDelete.textContent='Click again to delete';
+        setTimeout(function(){ eDelete.classList.remove('armed'); eDelete.textContent='Delete this sheet'; },3000); return; }
+      delReq(editingId, backToList);
+    });
+    sheetList.addEventListener('click',function(e){
+      var b=e.target.closest('[data-a]'); if(!b) return;
+      var row=b.closest('.srow'), t=TBYID[row.dataset.id]; if(!t) return;
+      var a=b.dataset.a;
+      if(a==='edit') openEditor(t,'edit');
+      else if(a==='dup') openEditor(t,'duplicate');
+      else if(a==='del'){
+        if(!b.classList.contains('armed')){ b.classList.add('armed'); b.title='Click again to delete';
+          setTimeout(function(){ b.classList.remove('armed'); b.title='Delete'; },3000); return; }
+        delReq(t.id, renderList);
+      }
+    });
+
+    // restore prefs + first render
+    try{
+      var savedT=localStorage.getItem('pm_tpl'); if(savedT&&TBYID[savedT]) tplSel.value=savedT;
+      calX.value=localStorage.getItem('pm_calx')||'0';
+      calY.value=localStorage.getItem('pm_caly')||'0';
+    }catch(e){}
+    fillVal.textContent=fill.value+'%';
+    renderSheet(); updateUI();
+  }
+
+  // restore last-open tab
+  try{
+    var savedTab=localStorage.getItem('pm_tab');
+    if(savedTab){ var tb=document.querySelector('.tab-btn[data-tab="'+savedTab+'"]'); if(tb && !tb.hidden) tb.click(); }
+  }catch(e){}
+
+  refresh();
+  setInterval(function(){ if(!scanning && !tbody.querySelector('.edit')) refresh(); }, 15000);
+})();
+</script>
+</body>
+</html>"""
+
+
+if __name__ == "__main__":
+    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

@@ -10,8 +10,9 @@
 {{- else }}
    map to guest = never
 {{- end }}
-   # Restrict all access to the LAN subnet; deny everything else.
-   hosts allow = {{ .local_subnet }} 127.
+   # Restrict all access to the LAN subnet; deny everything else. The subnet is
+   # the tack-gathered network CIDR of the default interface (e.g. 192.168.1.0/24).
+   hosts allow = {{ .facts.default_ipv4_subnet }} 127.
    hosts deny = 0.0.0.0/0
    log file = /var/log/samba/log.%m
    max log size = 1000

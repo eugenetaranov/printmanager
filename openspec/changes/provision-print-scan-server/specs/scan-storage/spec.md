@@ -2,7 +2,7 @@
 
 ### Requirement: Samba share for scanned documents
 
-The system SHALL run Samba on the Pi exposing a network share (e.g. `\\192.168.1.113\scans`) that is the destination directory for button-triggered scans and is accessible from Windows, macOS, and Linux clients.
+The system SHALL run Samba on the Pi exposing a network share (e.g. `\\printmanager.local\scans`) that is the destination directory for button-triggered scans and is accessible from Windows, macOS, and Linux clients.
 
 #### Scenario: Share is reachable cross-platform
 

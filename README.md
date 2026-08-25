@@ -1,6 +1,6 @@
 # printmanager
 
-Provisions a Raspberry Pi (`192.168.1.113`) as a **print + scan server** for a
+Provisions a Raspberry Pi (`printmanager.local`) as a **print + scan server** for a
 USB-connected **Brother DCP-1511** using [Tack](https://github.com/tackhq/tack)
 (an Ansible-compatible config tool). The Pi bridges the USB-only printer onto
 the LAN and adds scan-to-network-share.
@@ -14,7 +14,7 @@ the LAN and adds scan-to-network-share.
 | Scanning | SANE + Brother `brscan4` |
 | Scan button → share | `scanbd` runs a scan and drops a PDF into the SMB share |
 | Network pull scanning | `saned` (SANE net, 6566) |
-| Scan storage | Samba share `\\192.168.1.113\scans` |
+| Scan storage | Samba share `\\printmanager.local\scans` |
 
 ## Layout
 
@@ -60,15 +60,15 @@ committing it.
 dialog via AirPrint — no driver needed.
 
 **Print (Linux/Windows):** add an IPP printer at
-`ipp://192.168.1.113:631/printers/DCP1511`, or browse `http://192.168.1.113:631`.
+`ipp://printmanager.local:631/printers/DCP1511`, or browse `http://printmanager.local:631`.
 
 **Scan share:**
-- macOS: Finder → Go → Connect to Server → `smb://192.168.1.113/scans`
-- Windows: `\\192.168.1.113\scans`
-- Linux: `sudo mount -t cifs //192.168.1.113/scans /mnt -o user=scans`
+- macOS: Finder → Go → Connect to Server → `smb://printmanager.local/scans`
+- Windows: `\\printmanager.local\scans`
+- Linux: `sudo mount -t cifs //printmanager.local/scans /mnt -o user=scans`
 
 **Network (pull) scan:** on a client with SANE, add the Pi as a net host
-(`/etc/sane.d/net.conf` → `192.168.1.113`), then `scanimage -L` / your scan app.
+(`/etc/sane.d/net.conf` → `printmanager.local`), then `scanimage -L` / your scan app.
 
 **Button scan:** load a page, press **Scan** on the printer — a
 `scan-YYYYMMDD-HHMMSS.pdf` appears in the share.
@@ -105,7 +105,7 @@ avahi-browse -rt _ipp._tcp        # advertised for AirPrint
 
 # Scan (requires working brscan4 — see ARM note)
 scanimage -L                      # lists the DCP-1511 via brother4
-# press the Scan button -> file appears in \\192.168.1.113\scans
+# press the Scan button -> file appears in \\printmanager.local\scans
 # client pull scan via saned returns an image
 ```
 

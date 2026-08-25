@@ -4,7 +4,7 @@ A Brother DCP-1511 is a USB-only mono laser multifunction device with no built-i
 
 ## What Changes
 
-- Provision the Raspberry Pi at `192.168.1.113` via the existing Tack playbook (`site.yaml`) using purpose-built roles under `roles/` (tack-roles has no printer/scanner role to reuse).
+- Provision the Raspberry Pi at `printmanager.local` via the existing Tack playbook (`site.yaml`) using purpose-built roles under `roles/` (tack-roles has no printer/scanner role to reuse).
 - Install and configure **CUPS** with the open-source **brlaser** driver, creating a shared print queue for the USB-attached DCP-1511 reachable by all LAN clients over IPP.
 - Advertise the queue via **Avahi/mDNS (AirPrint)** so Apple and mobile devices discover and print to it with zero driver install.
 - Install **SANE + Brother brscan4** and enable **both** scan paths: device **Scan-button-triggered** scan-to-share (via scanbd/scanbuttond) **and** network **pull scanning** (via `saned`).
@@ -26,7 +26,7 @@ Non-goals: color/photo tuning, cloud print, print quota/accounting, and multi-pr
 ## Impact
 
 - **New roles** under `roles/`: printing (CUPS/brlaser/Avahi), scanning (SANE/brscan4/scanbd/saned), and file sharing (Samba), plus a base host-prep role.
-- **`site.yaml`**: updated to include the new roles for host `192.168.1.113`.
+- **`site.yaml`**: updated to include the new roles for host `printmanager.local`.
 - **System packages** on the Pi: `cups`, `printer-driver-brlaser`, `avahi-daemon`, `sane-utils`, `brscan4` (vendor `.deb`), `scanbd`, `samba`.
 - **Services**: `cups`, `avahi-daemon`, `saned`, `scanbd`, `smbd` enabled and firewall/ports opened on the LAN.
 - **Hardware dependency**: USB connection to the DCP-1511 (currently absent) required for end-to-end verification.

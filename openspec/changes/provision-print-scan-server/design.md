@@ -1,6 +1,6 @@
 ## Context
 
-The target is a Raspberry Pi (Debian-based Raspberry Pi OS Lite) at `192.168.1.113`, provisioned with **Tack** — a single-binary, Ansible-compatible config tool — via this repo's `site.yaml` playbook and `roles/` directory. The Pi will host a USB-connected Brother DCP-1511 (mono laser MFP, USB-only, no networking). The community `tack-roles` collection provides infrastructure roles (docker, tailscale, etc.) but **nothing for printing or scanning**, so roles are authored locally.
+The target is a Raspberry Pi (Debian-based Raspberry Pi OS Lite) at `printmanager.local`, provisioned with **Tack** — a single-binary, Ansible-compatible config tool — via this repo's `site.yaml` playbook and `roles/` directory. The Pi will host a USB-connected Brother DCP-1511 (mono laser MFP, USB-only, no networking). The community `tack-roles` collection provides infrastructure roles (docker, tailscale, etc.) but **nothing for printing or scanning**, so roles are authored locally.
 
 Key constraint: the printer is **not yet physically connected**. All provisioning must be idempotent and must not fail on the absence of the USB device; the device-dependent behaviors (queue binding, scanner detection) become live once the printer is plugged in, with no re-provision needed.
 
@@ -56,7 +56,7 @@ Rationale: one role per capability keeps tasks/handlers cohesive and lets `base`
 ## Migration Plan
 
 1. Author roles under `roles/`, wire into `site.yaml`.
-2. Run the playbook against `192.168.1.113` (printer may be absent) — expect all services up and config present.
+2. Run the playbook against `printmanager.local` (printer may be absent) — expect all services up and config present.
 3. Physically connect the DCP-1511 via USB; run provision-time verification.
 4. Run printer-attached verification (test print, `scanimage -L`, button scan → file in share, network pull scan).
 5. Rollback: roles are additive; disabling is `systemctl disable` of the services + removing the `site.yaml` role entries. No destructive changes to the host baseline.

@@ -4,7 +4,7 @@
 - [x] 1.2 Define `local_subnet` and other shared vars in `roles/base/defaults/main.yaml`
 - [x] 1.3 Task: `apt update` + install common packages (ca-certificates, curl, usbutils, ufw)
 - [x] 1.4 Task: configure ufw — allow SSH (22) first, then enable (avoid lockout)
-- [x] 1.5 Wire `base` as the first role for `192.168.1.113` in `site.yaml`
+- [x] 1.5 Wire `base` as the first role for `printmanager.local` in `site.yaml`
 - [ ] 1.6 Run playbook; verify base packages installed and ufw active with SSH allowed  _(needs live host)_
 
 ## 2. Print server role (`roles/print-server`)
@@ -41,7 +41,7 @@
 - [x] 4.4 Task: create the `scans` Samba user and set its password from a Tack variable/secret (default empty → skipped, no committed plaintext)
 - [x] 4.5 Task: enable `smbd`; open ufw for SMB (445/tcp, 139/tcp) from the subnet
 - [x] 4.6 Wire `scan-share` into `site.yaml` before `scan-server`
-- [ ] 4.7 Verify: mount `\\192.168.1.113\scans` from a client with credentials; off-subnet/unauthenticated access denied  _(needs live host)_
+- [ ] 4.7 Verify: mount `\\printmanager.local\scans` from a client with credentials; off-subnet/unauthenticated access denied  _(needs live host)_
 
 ## 5. End-to-end verification (printer attached)
 
@@ -49,7 +49,7 @@
 - [ ] 5.2 Verify print: `lpstat -p DCP1511` enabled; submit a test print from a LAN client  _(needs hardware)_
 - [ ] 5.3 Verify AirPrint: DCP-1511 appears automatically in an iOS/macOS print dialog and prints  _(needs hardware)_
 - [ ] 5.4 Verify scanner: `scanimage -L` lists the device via `brother4`; test `scanimage` scan succeeds  _(needs hardware + working brscan4)_
-- [ ] 5.5 Verify button scan: press Scan → timestamped PDF appears in `\\192.168.1.113\scans`  _(needs hardware)_
+- [ ] 5.5 Verify button scan: press Scan → timestamped PDF appears in `\\printmanager.local\scans`  _(needs hardware)_
 - [ ] 5.6 Verify network scan: client initiates a pull scan via saned and receives an image  _(needs hardware)_
 - [ ] 5.7 Verify coexistence: a button scan and a network scan do not collide/corrupt  _(needs hardware)_
 

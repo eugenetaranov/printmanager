@@ -6,7 +6,6 @@ scan_packages:
   - sane-utils
   - img2pdf
   - imagemagick
-  - poppler-utils      # pdftoppm: thumbnails for the web UI's table
   - qemu-user-static
   - binfmt-support
   - debootstrap
@@ -52,15 +51,9 @@ scan_mode: "24bit Color"
 # colour page is ~1-2 MB at 92. Lower to ~80 for smaller files, raise for photos.
 scan_jpeg_quality: 92
 
-# --- Scan-to-share web UI ----------------------------------------------------
-# A dependency-free stdlib-Python page with a Scan button that runs the scan
-# server-side (Brother's driver in the chroot) and drops a PDF into the share.
-# Reachable from any LAN browser/phone. On port 80 -> http://<pi>/.
-scan_web_enabled: true
-scan_web_port: 80
+# The Scan + Print web UI lives in its own role (roles/web-ui); this role just
+# needs the user it runs as, to own the thumbnail/metadata sidecar directory.
 scan_web_user: scans
-scan_web_title: printmanager
-scan_web_share: "smb://printmanager.local/scans"
 
 # saned port for the AirSane net bridge (chroot saned on 127.0.0.1:this).
 saned_port: 6566

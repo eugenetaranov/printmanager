@@ -1,0 +1,45 @@
+# The printmanager web UI: one page with two tools — Scan (drops PDFs into the
+# Samba share) and Print (composes A4 label sheets and sends them to CUPS). A
+# dependency-light stdlib-Python server; reportlab/Pillow are used only on the
+# print path. Runs as the unprivileged scans user on port 80.
+#
+# Depends on the scan-server role (the scan pipeline it shells out to lives at
+# /usr/local/lib/scan-web/scan-to-share.sh, and the thumbnail/metadata dir at
+# /var/lib/scan-web) and on print-server (the CUPS queue it prints to), so this
+# role runs after both in site.yaml.
+
+# Packages the UI needs beyond stdlib Python: reportlab (vector label PDFs),
+# Pillow (normalize uploaded images), poppler-utils (pdftoppm: PDF thumbnails +
+# rasterizing uploaded PDFs), and the CUPS client (lp) to submit print jobs.
+web_packages:
+  - python3-reportlab
+  - python3-pil
+  - poppler-utils
+  - cups-client
+
+web_enabled: true
+scan_web_enabled: true
+scan_web_port: 80
+scan_web_user: scans          # must match scan-share (owns the share) + scan-server
+scan_web_title: printmanager
+scan_web_share: "smb://printmanager.local/scans"
+
+# Defaults preselected in the Scan tab's Mode/Resolution dropdowns. (Separate
+# from scan-server's scan_mode/scan_resolution, which drive the pipeline itself.)
+scan_web_default_mode: "24bit Color"
+scan_web_default_res: 300
+
+# --- Label printer (the "Print" tab) -----------------------------------------
+# Pick a layout, click the cells on the rendered A4 sheet, drop in text (e.g. a
+# number) or an image/PDF, and it composes an A4 PDF and submits it to the queue
+# below. Label stock dimensions vary, so the UI ships a few presets plus a
+# per-print X/Y "nudge" (mm): do one test print on plain paper, hold it against a
+# real sheet, and adjust until the ink lands on the labels (remembered in the
+# browser). scan_web_print_queue must match print-server's printer_queue_name.
+# Set scan_web_print_enabled false to hide the Print tab.
+scan_web_print_enabled: true
+scan_web_print_queue: DCP1511
+
+# Must match the scan-share / scan-server roles (where scans land + the group).
+scan_dir: /srv/scans
+scan_group: scans

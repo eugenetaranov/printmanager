@@ -1,9 +1,10 @@
 # The LAN subnet permitted to reach the print/scan/share services is discovered,
-# not hardcoded: the service roles scope their firewall rules to
-# "{{ facts.default_ipv4 }}/24" (iptables masks the host bits, so .111/24 becomes
-# .0/24). Assumes a /24 (the home-LAN norm). (No local_subnet var — tack renders
-# templates in a single pass, so a var whose value is itself a template wouldn't
-# expand; the fact is referenced directly in each rule instead.)
+# not hardcoded: tack gathers the default interface's network CIDR as the fact
+# `default_ipv4_subnet` (e.g. 192.168.1.0/24). Firewall rules and task values use
+# it as `{{ facts.default_ipv4_subnet }}`; templates (.j2, Go text/template) use
+# `{{ .facts.default_ipv4_subnet }}` (leading dot, `facts` sub-map). There is no
+# local_subnet var — a var whose value is itself a template wouldn't expand
+# (single-pass render), so the fact is referenced directly everywhere.
 
 # Packages shared across roles. usbutils gives lsusb for identifying the
 # Brother's USB VID/PID; iptables-persistent restores the rules the firewall

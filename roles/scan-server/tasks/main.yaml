@@ -1,10 +1,10 @@
 # Scan server for the USB Brother DCP-1511. Brother's real brscan4 driver (x86)
-# runs under i386 emulation in a chroot; scan-web scans through it directly and
-# drops PDFs into the share, while AirSane reaches it over a localhost saned net
-# bridge for native macOS/iOS discovery.
+# runs under i386 emulation in a chroot; the web UI (roles/web-ui) scans through
+# it directly and drops PDFs into the share, while AirSane reaches it over a
+# localhost saned net bridge for native macOS/iOS discovery.
 #
-# Overridable variables: see defaults/main.yaml. Depends on `base` (local_subnet,
-# firewall) and `scan-share` (scan_dir, scan_group, scan_web_user must exist).
+# Overridable variables: see defaults/main.yaml. Depends on `base` (firewall) and
+# `scan-share` (scan_dir, scan_group, scan_web_user must exist).
 
 - name: Install host scan packages (SANE, img2pdf, ImageMagick, qemu/debootstrap)
   apt:
@@ -128,7 +128,7 @@
   iptables:
     chain: INPUT
     protocol: tcp
-    source: "{{ facts.default_ipv4 }}/24"
+    source: "{{ facts.default_ipv4_subnet }}"
     destination_port: "{{ airsane_port }}"
     jump: ACCEPT
     action: insert
@@ -136,43 +136,8 @@
     persist: true
   when: airsane_enabled
 
-# --- Scan-to-share web UI ----------------------------------------------------
-- name: Install the scan-web server
-  template:
-    src: scan-web.py.j2
-    dest: /usr/local/lib/scan-web/scan-web.py
-    mode: "0755"
-  when: scan_web_enabled
-  notify: Restart scan-web
-
-- name: Install the scan-web systemd unit
-  template:
-    src: scan-web.service.j2
-    dest: /etc/systemd/system/scan-web.service
-    mode: "0644"
-  when: scan_web_enabled
-  notify: Restart scan-web
-
-- name: Ensure scan-web is running and enabled
-  systemd:
-    name: scan-web
-    state: started
-    enabled: true
-    daemon_reload: true
-  when: scan_web_enabled
-
-# Inserted above the base default-deny DROP (see the base role).
-- name: Open the firewall for the scan-web UI from the LAN
-  iptables:
-    chain: INPUT
-    protocol: tcp
-    source: "{{ facts.default_ipv4 }}/24"
-    destination_port: "{{ scan_web_port }}"
-    jump: ACCEPT
-    action: insert
-    comment: "scan: web ui"
-    persist: true
-  when: scan_web_enabled
+# The Scan + Print web UI that scans through this pipeline lives in its own role
+# (roles/web-ui), which runs after this one.
 
 # --- Retention: hourly cleanup of old scans ----------------------------------
 - name: Install the scan cleanup script

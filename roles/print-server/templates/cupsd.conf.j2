@@ -1,5 +1,5 @@
 # Managed by Tack — roles/print-server. Local edits are overwritten on run.
-# Shares printers to the LAN and scopes access to {{ .local_subnet }}.
+# Shares printers to the LAN and scopes access to the discovered /24 subnet.
 LogLevel warn
 MaxLogSize 1m
 ErrorPolicy retry-job
@@ -19,13 +19,13 @@ WebInterface Yes
 <Location />
   Order allow,deny
   Allow localhost
-  Allow from {{ .local_subnet }}
+  Allow from {{ .facts.default_ipv4_subnet }}
 </Location>
 
 <Location /admin>
   Order allow,deny
   Allow localhost
-  Allow from {{ .local_subnet }}
+  Allow from {{ .facts.default_ipv4_subnet }}
 </Location>
 
 <Location /admin/conf>
@@ -33,7 +33,7 @@ WebInterface Yes
   Require user @SYSTEM
   Order allow,deny
   Allow localhost
-  Allow from {{ .local_subnet }}
+  Allow from {{ .facts.default_ipv4_subnet }}
 </Location>
 
 <Policy default>

@@ -1,4 +1,4 @@
-# Triggered when the scan-web script or unit changes.
+# Triggered when the web app or its unit changes.
 - name: Restart scan-web
   systemd:
     name: scan-web
