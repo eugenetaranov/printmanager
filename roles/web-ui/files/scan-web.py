@@ -1293,7 +1293,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .drow .dsub{font:500 11.5px var(--mono);color:var(--faint);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .drow .dacts{display:flex;gap:5px;flex:none;align-items:center}
 .ifi{display:inline-flex;flex:none;color:var(--muted)}
-.ifi svg{width:15px;height:15px}
+.ifi svg{width:17px;height:17px}
 .mini.ic{padding:0;width:30px;height:30px;flex:none;display:inline-flex;align-items:center;justify-content:center}
 .mini.ic svg{width:16px;height:16px}
 .mini.ic.pri{background:var(--accent-weak);color:var(--accent)}
@@ -1322,7 +1322,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .iconbtn.alert .badge-dot{display:block}
 .deverr{margin:2px 0 12px;font:500 12px var(--mono);color:var(--danger);min-height:0}
 .modal-card.wide{max-width:520px}
-.msub{font:600 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:18px 2px 10px}
+.msub{font:600 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:16px 2px 8px}
 .iconbtn.sm{width:30px;height:30px;border-radius:8px}
 .iconbtn.spin svg{animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -1330,6 +1330,16 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .grp:first-child{margin-top:2px}
 .iface{font:600 9.5px var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--bg);border:1px solid var(--border);padding:1px 6px;border-radius:5px}
 #invGroups .drow{margin-bottom:9px}
+.secnote{margin:2px 2px 9px;font:500 12px var(--mono);color:var(--muted)}
+.secnote:empty{display:none}
+.secnote.ok{color:var(--accent)}
+.secnote.err{color:var(--danger)}
+/* hover hints for icon buttons + interface icons */
+[data-tip]{position:relative}
+[data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);
+  background:var(--text);color:var(--surface);font:500 11px/1.2 var(--sans);white-space:nowrap;padding:5px 8px;border-radius:6px;pointer-events:none;z-index:200;box-shadow:var(--pop)}
+[data-tip]:hover::before{content:"";position:absolute;bottom:calc(100% + 2px);left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--text);pointer-events:none;z-index:200}
+@media (hover:none){[data-tip]:hover::after,[data-tip]:hover::before{display:none}}
 .loghead{display:flex;align-items:center;gap:12px;margin:2px 0 12px}
 .loghead strong{font-size:14px;font-weight:640;letter-spacing:-.01em}
 .logacts{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
@@ -1344,7 +1354,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
       <span class="status" id="status" data-state="idle" role="status" aria-live="polite">
         <i class="led"></i><span id="statusText">Ready</span>
       </span>
-      <button class="iconbtn" id="devicesBtn" title="Devices" aria-label="Manage devices"__DEVICES_HIDDEN__>
+      <button class="iconbtn" id="devicesBtn" data-tip="Devices" title="Devices" aria-label="Manage devices"__DEVICES_HIDDEN__>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         <span class="badge-dot"></span>
       </button>
@@ -1497,7 +1507,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
     <div class="modal-head">
       <strong id="devModalTitle">Devices</strong>
       <span style="display:flex;gap:6px;align-items:center">
-        <button type="button" class="iconbtn sm" id="devRefresh" title="Refresh" aria-label="Refresh">
+        <button type="button" class="iconbtn sm" id="devRefresh" data-tip="Refresh" title="Refresh" aria-label="Refresh">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
         </button>
         <button type="button" class="mclose" id="devModalClose" aria-label="Close">×</button>
@@ -1508,9 +1518,12 @@ input[type=number]{font-variant-numeric:tabular-nums}
     <div id="devMain">
       <div id="invGroups"><p class="empty">Loading…</p></div>
 
-      <div class="msub">Label printers
-        <button type="button" class="mini" id="niimScan" style="float:right;text-transform:none;letter-spacing:0">Scan for printers</button>
+      <div class="msub" style="display:flex;align-items:center;justify-content:space-between">Label printers
+        <button type="button" class="iconbtn sm" id="niimScan" data-tip="Scan for Bluetooth printers" title="Scan for Bluetooth printers" aria-label="Scan for Bluetooth printers">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        </button>
       </div>
+      <p class="secnote" id="niimNote" aria-live="polite"></p>
       <p class="hint" id="niimAdapter" hidden>Bluetooth adapter not available on this host.</p>
       <div class="devlist" id="niimList"></div>
       <div class="candlist" id="candList"></div>
@@ -2135,9 +2148,13 @@ input[type=number]{font-variant-numeric:tabular-nums}
     var state={printers:[],active:null,adapter:true,log:[]}, inventory=[];
     var kind='text', imgB64='', busy=false, curPrinter=null, lastApplied='', curLogAddr=null;
 
+    var niimNote=document.getElementById('niimNote');
     function jpost(url, body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(body||{})}).then(function(r){return r.json();}); }
     function dnote(msg, cls){ devNote.textContent=msg||''; devNote.style.color = cls==='err'?'var(--danger)':'var(--muted)'; }
+    // Status for label-printer actions goes in the Label printers section (near
+    // the button that triggered it), not the top of the modal.
+    function nnote(msg, cls){ niimNote.className='secnote'+(cls?' '+cls:''); niimNote.textContent=msg||''; }
 
     // ---- per-device connection log (lines are tagged '[address] ...') --------
     function deviceLog(addr){ return (state.log||[]).filter(function(ln){ return ln.indexOf('['+addr+']')>=0; }); }
@@ -2185,7 +2202,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
     // ---- icons + row helpers ------------------------------------------------
     var DICON={
-      usb:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="20.5" r="1.5"/><path d="M11 19V4"/><path d="M8 7l3-3 3 3"/><path d="M11 13l4-2.5V8"/><rect x="13.6" y="6.4" width="2.8" height="2.4" rx=".4" fill="currentColor" stroke="none"/><path d="M11 10L7.5 8V6"/><circle cx="7.5" cy="5.5" r="1.3" fill="currentColor" stroke="none"/></svg>',
+      usb:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V5"/><path d="M12 3l-2.2 3h4.4L12 3z" fill="currentColor" stroke="none"/><circle cx="12" cy="21" r="1.5" fill="currentColor" stroke="none"/><path d="M12 13l-4.5-4.5"/><circle cx="7" cy="8" r="1.5" fill="currentColor" stroke="none"/><path d="M12 13l4.5-4.5"/><circle cx="17" cy="8" r="1.5" fill="currentColor" stroke="none"/></svg>',
       bluetooth:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8l10 8-5 4V4l5 4-10 8"/></svg>',
       network:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 3.6 6 3.6 9s-1 6.3-3.6 9c-2.6-2.7-3.6-6-3.6-9S9.4 5.7 12 3z"/></svg>',
       test:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7" rx="1"/></svg>',
@@ -2193,14 +2210,15 @@ input[type=number]{font-variant-numeric:tabular-nums}
       forget:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>',
       reconnect:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>',
       disconnect:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><path d="M12 2v10"/></svg>',
-      connect:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>'
+      connect:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+      search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>'
     };
     var TRANSPORT={usb:'USB',bluetooth:'Bluetooth',network:'Network',cups:'Network',sane:'USB'};
     function ifaceLabel(t){ return TRANSPORT[t] || (t?t.toUpperCase():''); }
     function ifaceIcon(t){ var k=(t==='bluetooth')?'bluetooth':(t==='network'||t==='cups')?'network':'usb';
-      return '<span class="ifi" title="'+esc(ifaceLabel(t))+'">'+DICON[k]+'</span>'; }
+      return '<span class="ifi" data-tip="'+esc(ifaceLabel(t))+'" title="'+esc(ifaceLabel(t))+'">'+DICON[k]+'</span>'; }
     function iconBtn(act, icon, title, cls){
-      return '<button type="button" class="mini ic'+(cls?' '+cls:'')+'" data-act="'+act+'" title="'+esc(title)+'" aria-label="'+esc(title)+'">'+DICON[icon]+'</button>'; }
+      return '<button type="button" class="mini ic'+(cls?' '+cls:'')+'" data-act="'+act+'" data-tip="'+esc(title)+'" title="'+esc(title)+'" aria-label="'+esc(title)+'">'+DICON[icon]+'</button>'; }
     function devRowHTML(name, transport, status, sub, isErr, acts){
       var dot = status==='error'?'err':(status==='connected'?'on':'');
       return '<i class="dot '+dot+'"></i>'+(transport?ifaceIcon(transport):'')+
@@ -2270,25 +2288,25 @@ input[type=number]{font-variant-numeric:tabular-nums}
     }
     function loadNiim(){
       return fetch('/niimbot/state').then(function(r){return r.json();}).then(function(st){
-        if(st.error) dnote(st.error,'err'); renderNiim(st);
+        if(st.error) nnote(st.error,'err'); renderNiim(st);
       }).catch(function(){});
     }
     function niimAction(act, p, bb){
       if(busy) return;
       if(act==='test'){
-        busy=true; bb.disabled=true; dnote('Printing test label…');
-        jpost('/devices/testpage',{kind:'label-printer',id:p.address}).then(function(r){ dnote(r.ok?'Test label sent':(r.error||'Test failed'), r.ok?'':'err'); })
-          .catch(function(){ dnote('Test failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
+        busy=true; bb.disabled=true; nnote('Printing test label…');
+        jpost('/devices/testpage',{kind:'label-printer',id:p.address}).then(function(r){ nnote(r.ok?'Test label sent':(r.error||'Test failed'), r.ok?'':'err'); })
+          .catch(function(){ nnote('Test failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
         return;
       }
       if(act==='forget' && !bb.classList.contains('armed')){ bb.classList.add('armed'); bb.title='Click again to remove';
         setTimeout(function(){ bb.classList.remove('armed'); bb.title='Forget'; },3000); return; }
-      busy=true; dnote(act+'…'); bb.disabled=true;
+      busy=true; nnote(act+'…'); bb.disabled=true;
       var url = act==='reconnect'?'/niimbot/reconnect':(act==='disconnect'?'/niimbot/disconnect':'/niimbot/forget');
       jpost(url,{address:p.address}).then(function(r){
-        if(r.ok){ dnote(''); renderNiim(r); } else dnote(r.error||'Failed','err');
+        if(r.ok){ nnote(''); renderNiim(r); } else nnote(r.error||'Failed','err');
         loadInv(false);
-      }).catch(function(){ dnote('Request failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
+      }).catch(function(){ nnote('Request failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
     }
     function renderCands(cands){
       candList.innerHTML='';
@@ -2299,21 +2317,21 @@ input[type=number]{font-variant-numeric:tabular-nums}
         var row=document.createElement('div'); row.className='drow';
         row.innerHTML='<i class="dot"></i>'+ifaceIcon('bluetooth')+'<div class="dinfo"><div class="dname">'+esc(c.name)+'</div>'+
           '<div class="dsub">'+esc(c.address)+' · '+(c.rssi||'')+' dBm</div></div>'+
-          '<div class="dacts"><button type="button" class="mini ic pri" data-connect="1" title="Connect" aria-label="Connect">'+DICON.connect+'</button></div>';
+          '<div class="dacts"><button type="button" class="mini ic pri" data-connect="1" data-tip="Connect" title="Connect" aria-label="Connect">'+DICON.connect+'</button></div>';
         row.querySelector('[data-connect]').addEventListener('click',function(bev){
-          var bb=bev.target; if(busy) return; busy=true; bb.disabled=true; dnote('Connecting…');
+          var bb=bev.target.closest('button'); if(busy) return; busy=true; bb.disabled=true; nnote('Connecting…');
           jpost('/niimbot/connect',{address:c.address,name:c.name}).then(function(r){
-            if(r.ok){ dnote(''); candList.innerHTML=''; renderNiim(r); loadInv(false); } else dnote(r.error||'Connect failed','err');
-          }).catch(function(){ dnote('Connect failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
+            if(r.ok){ nnote(''); candList.innerHTML=''; renderNiim(r); loadInv(false); } else nnote(r.error||'Connect failed','err');
+          }).catch(function(){ nnote('Connect failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
         });
         candList.appendChild(row);
       });
     }
     document.getElementById('niimScan').addEventListener('click',function(){
-      if(busy) return; busy=true; var b=this; b.disabled=true; dnote('Scanning for Bluetooth printers…');
+      if(busy) return; busy=true; var b=this; b.disabled=true; b.classList.add('spin'); nnote('Scanning for Bluetooth printers…');
       jpost('/niimbot/scan',{}).then(function(r){
-        if(r.ok){ dnote(''); renderCands(r.candidates); } else dnote(r.error||'Scan failed','err');
-      }).catch(function(){ dnote('Scan failed','err'); }).finally(function(){ busy=false; b.disabled=false; });
+        if(r.ok){ nnote(''); renderCands(r.candidates); } else nnote(r.error||'Scan failed','err');
+      }).catch(function(){ nnote('Scan failed','err'); }).finally(function(){ busy=false; b.disabled=false; b.classList.remove('spin'); });
     });
 
     // ---- Print/Scan selectors (fed from inventory + niimbot state) ----------
