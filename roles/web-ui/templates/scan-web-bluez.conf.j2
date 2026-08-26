@@ -1,0 +1,20 @@
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<!--
+  Managed by Tack — roles/web-ui. Grants the unprivileged scan-web user
+  ({{ .scan_web_user }}) permission to talk to BlueZ on the system bus, so the
+  Niimbot Bluetooth-LE print path can scan/connect/write GATT. Without this,
+  org.bluez rejects the non-root user and every connect fails.
+-->
+<busconfig>
+  <policy user="{{ .scan_web_user }}">
+    <allow send_destination="org.bluez"/>
+    <allow send_destination="org.bluez" send_interface="org.bluez.Adapter1"/>
+    <allow send_destination="org.bluez" send_interface="org.bluez.Device1"/>
+    <allow send_destination="org.bluez" send_interface="org.bluez.GattService1"/>
+    <allow send_destination="org.bluez" send_interface="org.bluez.GattCharacteristic1"/>
+    <allow send_destination="org.bluez" send_interface="org.bluez.GattDescriptor1"/>
+    <allow send_destination="org.bluez" send_interface="org.freedesktop.DBus.ObjectManager"/>
+    <allow send_destination="org.bluez" send_interface="org.freedesktop.DBus.Properties"/>
+  </policy>
+</busconfig>

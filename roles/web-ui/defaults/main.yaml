@@ -9,13 +9,20 @@
 # role runs after both in site.yaml.
 
 # Packages the UI needs beyond stdlib Python: reportlab (vector label PDFs),
-# Pillow (normalize uploaded images), poppler-utils (pdftoppm: PDF thumbnails +
-# rasterizing uploaded PDFs), and the CUPS client (lp) to submit print jobs.
+# Pillow (normalize uploaded images + raster Niimbot labels), poppler-utils
+# (pdftoppm: PDF thumbnails + rasterizing uploaded PDFs), the CUPS client (lp)
+# to submit print jobs, usbutils (lsusb for the Devices inventory), bluez (the
+# BlueZ stack the Niimbot BLE path drives), a bold TrueType font for rasterized
+# labels, and python3-venv (for the bleak venv, see below).
 web_packages:
   - python3-reportlab
   - python3-pil
   - poppler-utils
   - cups-client
+  - usbutils
+  - bluez
+  - fonts-dejavu-core
+  - python3-venv
 
 web_enabled: true
 scan_web_enabled: true
@@ -39,6 +46,24 @@ scan_web_default_res: 300
 # Set scan_web_print_enabled false to hide the Print tab.
 scan_web_print_enabled: true
 scan_web_print_queue: DCP1511
+
+# --- Devices tab: inventory + Niimbot BLE label printers ---------------------
+# A third tab that inventories all attached print/scan hardware (CUPS queues,
+# SANE scanners, raw USB) with live status + forget, and connects Niimbot D110/
+# B1 label printers over Bluetooth LE to print text/QR/image labels. Set false
+# to hide the tab and skip the BLE stack entirely.
+scan_web_devices_enabled: true
+
+# The Niimbot path needs `bleak`, which isn't dependably in apt. We install it
+# (and qrcode) into a venv created with --system-site-packages so the apt
+# reportlab/Pillow stay importable; the scan-web unit then runs from this venv's
+# interpreter. Version floors (not exact pins) keep this working across Ubuntu
+# and Raspberry Pi OS / Debian and their differing Python versions — both resolve
+# to a wheel with no compiler needed on arm64.
+niimbot_venv: /usr/local/lib/scan-web/venv
+niimbot_pip_packages:
+  - "bleak>=0.22,<1.0"
+  - "qrcode>=7.4,<9"
 
 # Must match the scan-share / scan-server roles (where scans land + the group).
 scan_dir: /srv/scans

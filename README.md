@@ -15,6 +15,8 @@ the LAN and adds scan-to-network-share.
 | Scan button → share | `scanbd` runs a scan and drops a PDF into the SMB share |
 | Network pull scanning | `saned` (SANE net, 6566) |
 | Scan storage | Samba share `\\printmanager.local\scans` |
+| Label printers | **Devices** tab: Niimbot D110/B1 over Bluetooth LE (`bleak`) — connect, quick-reconnect, print text/QR/image labels |
+| Device inventory | **Devices** tab lists all print/scan hardware (CUPS, SANE, USB, BLE) with status + forget |
 
 ## Layout
 
@@ -25,6 +27,7 @@ roles/
   print-server/      # CUPS, brlaser, Avahi, shared DCP1511 queue
   scan-share/        # Samba [scans] share -> /srv/scans
   scan-server/       # SANE, brscan4, scanbd (button), saned (network)
+  web-ui/            # scan+print+devices web UI (:80); Niimbot BLE via bleak
 ```
 
 Roles run in the order above; `scan-share` precedes `scan-server` because the
@@ -69,6 +72,20 @@ dialog via AirPrint — no driver needed.
 
 **Network (pull) scan:** on a client with SANE, add the Pi as a net host
 (`/etc/sane.d/net.conf` → `printmanager.local`), then `scanimage -L` / your scan app.
+
+**Label printers (Niimbot D110 / B1):** open the web UI's **Devices** tab. It
+lists all attached hardware (CUPS queues, the scanner, USB devices, Bluetooth
+printers) with a live status and a Forget action. Under *Niimbot label
+printers*, tap **Scan for printers** to discover a powered-on D110/B1 over
+Bluetooth LE, **Connect**, then compose a **text / QR / image** label and
+**Print**. Connected printers are remembered — a dropped link shows a one-click
+**Reconnect**. Pick the active printer under *Print to*; set the loaded roll size
+in mm. The Niimbots do **not** go through CUPS/AirPrint — they speak their own
+BLE protocol (ported from the moverse project), so `bleak` drives them from a
+venv the `web-ui` role provisions. A BlueZ D-Bus policy lets the unprivileged
+`scans` user reach the adapter. Requires a working Bluetooth radio on the Pi
+(built-in or a USB BLE dongle); with none, the tab reports Bluetooth
+unavailable. Disable the whole tab with `scan_web_devices_enabled: false`.
 
 **Button scan:** load a page, press **Scan** on the printer — a
 `scan-YYYYMMDD-HHMMSS.pdf` appears in the share.

@@ -27,6 +27,49 @@
   when: scan_web_enabled
   notify: Restart scan-web
 
+# --- Devices tab: Niimbot BLE label printers -------------------------------
+# Installed alongside scan-web.py and imported lazily (like reportlab/Pillow),
+# so the base app is unaffected when the Devices tab is off.
+- name: Install the Niimbot BLE module
+  copy:
+    src: niimbot.py
+    dest: /usr/local/lib/scan-web/niimbot.py
+    mode: "0644"
+  when: scan_web_enabled
+  notify: Restart scan-web
+
+# Create the venv scan-web runs from (always, since the unit's ExecStart points
+# at it) and install bleak/qrcode into it when the Devices tab is enabled.
+- name: Install the venv bootstrap script
+  template:
+    src: install-niimbot-venv.sh.j2
+    dest: /usr/local/lib/scan-web/install-niimbot-venv.sh
+    mode: "0755"
+  when: scan_web_enabled
+
+- name: Create the scan-web venv and install BLE deps
+  command: /usr/local/lib/scan-web/install-niimbot-venv.sh
+  when: scan_web_enabled
+  notify: Restart scan-web
+
+# BlueZ must be running for the BLE path; enabling the service is harmless on a
+# host with no adapter (the UI reports "Bluetooth unavailable" at runtime).
+- name: Ensure Bluetooth (BlueZ) is enabled
+  systemd:
+    name: bluetooth
+    state: started
+    enabled: true
+  when: scan_web_enabled and scan_web_devices_enabled
+
+# Let the unprivileged scan-web user drive org.bluez on the system bus.
+- name: Install the BlueZ D-Bus policy for the scan-web user
+  template:
+    src: scan-web-bluez.conf.j2
+    dest: /etc/dbus-1/system.d/scan-web-bluez.conf
+    mode: "0644"
+  when: scan_web_enabled and scan_web_devices_enabled
+  notify: Reload dbus
+
 - name: Install the scan-web systemd unit
   template:
     src: scan-web.service.j2

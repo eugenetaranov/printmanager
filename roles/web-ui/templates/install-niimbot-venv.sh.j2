@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Managed by Tack — roles/web-ui.
+#
+# scan-web runs from a venv interpreter so the Niimbot BLE path can import
+# `bleak` (not dependably packaged in apt). The venv is created with
+# --system-site-packages so the apt-provided reportlab/Pillow stay importable.
+# The venv is always created (the systemd unit's ExecStart points at it); the
+# BLE deps are installed only when the Devices tab is enabled. Idempotent: skips
+# the pip step when the pinned packages already import.
+set -euo pipefail
+
+VENV="{{ .niimbot_venv }}"
+DEVICES="{{ .scan_web_devices_enabled }}"
+PKGS="{{ range .niimbot_pip_packages }}{{ . }} {{ end }}"
+
+if [ ! -x "$VENV/bin/python3" ]; then
+  python3 -m venv --system-site-packages "$VENV"
+fi
+
+if [ "$DEVICES" = "true" ]; then
+  if ! "$VENV/bin/python3" -c 'import bleak, qrcode' 2>/dev/null; then
+    "$VENV/bin/pip" install --disable-pip-version-check --no-input $PKGS
+  fi
+fi

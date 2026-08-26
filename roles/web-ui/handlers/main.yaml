@@ -4,3 +4,10 @@
     name: scan-web
     state: restarted
     daemon_reload: true
+
+# The system D-Bus daemon re-reads /etc/dbus-1/system.d/ on reload, activating
+# the BlueZ policy for the scan-web user without a reboot.
+- name: Reload dbus
+  systemd:
+    name: dbus
+    state: reloaded

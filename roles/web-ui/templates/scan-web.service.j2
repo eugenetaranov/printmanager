@@ -17,7 +17,10 @@ Environment=SCAN_WEB_DEFAULT_MODE={{ .scan_web_default_mode }}
 Environment=SCAN_WEB_DEFAULT_RES={{ .scan_web_default_res }}
 Environment=SCAN_WEB_PRINT_ENABLED={{ .scan_web_print_enabled }}
 Environment=SCAN_WEB_PRINT_QUEUE={{ .scan_web_print_queue }}
-ExecStart=/usr/bin/python3 /usr/local/lib/scan-web/scan-web.py
+Environment=SCAN_WEB_DEVICES_ENABLED={{ .scan_web_devices_enabled }}
+# Run from the venv interpreter (created with --system-site-packages, so the apt
+# reportlab/Pillow are still importable) so `bleak` on the Niimbot path resolves.
+ExecStart={{ .niimbot_venv }}/bin/python3 /usr/local/lib/scan-web/scan-web.py
 Restart=on-failure
 RestartSec=3
 # Allow binding a privileged port (e.g. 80) as the non-root scans user.

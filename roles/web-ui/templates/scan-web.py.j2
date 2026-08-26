@@ -39,6 +39,8 @@ DEF_RES = os.environ.get("SCAN_WEB_DEFAULT_RES", "300")
 PRINT_ENABLED = os.environ.get("SCAN_WEB_PRINT_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 PRINT_QUEUE = os.environ.get("SCAN_WEB_PRINT_QUEUE", "DCP1511")
 
+DEVICES_ENABLED = os.environ.get("SCAN_WEB_DEVICES_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+
 MODES = [("24bit Color", "Color"), ("True Gray", "Gray"), ("Black & White", "Black & white")]
 MODE_VALUES = [m[0] for m in MODES]
 RESOLUTIONS = ["150", "200", "300", "400", "600"]
@@ -592,6 +594,154 @@ def initial_sheet_svg():
     return "".join(out)
 
 
+# --- Devices: inventory + Niimbot BLE label printers -------------------------
+# The Devices tab unions several sources into one list of
+#   {kind, transport, id, name, status, forgettable, detail?, error?}.
+# The Niimbot BLE stack lives in a sibling module imported lazily (like
+# reportlab/Pillow) so the base app is unaffected when the tab is off.
+_scanner_cache = {"t": 0.0, "rows": None}
+
+
+def _run(cmd, timeout=10):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout or "", p.stderr or ""
+    except FileNotFoundError:
+        return 127, "", "%s not found" % cmd[0]
+    except Exception as e:
+        return 1, "", str(e)
+
+
+def _niimbot():
+    """Import the BLE module lazily; raises if bleak isn't installed."""
+    import niimbot
+    return niimbot
+
+
+def cups_devices():
+    rc, out, err = _run(["lpstat", "-p"])
+    if rc != 0 and not out.strip():
+        return [{"kind": "printer", "transport": "cups", "id": "", "name": "CUPS",
+                 "status": "error", "forgettable": False,
+                 "error": (err or "CUPS unavailable").strip()[:120]}]
+    uri = {}
+    _, vout, _ = _run(["lpstat", "-v"])
+    for line in vout.splitlines():
+        m = re.match(r"device for (\S+?):\s*(\S+)", line.strip())
+        if m:
+            uri[m.group(1)] = m.group(2)
+    rows = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line.startswith("printer "):
+            continue
+        name = line.split()[1]
+        low = line.lower()
+        status = "disconnected" if "disabled" in low else "connected"
+        u = uri.get(name, "")
+        transport = "usb" if u.startswith("usb") else ("network" if u else "cups")
+        rows.append({"kind": "printer", "transport": transport, "id": name, "name": name,
+                     "status": status, "forgettable": True, "detail": u[:60]})
+    return rows
+
+
+def sane_devices(force=False):
+    now = time.time()
+    if not force and _scanner_cache["rows"] is not None and now - _scanner_cache["t"] < 300:
+        return _scanner_cache["rows"]
+    rc, out, err = _run(["scanimage", "-L"], timeout=25)
+    rows = []
+    if rc != 0 and not out.strip():
+        msg = (err or "scan backend unavailable").strip().splitlines()
+        rows = [{"kind": "scanner", "transport": "sane", "id": "", "name": "Scanners",
+                 "status": "error", "forgettable": False,
+                 "error": (msg[-1] if msg else "unavailable")[:120]}]
+    else:
+        for line in out.splitlines():
+            m = re.match(r"device `([^']+)' is a (.+)", line.strip())
+            if m:
+                rows.append({"kind": "scanner", "transport": "sane", "id": m.group(1),
+                             "name": m.group(2).strip(), "status": "connected",
+                             "forgettable": False, "detail": m.group(1)[:60]})
+        if not rows:
+            rows = [{"kind": "scanner", "transport": "sane", "id": "",
+                     "name": "No scanners detected", "status": "disconnected",
+                     "forgettable": False}]
+    _scanner_cache.update(t=now, rows=rows)
+    return rows
+
+
+def usb_devices(seen_names):
+    rc, out, err = _run(["lsusb"])
+    if rc != 0:
+        return [{"kind": "usb", "transport": "usb", "id": "", "name": "USB",
+                 "status": "error", "forgettable": False,
+                 "error": (err or "lsusb unavailable").strip()[:120]}]
+    # Skip devices already represented by a CUPS/SANE row (dedupe on brand token).
+    brands = " ".join(seen_names).lower()
+    rows = []
+    for line in out.splitlines():
+        m = re.match(r"Bus \S+ Device \S+: ID (\w+:\w+)\s?(.*)", line.strip())
+        if not m:
+            continue
+        vidpid, name = m.group(1), (m.group(2) or m.group(1)).strip()
+        low = name.lower()
+        if "root hub" in low:
+            continue
+        first = low.split()[0] if low.split() else ""
+        if first and len(first) > 2 and first in brands:
+            continue  # already shown as a printer/scanner
+        rows.append({"kind": "usb", "transport": "usb", "id": vidpid, "name": name,
+                     "status": "connected", "forgettable": False, "detail": vidpid})
+    return rows
+
+
+def niimbot_rows():
+    if not DEVICES_ENABLED:
+        return []
+    try:
+        nb = _niimbot()
+    except Exception as e:
+        return [{"kind": "label-printer", "transport": "bluetooth", "id": "",
+                 "name": "Niimbot (Bluetooth)", "status": "error", "forgettable": False,
+                 "error": ("BLE support unavailable: %s" % e)[:120]}]
+    rows = []
+    for p in nb.manager.state():
+        rows.append({"kind": "label-printer", "transport": "bluetooth", "id": p["address"],
+                     "name": p["name"], "status": p["status"], "forgettable": True,
+                     "detail": p["model_label"]})
+    return rows
+
+
+def inventory(force=False):
+    rows = []
+    rows += cups_devices()
+    rows += sane_devices(force)
+    rows += niimbot_rows()
+    rows += usb_devices([r["name"] for r in rows if r.get("id")])
+    return rows
+
+
+def forget_device(kind, dev_id):
+    if kind == "printer" and dev_id:
+        rc, out, err = _run(["lpadmin", "-x", dev_id])
+        if rc != 0:
+            raise RuntimeError((err or out or "could not remove queue").strip().splitlines()[-1])
+        return
+    if kind == "label-printer" and dev_id:
+        _niimbot().manager.sync_forget(dev_id)
+        return
+    raise RuntimeError("This device can't be removed")
+
+
+def niimbot_state(with_adapter=True):
+    nb = _niimbot()
+    return {"enabled": True,
+            "adapter": nb.manager.sync_adapter_ok() if with_adapter else True,
+            "printers": nb.manager.state(), "active": nb.manager.active,
+            "log": nb.manager.recent_log()[-60:]}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "scan-web/3"
 
@@ -628,12 +778,63 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    def _devices_post(self, path):
+        if not DEVICES_ENABLED:
+            return self._json(200, {"ok": False, "error": "Devices are disabled"})
+        obj = self._json_body()
+        try:
+            if path == "/devices/refresh":
+                return self._json(200, {"ok": True, "devices": inventory(force=True)})
+            if path == "/devices/forget":
+                forget_device(obj.get("kind", ""), obj.get("id", ""))
+                return self._json(200, {"ok": True, "devices": inventory(force=True)})
+            nb = _niimbot()
+            if path == "/niimbot/scan":
+                return self._json(200, {"ok": True, "candidates": nb.manager.sync_scan()})
+            if path == "/niimbot/connect":
+                nb.manager.sync_connect(obj.get("address", ""), obj.get("name"))
+            elif path == "/niimbot/reconnect":
+                nb.manager.sync_reconnect(obj.get("address", ""))
+            elif path == "/niimbot/disconnect":
+                nb.manager.sync_disconnect(obj.get("address", ""))
+            elif path == "/niimbot/select":
+                nb.manager.select(obj.get("address", ""))
+            elif path == "/niimbot/labelsize":
+                nb.manager.set_label_mm(obj.get("address", ""), obj.get("w"), obj.get("h"))
+            elif path == "/niimbot/print":
+                kind = obj.get("kind", "text")
+                if kind == "image":
+                    payload = base64.b64decode(obj.get("dataB64") or "")
+                    if not payload:
+                        raise RuntimeError("No image data")
+                    if len(payload) > 20 * 1024 * 1024:
+                        raise RuntimeError("Image too large (max 20 MB)")
+                else:
+                    payload = (obj.get("text") or "").strip()
+                    if not payload:
+                        raise RuntimeError("Nothing to print")
+                res = nb.manager.sync_print(kind, payload, obj.get("address"))
+                return self._json(200, dict(res, ok=True))
+            else:
+                return self._json(404, {"ok": False, "error": "Unknown action"})
+            return self._json(200, dict(niimbot_state(with_adapter=False), ok=True))
+        except Exception as e:
+            return self._json(200, {"ok": False, "error": str(e)})
+
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
-        if path in ("/", "/index.html", "/scan", "/print"):
+        if path in ("/", "/index.html", "/scan", "/print", "/devices"):
             self._send(200, render_page(path))
         elif path == "/recent":
             self._json(200, {"scans": list_scans()})
+        elif path == "/devices/list":
+            self._json(200, {"devices": inventory()})
+        elif path == "/niimbot/state":
+            try:
+                self._json(200, dict(niimbot_state(), ok=True))
+            except Exception as e:
+                self._json(200, {"ok": False, "enabled": DEVICES_ENABLED, "error": str(e),
+                                 "printers": [], "active": None, "adapter": False})
         elif path == "/templates":
             self._json(200, {"templates": LABEL_TEMPLATES})
         elif path.startswith("/file/"):
@@ -666,6 +867,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        if path.startswith("/devices/") or path.startswith("/niimbot/"):
+            return self._devices_post(path)
         if path == "/clear":
             return self._json(200, {"ok": True, "removed": clear_scans()})
         if path == "/remove":
@@ -733,12 +936,19 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def render_page(path="/"):
-    tab = "print" if (path == "/print" and PRINT_ENABLED) else "scan"
+    if path == "/print" and PRINT_ENABLED:
+        tab = "print"
+    elif path == "/devices" and DEVICES_ENABLED:
+        tab = "devices"
+    else:
+        tab = "scan"
     return (PAGE
             .replace("__SCAN_ACTIVE__", " active" if tab == "scan" else "")
             .replace("__PRINT_ACTIVE__", " active" if tab == "print" else "")
+            .replace("__DEVICES_ACTIVE__", " active" if tab == "devices" else "")
             .replace("__SCAN_SEL__", "true" if tab == "scan" else "false")
             .replace("__PRINT_SEL__", "true" if tab == "print" else "false")
+            .replace("__DEVICES_SEL__", "true" if tab == "devices" else "false")
             .replace("__TITLE__", html.escape(TITLE))
             .replace("__SHARE__", html.escape(SHARE))
             .replace("__MODE_OPTS__", mode_options(DEF_MODE))
@@ -746,7 +956,8 @@ def render_page(path="/"):
             .replace("__PRINT_TEMPLATE_OPTS__", tpl_options())
             .replace("__SHEET_INIT__", initial_sheet_svg())
             .replace("__TEMPLATES_JSON__", json.dumps(LABEL_TEMPLATES))
-            .replace("__PRINT_HIDDEN__", "" if PRINT_ENABLED else " hidden"))
+            .replace("__PRINT_HIDDEN__", "" if PRINT_ENABLED else " hidden")
+            .replace("__DEVICES_HIDDEN__", "" if DEVICES_ENABLED else " hidden"))
 
 
 PAGE = r"""<!doctype html>
@@ -949,6 +1160,25 @@ input[type=range]{accent-color:var(--accent);width:100%;margin-top:8px}
 input[type=number]{font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important}.progress .bar{width:100%;transform:none}}
 @media (max-width:560px){.th-when,.when{display:none}.preview img{width:220px}}
+/* --- Devices --- */
+.devlist,.candlist{display:flex;flex-direction:column;gap:8px}
+.candlist:not(:empty){margin-top:8px}
+.drow{display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px solid var(--border);border-radius:11px}
+.drow .dinfo{flex:1;min-width:0}
+.drow .dname{font-weight:600;font-size:13.5px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.drow .dsub{font:500 11.5px var(--mono);color:var(--faint);margin-top:3px;word-break:break-all}
+.drow .dacts{display:flex;gap:6px;flex:none;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.dot.on{background:var(--accent)}
+.dot.err{background:var(--danger)}
+.kind{font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--bg);padding:2px 6px;border-radius:5px}
+.derr{color:var(--danger)}
+.mini.danger:hover{color:var(--danger)}
+.mini.armed{color:#fff;background:var(--danger)}
+.mini.pri{background:var(--accent-weak);color:var(--accent)}
+.drow.active{border-color:var(--accent);background:var(--accent-weak)}
+.blelog{margin:0;max-height:180px;overflow:auto;background:var(--bg);border:1px solid var(--border);
+  border-radius:8px;padding:8px 10px;font:500 11px/1.5 var(--mono);color:var(--muted);white-space:pre-wrap;word-break:break-all}
 </style>
 </head>
 <body>
@@ -963,6 +1193,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
   <nav class="tabs" role="tablist" aria-label="Tools">
     <button class="tab-btn" id="tabScanBtn" data-tab="scan" role="tab" aria-selected="__SCAN_SEL__" aria-controls="tab-scan">Scan</button>
     <button class="tab-btn" id="tabPrintBtn" data-tab="print" role="tab" aria-selected="__PRINT_SEL__" aria-controls="tab-print"__PRINT_HIDDEN__>Print</button>
+    <button class="tab-btn" id="tabDevicesBtn" data-tab="devices" role="tab" aria-selected="__DEVICES_SEL__" aria-controls="tab-devices"__DEVICES_HIDDEN__>Devices</button>
   </nav>
 
   <section class="tab-panel__SCAN_ACTIVE__" id="tab-scan" role="tabpanel" aria-labelledby="tabScanBtn">
@@ -1049,6 +1280,68 @@ input[type=number]{font-variant-numeric:tabular-nums}
       <p class="note" id="pnote" aria-live="polite"></p>
     </div>
   </section>
+
+  <section class="tab-panel__DEVICES_ACTIVE__" id="tab-devices" role="tabpanel" aria-labelledby="tabDevicesBtn"__DEVICES_HIDDEN__>
+    <div class="card">
+      <div class="sheetHead">
+        <span class="lbl">Connected hardware</span>
+        <span class="sheetActs">
+          <button type="button" class="mini" id="devRefresh">Refresh</button>
+        </span>
+      </div>
+      <div class="devlist" id="devList"><p class="empty">Loading…</p></div>
+    </div>
+
+    <div class="card" id="niimCard" style="margin-top:18px">
+      <div class="sheetHead">
+        <span class="lbl">Niimbot label printers</span>
+        <span class="sheetActs">
+          <button type="button" class="mini" id="niimScan">Scan for printers</button>
+        </span>
+      </div>
+      <p class="hint" id="niimAdapter" hidden>Bluetooth adapter not available on this host.</p>
+      <div class="devlist" id="niimList"></div>
+      <div class="candlist" id="candList"></div>
+
+      <hr class="pdiv">
+
+      <div class="controls tplrow">
+        <label class="field"><span class="lbl">Print to</span>
+          <select id="niimActive"><option value="">No printer connected</option></select></label>
+      </div>
+      <div class="controls">
+        <label class="field"><span class="lbl">Label width <span class="opt">mm</span></span>
+          <input class="txt" id="niimW" type="number" min="5" max="120" step="1"></label>
+        <label class="field"><span class="lbl">Label length <span class="opt">mm</span></span>
+          <input class="txt" id="niimH" type="number" min="5" max="300" step="1"></label>
+      </div>
+
+      <div class="seg" role="tablist" aria-label="Label content">
+        <button type="button" class="seg-btn" id="nsegText" role="tab" aria-selected="true">Text</button>
+        <button type="button" class="seg-btn" id="nsegQr" role="tab" aria-selected="false">QR</button>
+        <button type="button" class="seg-btn" id="nsegImg" role="tab" aria-selected="false">Image</button>
+      </div>
+      <div id="nTextPane">
+        <label class="field"><span class="lbl" id="nTextLbl">Text <span class="opt">one line per row</span></span>
+          <textarea class="txt" id="nText" rows="2" maxlength="200" autocomplete="off"
+                    placeholder="e.g. 42 — or a short&#10;label on two lines"></textarea></label>
+      </div>
+      <div id="nImgPane" hidden>
+        <label class="field"><span class="lbl">Image</span>
+          <input class="filein" id="nFile" type="file" accept="image/*"></label>
+        <img class="filepv" id="nPv" hidden alt="">
+      </div>
+
+      <hr class="pdiv">
+      <button class="scan" id="niimPrint" type="button" disabled>Print label</button>
+      <p class="note" id="niimNote" aria-live="polite"></p>
+
+      <details class="adv" id="niimLogWrap">
+        <summary>Bluetooth log</summary>
+        <pre class="blelog" id="niimLog"></pre>
+      </details>
+    </div>
+  </section>
 </div>
 <div class="modal" id="sheetModal" hidden>
   <div class="modal-card card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -1121,11 +1414,15 @@ input[type=number]{font-variant-numeric:tabular-nums}
   // --- tabs ---
   var tabBtns=Array.prototype.slice.call(document.querySelectorAll('.tab-btn'));
   function tabHidden(name){ var b=document.querySelector('.tab-btn[data-tab="'+name+'"]'); return !b || b.hidden; }
-  function pathTab(){ var p=location.pathname.replace(/\/+$/,''); return (p==='/print' && !tabHidden('print')) ? 'print' : 'scan'; }
+  function pathTab(){ var p=location.pathname.replace(/\/+$/,'');
+    if(p==='/print' && !tabHidden('print')) return 'print';
+    if(p==='/devices' && !tabHidden('devices')) return 'devices';
+    return 'scan'; }
   function selectTab(name, push){
     tabBtns.forEach(function(x){ x.setAttribute('aria-selected', x.dataset.tab===name?'true':'false'); });
     Array.prototype.forEach.call(document.querySelectorAll('.tab-panel'),function(p){
       p.classList.toggle('active', p.id==='tab-'+name); });
+    if(name==='devices' && window.initDevices) window.initDevices();
     if(push){ try{ history.pushState({tab:name}, '', '/'+name); }catch(e){} }
   }
   tabBtns.forEach(function(b){
@@ -1619,7 +1916,181 @@ input[type=number]{font-variant-numeric:tabular-nums}
     renderSheet(); updateUI();
   }
 
-  // open the tab named by the URL (/scan or /print)
+  // --- Devices tab ---------------------------------------------------------
+  (function(){
+    var devList=document.getElementById('devList');
+    if(!devList) return;  // tab disabled
+    var niimList=document.getElementById('niimList'), candList=document.getElementById('candList');
+    var activeSel=document.getElementById('niimActive'), nW=document.getElementById('niimW'), nH=document.getElementById('niimH');
+    var nText=document.getElementById('nText'), nFile=document.getElementById('nFile'), nPv=document.getElementById('nPv');
+    var niimNote=document.getElementById('niimNote'), printBtn=document.getElementById('niimPrint');
+    var kind='text', imgB64='', printers=[], loaded=false, busy=false;
+
+    function jpost(url, body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body||{})}).then(function(r){return r.json();}); }
+    function nnote(msg, cls){ niimNote.className='note'+(cls?' '+cls:''); niimNote.textContent=msg||''; }
+
+    // Inventory --------------------------------------------------------------
+    function renderInv(devs){
+      devList.innerHTML='';
+      if(!devs||!devs.length){ devList.innerHTML='<p class="empty">No devices found.</p>'; return; }
+      devs.forEach(function(d){
+        var row=document.createElement('div'); row.className='drow';
+        var dot = d.status==='error'?'err':(d.status==='connected'?'on':'');
+        var right='';
+        if(d.forgettable) right='<button type="button" class="mini danger" data-forget="1">Forget</button>';
+        row.innerHTML='<i class="dot '+dot+'"></i>'+
+          '<div class="dinfo"><div class="dname">'+esc(d.name)+' <span class="kind">'+esc(d.kind)+'</span></div>'+
+          '<div class="dsub'+(d.error?' derr':'')+'">'+esc(d.error||d.detail||(d.transport+' · '+d.status))+'</div></div>'+
+          '<div class="dacts">'+right+'</div>';
+        if(d.forgettable){
+          var fb=row.querySelector('[data-forget]');
+          fb.addEventListener('click',function(){
+            if(!fb.classList.contains('armed')){ fb.classList.add('armed'); fb.textContent='Confirm';
+              setTimeout(function(){ fb.classList.remove('armed'); fb.textContent='Forget'; },3000); return; }
+            jpost('/devices/forget',{kind:d.kind,id:d.id}).then(function(r){
+              if(r.ok){ renderInv(r.devices); loadNiim(); } });
+          });
+        }
+        devList.appendChild(row);
+      });
+    }
+    function loadInv(force){
+      return (force?jpost('/devices/refresh',{}):fetch('/devices/list').then(function(r){return r.json();}))
+        .then(function(r){ renderInv(r.devices||[]); }).catch(function(){ devList.innerHTML='<p class="empty derr">Could not load devices.</p>'; });
+    }
+
+    // Niimbot ----------------------------------------------------------------
+    function renderNiim(st){
+      printers = st.printers||[];
+      if(st.log){ var lg=document.getElementById('niimLog'); lg.textContent=(st.log||[]).join('\n'); lg.scrollTop=lg.scrollHeight; }
+      document.getElementById('niimAdapter').hidden = (st.adapter!==false) || printers.length>0;
+      niimList.innerHTML='';
+      if(!printers.length){ niimList.innerHTML='<p class="empty">No Niimbot printers yet. Tap “Scan for printers”.</p>'; }
+      printers.forEach(function(p){
+        var row=document.createElement('div'); row.className='drow'+(p.active?' active':'');
+        var conn = p.status==='connected';
+        var acts = (conn?'<button type="button" class="mini" data-act="disconnect">Disconnect</button>'
+                        :'<button type="button" class="mini pri" data-act="reconnect">Reconnect</button>')+
+                   '<button type="button" class="mini danger" data-act="forget">Forget</button>';
+        row.innerHTML='<i class="dot '+(conn?'on':'')+'"></i>'+
+          '<div class="dinfo"><div class="dname">'+esc(p.name)+' <span class="kind">'+esc(p.model_label||p.model)+'</span></div>'+
+          '<div class="dsub">'+esc(p.address)+' · '+p.status+(p.label_mm?(' · '+p.label_mm[0]+'×'+p.label_mm[1]+' mm'):'')+'</div></div>'+
+          '<div class="dacts">'+acts+'</div>';
+        row.querySelectorAll('[data-act]').forEach(function(bb){
+          bb.addEventListener('click',function(){ niimAction(bb.dataset.act, p, bb); });
+        });
+        niimList.appendChild(row);
+      });
+      // active selector
+      var cur = st.active||'';
+      activeSel.innerHTML = printers.length? '' : '<option value="">No printer connected</option>';
+      printers.forEach(function(p){
+        var o=document.createElement('option'); o.value=p.address;
+        o.textContent=p.name+(p.status==='connected'?'':' (offline)'); if(p.address===cur)o.selected=true;
+        activeSel.appendChild(o);
+      });
+      var act = printers.filter(function(p){return p.address===cur;})[0] || printers[0];
+      if(act && act.label_mm){ if(!nW.value)nW.value=act.label_mm[0]; if(!nH.value)nH.value=act.label_mm[1]; }
+      updatePrintBtn();
+    }
+    function loadNiim(){
+      return fetch('/niimbot/state').then(function(r){return r.json();}).then(function(st){
+        if(st.error) nnote(st.error,'err'); renderNiim(st);
+      }).catch(function(){});
+    }
+    function niimAction(act, p, bb){
+      if(busy) return;
+      if(act==='forget'){
+        if(!bb.classList.contains('armed')){ bb.classList.add('armed'); bb.textContent='Confirm';
+          setTimeout(function(){ bb.classList.remove('armed'); bb.textContent='Forget'; },3000); return; }
+      }
+      busy=true; nnote(act+'…'); if(bb) bb.disabled=true;
+      var url = act==='reconnect'?'/niimbot/reconnect':(act==='disconnect'?'/niimbot/disconnect':'/niimbot/forget');
+      jpost(url,{address:p.address}).then(function(r){
+        if(r.ok){ nnote(''); renderNiim(r); } else nnote(r.error||'Failed','err');
+        loadInv(false);
+      }).catch(function(){ nnote('Request failed','err'); })
+        .finally(function(){ busy=false; if(bb) bb.disabled=false; });
+    }
+
+    function renderCands(cands){
+      candList.innerHTML='';
+      var known={}; printers.forEach(function(p){known[p.address]=1;});
+      cands=(cands||[]).filter(function(c){return !known[c.address];});
+      if(!cands.length){ candList.innerHTML='<p class="hint">No new printers found.</p>'; return; }
+      cands.forEach(function(c){
+        var row=document.createElement('div'); row.className='drow';
+        row.innerHTML='<i class="dot"></i><div class="dinfo"><div class="dname">'+esc(c.name)+'</div>'+
+          '<div class="dsub">'+esc(c.address)+' · '+(c.rssi||'')+' dBm</div></div>'+
+          '<div class="dacts"><button type="button" class="mini pri" data-connect="1">Connect</button></div>';
+        row.querySelector('[data-connect]').addEventListener('click',function(bev){
+          var bb=bev.target; if(busy) return; busy=true; bb.disabled=true; nnote('Connecting…');
+          jpost('/niimbot/connect',{address:c.address,name:c.name}).then(function(r){
+            if(r.ok){ nnote(''); candList.innerHTML=''; renderNiim(r); loadInv(false); }
+            else nnote(r.error||'Connect failed','err');
+          }).catch(function(){ nnote('Connect failed','err'); })
+            .finally(function(){ busy=false; bb.disabled=false; });
+        });
+        candList.appendChild(row);
+      });
+    }
+
+    document.getElementById('devRefresh').addEventListener('click',function(){ loadInv(true); loadNiim(); });
+    document.getElementById('niimScan').addEventListener('click',function(){
+      if(busy) return; busy=true; var b=this; b.disabled=true; nnote('Scanning for Bluetooth printers…');
+      jpost('/niimbot/scan',{}).then(function(r){
+        if(r.ok){ nnote(''); renderCands(r.candidates); } else nnote(r.error||'Scan failed','err');
+      }).catch(function(){ nnote('Scan failed','err'); })
+        .finally(function(){ busy=false; b.disabled=false; });
+    });
+    activeSel.addEventListener('change',function(){
+      jpost('/niimbot/select',{address:activeSel.value}).then(function(r){ if(r.ok) renderNiim(r); });
+    });
+    function saveSize(){
+      var addr=activeSel.value; if(!addr) return;
+      jpost('/niimbot/labelsize',{address:addr,w:parseFloat(nW.value),h:parseFloat(nH.value)});
+    }
+    nW.addEventListener('change',saveSize); nH.addEventListener('change',saveSize);
+
+    // content type toggle
+    var segs={text:document.getElementById('nsegText'),qr:document.getElementById('nsegQr'),image:document.getElementById('nsegImg')};
+    function setKind(k){ kind=k;
+      Object.keys(segs).forEach(function(x){ segs[x].setAttribute('aria-selected', x===k?'true':'false'); });
+      document.getElementById('nTextPane').hidden = (k==='image');
+      document.getElementById('nImgPane').hidden = (k!=='image');
+      document.getElementById('nTextLbl').innerHTML = (k==='qr')?'Text or URL':'Text <span class="opt">one line per row</span>';
+      updatePrintBtn();
+    }
+    segs.text.addEventListener('click',function(){setKind('text');});
+    segs.qr.addEventListener('click',function(){setKind('qr');});
+    segs.image.addEventListener('click',function(){setKind('image');});
+    nText.addEventListener('input',updatePrintBtn);
+    nFile.addEventListener('change',function(){
+      var f=nFile.files&&nFile.files[0]; imgB64=''; nPv.hidden=true;
+      if(!f) return updatePrintBtn();
+      var rd=new FileReader(); rd.onload=function(){ var s=rd.result||''; imgB64=(s.split(',')[1]||'');
+        nPv.src=s; nPv.hidden=false; updatePrintBtn(); }; rd.readAsDataURL(f);
+    });
+    function hasContent(){ return kind==='image'? !!imgB64 : !!nText.value.trim(); }
+    function updatePrintBtn(){ var conn=printers.some(function(p){return p.status==='connected';});
+      printBtn.disabled = busy || !conn || !hasContent(); }
+
+    printBtn.addEventListener('click',function(){
+      if(busy||printBtn.disabled) return; busy=true; printBtn.disabled=true;
+      var old=printBtn.textContent; printBtn.textContent='Printing…'; nnote('Sending to printer…');
+      var body={kind:kind,address:activeSel.value};
+      if(kind==='image') body.dataB64=imgB64; else body.text=nText.value.trim();
+      jpost('/niimbot/print',body).then(function(r){
+        if(r.ok){ nnote('Printed ✓','ok'); } else nnote(r.error||'Print failed','err');
+      }).catch(function(){ nnote('Print failed','err'); })
+        .finally(function(){ busy=false; printBtn.textContent=old; updatePrintBtn(); });
+    });
+
+    window.initDevices=function(){ if(loaded) return; loaded=true; loadInv(false); loadNiim(); };
+  })();
+
+  // open the tab named by the URL (/scan, /print, /devices)
   selectTab(pathTab(), false);
 
   refresh();
