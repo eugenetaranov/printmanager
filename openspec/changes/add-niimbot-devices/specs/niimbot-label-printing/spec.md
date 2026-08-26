@@ -1,5 +1,14 @@
 ## ADDED Requirements
 
+### Requirement: Label composing lives in the Print tab
+
+Niimbot label composition SHALL live in the **Print tab** (not a separate device screen), reached by selecting a Niimbot in the Print-tab printer selector. The content-type choices SHALL be consistent with the A4 path — **Text / Image / QR** — while device-specific settings differ (a Niimbot exposes label width/length in mm; it does not offer A4 sheet layouts).
+
+#### Scenario: Selecting a Niimbot reveals the label composer
+
+- **WHEN** a connected Niimbot is chosen in the Print-tab printer selector
+- **THEN** the Print tab shows the label composer (label size + Text/Image/QR) and hides the A4 sheet composer
+
 ### Requirement: Compose a label from text, QR, or an image
 
 The system SHALL render a label from one of three content kinds — free **text**, a **QR code** generated from a text/URL payload, or an **uploaded image** — into a 1-bit-per-pixel monochrome bitmap sized to the active printer's printhead width (multiple of 8, ≤ that model's head) and its configured roll length, with content laid out along the label's long axis (rotated 90° for narrow portrait tape such as the D110) so it is as large and readable as the stock allows.

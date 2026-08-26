@@ -1,23 +1,23 @@
 ## ADDED Requirements
 
-### Requirement: Unified device inventory page
+### Requirement: Unified device inventory (Devices modal)
 
-The web UI SHALL present a **Devices** page that lists all print/scan hardware known to the Pi across every transport — CUPS print queues, SANE scanners, raw USB devices, and Bluetooth Niimbot printers — normalized into a single list where each entry shows a name, its kind (printer/scanner/label-printer), its transport (USB/Bluetooth/network), and a connected/disconnected status.
+The web UI SHALL present device management in a **Devices modal**, opened from a gear button in the header, kept separate from the Scan/Print service tabs (which hold the actual scan/print settings and actions). The modal SHALL list all print/scan hardware known to the Pi across every transport — CUPS print queues, SANE scanners, raw USB devices, and Bluetooth Niimbot printers — normalized into a single list where each entry shows a name, its kind (printer/scanner/label-printer), its transport (USB/Bluetooth/network), and a connected/disconnected status.
 
-#### Scenario: Page lists devices from every source
+#### Scenario: Modal lists devices from every source
 
-- **WHEN** the user opens the Devices page
+- **WHEN** the user opens the Devices modal from the header gear
 - **THEN** the CUPS queue `DCP1511`, any SANE scanner, any relevant `lsusb` device, and any remembered/connected Niimbot printer each appear as a row
 - **AND** each row shows its name, kind, transport, and a connected or disconnected status
 
-#### Scenario: Devices tab can be disabled
+#### Scenario: Device management can be disabled
 
 - **WHEN** `scan_web_devices_enabled` is false
-- **THEN** the Devices tab is not rendered and its routes are not served
+- **THEN** the header gear is not rendered and the device routes are not served
 
 ### Requirement: Live connected/disconnected status per device
 
-The Devices page SHALL report each device's status by querying its subsystem: a CUPS queue is connected when enabled and idle/accepting and disconnected when disabled or paused; a SANE scanner is connected when it appears in the scanner list; a Niimbot printer is connected when a live BLE link exists and disconnected otherwise.
+The Devices modal SHALL report each device's status by querying its subsystem: a CUPS queue is connected when enabled and idle/accepting and disconnected when disabled or paused; a SANE scanner is connected when it appears in the scanner list; a Niimbot printer is connected when a live BLE link exists and disconnected otherwise.
 
 #### Scenario: CUPS queue reflects enabled state
 
@@ -50,23 +50,61 @@ Failure to enumerate one subsystem SHALL NOT blank the whole page; the failing s
 - **THEN** the scanner section shows an error row
 - **AND** CUPS printers, USB devices, and Niimbot printers still list normally
 
-### Requirement: Remove/forget a device
+### Requirement: Grouped presentation with interface and consistent rows
 
-The Devices page SHALL let the user remove a forgettable device: forgetting a CUPS queue deletes that queue (`lpadmin -x`), and forgetting a Niimbot disconnects it and drops it from the remembered set. Devices that cannot be meaningfully removed (a raw USB enumeration entry) SHALL NOT offer a forget action.
+The Devices modal SHALL group devices by role under headings (Printers, Scanners, Label printers), render every device as a fixed-height row, and show each device's connection interface as an icon (USB / Bluetooth / Network). The same physical scanner exposed through more than one SANE backend (e.g. the direct brscan backend and the AirSane eSCL bridge) SHALL be shown once, preferring the direct USB backend.
 
-#### Scenario: Forget a CUPS queue
+#### Scenario: One row per physical scanner
 
-- **WHEN** the user forgets a CUPS printer row and confirms
-- **THEN** the queue is deleted via `lpadmin -x <queue>`
-- **AND** the row disappears on the next refresh
+- **WHEN** the Brother scanner is enumerated by both the brscan backend and the eSCL bridge
+- **THEN** exactly one scanner row is shown, labelled with a USB interface icon
+
+#### Scenario: Rows are uniform
+
+- **WHEN** device details differ in length (e.g. a long USB URI vs a short one)
+- **THEN** rows keep a consistent height and long detail text is truncated
+
+### Requirement: Print a test page per printer
+
+Each connected printer SHALL offer a test-page action that prints a device-appropriate test: an A4 sheet to a CUPS queue (title, queue name, timestamp, paper size, border/ticks), or a small test label sized to the roll for a Niimbot.
+
+#### Scenario: A4 test page
+
+- **WHEN** the user triggers the test action on the CUPS printer
+- **THEN** an A4 test page is generated and sent to that queue
+
+#### Scenario: Niimbot test label
+
+- **WHEN** the user triggers the test action on a connected Niimbot
+- **THEN** a test label sized to that printer's roll is printed
+
+### Requirement: Per-device connection log
+
+Each Niimbot SHALL expose its connection log via a per-device control that is muted when the device has no log lines and highlighted when it does. Opening it SHALL show that device's log within the modal with actions to copy (working over plain HTTP) and clear it.
+
+#### Scenario: Log indicator reflects activity
+
+- **WHEN** a Niimbot has recorded connection log lines
+- **THEN** its log control is highlighted; a device with no lines shows it muted
+
+#### Scenario: Copy and clear
+
+- **WHEN** the user opens a device's log and chooses copy
+- **THEN** the log text is placed on the clipboard even though the UI is served over HTTP
+- **WHEN** the user chooses clear
+- **THEN** that device's log lines are removed
+
+### Requirement: Remove/forget only remembered Bluetooth devices
+
+Only remembered Bluetooth (Niimbot) printers SHALL offer a forget action (which disconnects the link and drops it from the remembered set). Auto-detected USB/network hardware (CUPS queues, SANE scanners, raw USB) SHALL NOT offer forget, since forgetting an attached device is meaningless.
 
 #### Scenario: Forget a Niimbot printer
 
-- **WHEN** the user forgets a remembered Niimbot
+- **WHEN** the user forgets a remembered Niimbot and confirms
 - **THEN** its live BLE link (if any) is closed and it is removed from the remembered set
 - **AND** it no longer appears until discovered again
 
-#### Scenario: Non-forgettable device offers no forget action
+#### Scenario: Auto-detected hardware offers no forget
 
-- **WHEN** a row represents a raw USB device with no associated queue or remembered entry
+- **WHEN** a row represents a CUPS printer, a SANE scanner, or a raw USB device
 - **THEN** no forget action is shown for that row

@@ -14,7 +14,7 @@ The system SHALL scan for nearby Bluetooth LE devices and present those recogniz
 
 - **WHEN** the host has no usable Bluetooth adapter
 - **THEN** the page reports that Bluetooth is unavailable instead of erroring
-- **AND** the rest of the Devices page still functions
+- **AND** the rest of the Devices modal still functions
 
 ### Requirement: Connect to a discovered printer
 
@@ -54,17 +54,17 @@ The system SHALL persist each connected Niimbot (BLE address, friendly name, mod
 - **THEN** its status returns to disconnected
 - **AND** it remains in the remembered set for later reconnect
 
-### Requirement: Select the active label printer
+### Requirement: Select the target printer in the Print tab
 
-When more than one Niimbot is known, the system SHALL let the user choose which one is the **active** printer that label prints target, persist that choice, and switch immediately when changed.
+The Print tab SHALL offer a **printer selector** that lists the available print targets — the CUPS/A4 queue(s) and each connected Niimbot — and SHALL be shown only when more than one target is available (with a single target, its composer is shown directly, no dropdown). Selecting a Niimbot SHALL make it the active label printer (persisted) and switch the Print tab to the label composer; selecting the A4 queue SHALL show the A4 sheet composer. Scanners are selected the same way on the Scan tab when more than one is present.
 
-#### Scenario: Switching the active printer
+#### Scenario: Switching the target printer
 
-- **WHEN** two Niimbots are connected and the user selects the B1 as active
-- **THEN** the active selection is persisted
-- **AND** a subsequent label print targets the B1
+- **WHEN** the A4 queue and a connected B1 are both available and the user picks the B1 in the Print-tab selector
+- **THEN** the label composer is shown, the A4 sheet composer is hidden
+- **AND** the B1 becomes the active printer and a subsequent label print targets it
 
-#### Scenario: Active selection defaults sensibly
+#### Scenario: Single printer shows no dropdown
 
-- **WHEN** exactly one Niimbot is connected and none is explicitly selected
-- **THEN** that printer is treated as the active printer
+- **WHEN** only one print target is available
+- **THEN** the printer selector is hidden and that target's composer is shown directly

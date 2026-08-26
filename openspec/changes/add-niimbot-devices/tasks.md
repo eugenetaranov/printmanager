@@ -58,3 +58,26 @@ Reference for the Niimbot protocol/rendering: `/Users/e/projects/moverse/mobile/
 - [ ] 7.4 Print a text label, a QR label, and an image label on each model; confirm sizing/orientation and no truncation; tune default `SET_LABEL_TYPE` per model  _(needs hardware)_
 - [ ] 7.5 Inventory: verify DCP-1511 queue + scanner + lsusb rows show correct status; forget a scratch CUPS queue and confirm removal  _(needs live host)_
 - [x] 7.6 Update `README.md` with the Devices page + Niimbot setup notes; record follow-ups in project memory
+
+## 8. UX restructure — separate device management from print/scan services
+
+- [x] 8.1 Header: remove the `Brother DCP-1511 · LAN` subtitle; add a gear button (top-right) that opens a Devices modal
+- [x] 8.2 Remove the Devices tab; move device management (inventory + Niimbot connect/scan/reconnect/forget + BLE log) into the gear→modal
+- [x] 8.3 Print tab: add a printer selector (shown only when >1 target) that switches between the A4 sheet composer and the Niimbot label composer; the Niimbot label composer now lives in the Print tab
+- [x] 8.4 Content types consistent across devices — add QR to the A4 sheet composer (client preview + reportlab/`qrcode` rendering server-side)
+- [x] 8.5 Scan tab: add a scanner selector (shown only when >1 scanner)
+- [x] 8.6 Fix: rename the sheet-selection "Clear" (deselect) to "None" to disambiguate from "Clear sheet" (clears content)
+- [x] 8.7 Rewire JS (device state feeds both the modal and the Print/Scan selectors); verify locally + deploy to the Pi
+
+## 9. Devices modal polish + plain-Python/YAML config
+
+- [x] 9.1 Group devices by role (Printers/Scanners/Label printers); uniform fixed-height rows; interface shown as an icon (USB/Bluetooth/Network)
+- [x] 9.2 Dedupe the same physical scanner across backends (brscan + eSCL) to one row, preferring the direct USB backend
+- [x] 9.3 Action buttons → icons with hover tooltips (test/reconnect/disconnect/forget/log/connect)
+- [x] 9.4 Show the friendly model name (e.g. "Niimbot B1") as the primary label; raw advertised name/id in the sub-line
+- [x] 9.5 Per-printer test page (A4 for CUPS, roll-sized test label for Niimbot)
+- [x] 9.6 Per-device connection log control (muted/highlighted) → in-modal log view with Copy (HTTP-safe) + Clear; remove the shared bottom log
+- [x] 9.7 Forget only for remembered Bluetooth printers; none for auto-detected USB/CUPS/SANE
+- [x] 9.8 Refresh becomes an animated circular-arrow glyph; QR cell preview shows its payload text
+- [x] 9.9 Fix BLE "Service Discovery has not been performed yet" (subscribe before reading MTU)
+- [x] 9.10 Make scan-web.py a plain Python file (files/, installed via copy); move all config to a Tack-rendered config.yaml loaded via PyYAML (SCAN_WEB_CONFIG); add python3-yaml
