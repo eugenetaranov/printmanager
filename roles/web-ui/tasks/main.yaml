@@ -19,11 +19,21 @@
     mode: "0755"
   when: scan_web_enabled
 
+# scan-web.py is a plain Python file (no templating) installed verbatim; its
+# config comes from the rendered YAML below (SCAN_WEB_CONFIG), not from the code.
 - name: Install the scan-web server
-  template:
-    src: scan-web.py.j2
+  copy:
+    src: scan-web.py
     dest: /usr/local/lib/scan-web/scan-web.py
     mode: "0755"
+  when: scan_web_enabled
+  notify: Restart scan-web
+
+- name: Render the scan-web config (loaded by scan-web.py)
+  template:
+    src: scan-web-config.yaml.j2
+    dest: /usr/local/lib/scan-web/config.yaml
+    mode: "0644"
   when: scan_web_enabled
   notify: Restart scan-web
 

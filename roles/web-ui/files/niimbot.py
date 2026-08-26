@@ -157,9 +157,15 @@ class Transport:
         client = BleakClient(address, disconnected_callback=_disc)
         await client.connect()
         self.client = client
-        mtu = getattr(client, "mtu_size", 23) or 23
-        self.chunk = max(20, mtu - 3)
+        # Subscribe first: start_notify resolves GATT services on BlueZ, so the
+        # later mtu_size read won't warn "Service Discovery has not been performed".
         await client.start_notify(CHAR, self._notify)
+        mtu = 23
+        try:
+            mtu = client.mtu_size or 23
+        except Exception:
+            pass
+        self.chunk = max(20, mtu - 3)
         self.log("connected, mtu=%s" % mtu)
         return client
 
@@ -538,6 +544,17 @@ class PrinterManager:
 
     def recent_log(self):
         return list(self._logs)
+
+    def clear_log(self, address=None):
+        """Clear the log; if an address is given, drop only that device's lines
+        (lines are tagged with the device id as '[address] ...')."""
+        if not address:
+            self._logs.clear()
+            return
+        tag = "[%s]" % address
+        kept = [ln for ln in self._logs if tag not in ln]
+        self._logs.clear()
+        self._logs.extend(kept)
 
     # --- persistence
     def _persist(self):

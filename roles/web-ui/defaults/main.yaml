@@ -17,6 +17,7 @@
 web_packages:
   - python3-reportlab
   - python3-pil
+  - python3-yaml
   - poppler-utils
   - cups-client
   - usbutils

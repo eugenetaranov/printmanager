@@ -10,7 +10,12 @@ Two tools on one page:
     an A4 PDF and submits it to the local CUPS queue.
 
 Stdlib only, except reportlab/Pillow (imported lazily, and only on the print
-path). Config comes from the environment."""
+path) and PyYAML (to read the config file).
+
+Config is loaded from a YAML file (path in SCAN_WEB_CONFIG, default
+/usr/local/lib/scan-web/config.yaml) that the Tack role renders from its
+variables. Per-key environment fallbacks are kept so the app can still be run
+directly for local development without a config file."""
 import os
 import re
 import io
@@ -25,21 +30,52 @@ import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-SCAN_DIR = os.environ.get("SCAN_WEB_DIR", "/srv/scans")
-DATA_DIR = os.environ.get("SCAN_WEB_DATA", "/var/lib/scan-web")
+
+def _load_config():
+    path = os.environ.get("SCAN_WEB_CONFIG", "/usr/local/lib/scan-web/config.yaml")
+    try:
+        import yaml
+        with open(path) as f:
+            data = yaml.safe_load(f) or {}
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+CFG = _load_config()
+
+
+def _cfg(key, env, default):
+    """Config precedence: YAML file -> environment -> default."""
+    if CFG.get(key) is not None:
+        return CFG[key]
+    v = os.environ.get(env)
+    return v if v is not None else default
+
+
+def _cfg_bool(key, env, default):
+    return str(_cfg(key, env, default)).strip().lower() in ("1", "true", "yes", "on")
+
+
+SCAN_DIR = _cfg("dir", "SCAN_WEB_DIR", "/srv/scans")
+DATA_DIR = _cfg("data", "SCAN_WEB_DATA", "/var/lib/scan-web")
 THUMB_DIR = os.path.join(DATA_DIR, "thumbs")
 META_DIR = os.path.join(DATA_DIR, "meta")
-PORT = int(os.environ.get("SCAN_WEB_PORT", "8080"))
-TITLE = os.environ.get("SCAN_WEB_TITLE", "printmanager")
-SHARE = os.environ.get("SCAN_WEB_SHARE", "smb://printmanager.local/scans")
-SCRIPT = os.environ.get("SCAN_WEB_SCRIPT", "/usr/local/lib/scan-web/scan-to-share.sh")
-DEF_MODE = os.environ.get("SCAN_WEB_DEFAULT_MODE", "24bit Color")
-DEF_RES = os.environ.get("SCAN_WEB_DEFAULT_RES", "300")
+PORT = int(_cfg("port", "SCAN_WEB_PORT", 8080))
+TITLE = _cfg("title", "SCAN_WEB_TITLE", "printmanager")
+SHARE = _cfg("share", "SCAN_WEB_SHARE", "smb://printmanager.local/scans")
+SCRIPT = _cfg("script", "SCAN_WEB_SCRIPT", "/usr/local/lib/scan-web/scan-to-share.sh")
+DEF_MODE = _cfg("default_mode", "SCAN_WEB_DEFAULT_MODE", "24bit Color")
+DEF_RES = str(_cfg("default_res", "SCAN_WEB_DEFAULT_RES", "300"))
 
-PRINT_ENABLED = os.environ.get("SCAN_WEB_PRINT_ENABLED", "true").lower() in ("1", "true", "yes", "on")
-PRINT_QUEUE = os.environ.get("SCAN_WEB_PRINT_QUEUE", "DCP1511")
+PRINT_ENABLED = _cfg_bool("print_enabled", "SCAN_WEB_PRINT_ENABLED", "true")
+PRINT_QUEUE = _cfg("print_queue", "SCAN_WEB_PRINT_QUEUE", "DCP1511")
 
-DEVICES_ENABLED = os.environ.get("SCAN_WEB_DEVICES_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+DEVICES_ENABLED = _cfg_bool("devices_enabled", "SCAN_WEB_DEVICES_ENABLED", "true")
+
+# The Niimbot module reads its store dir from SCAN_WEB_DATA; keep it in sync with
+# the resolved config so both agree when config comes from the YAML file.
+os.environ["SCAN_WEB_DATA"] = DATA_DIR
 
 MODES = [("24bit Color", "Color"), ("True Gray", "Gray"), ("Black & White", "Black & white")]
 MODE_VALUES = [m[0] for m in MODES]
@@ -413,6 +449,12 @@ def do_print(obj):
                 img_dir = tempfile.mkdtemp(dir=tmp)   # own dir per image (no name clashes)
                 img_path = _prepare_image(data, cc.get("filename", ""), img_dir)
                 cell_content[i] = {"type": "image", "reader": ImageReader(img_path)}
+            elif cc.get("mode") == "qr":
+                text = (cc.get("text") or "").strip()
+                if not text:
+                    continue
+                img_dir = tempfile.mkdtemp(dir=tmp)
+                cell_content[i] = {"type": "image", "reader": ImageReader(_render_qr_png(text[:512], img_dir))}
             else:
                 text = (cc.get("text") or "").strip()
                 if text:
@@ -428,6 +470,17 @@ def do_print(obj):
         return {"queue": PRINT_QUEUE, "job": job, "count": len(cell_content)}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _render_qr_png(text, tmp):
+    """Render a QR code (from text/URL) to a PNG for reportlab to place in a cell."""
+    import qrcode
+    qr = qrcode.QRCode(border=1, error_correction=qrcode.constants.ERROR_CORRECT_M)
+    qr.add_data(text)
+    qr.make(fit=True)
+    out = os.path.join(tmp, "qr.png")
+    qr.make_image(fill_color="black", back_color="white").save(out)
+    return out
 
 
 def _prepare_image(data, filename, tmp):
@@ -645,26 +698,54 @@ def cups_devices():
     return rows
 
 
+def _scanner_key(desc):
+    """Normalize a SANE description to a per-physical-device key so the direct
+    brscan backend and the AirSane eSCL bridge (same USB scanner) collapse to one.
+    `ip=...` runs to end of line, so strip it entirely."""
+    s = desc.lower()
+    s = re.sub(r"ip=.*$", " ", s)
+    s = re.sub(r"\bescl\b|\busb scanner\b|\bscanner\b", " ", s)
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return " ".join(s.split())
+
+
+def _scanner_name(desc):
+    """A clean model name for display (strip eSCL/USB-scanner/ip= noise + '*')."""
+    s = re.sub(r"^eSCL\s+", "", desc)
+    s = re.sub(r"\s+ip=\S.*$", "", s)
+    s = re.sub(r"\s+USB scanner$", "", s)
+    return s.replace("*", "").strip() or desc
+
+
 def sane_devices(force=False):
     now = time.time()
     if not force and _scanner_cache["rows"] is not None and now - _scanner_cache["t"] < 300:
         return _scanner_cache["rows"]
     rc, out, err = _run(["scanimage", "-L"], timeout=25)
-    rows = []
     if rc != 0 and not out.strip():
         msg = (err or "scan backend unavailable").strip().splitlines()
-        rows = [{"kind": "scanner", "transport": "sane", "id": "", "name": "Scanners",
+        rows = [{"kind": "scanner", "transport": "usb", "id": "", "name": "Scanners",
                  "status": "error", "forgettable": False,
                  "error": (msg[-1] if msg else "unavailable")[:120]}]
     else:
+        by_key, order = {}, []
         for line in out.splitlines():
             m = re.match(r"device `([^']+)' is a (.+)", line.strip())
-            if m:
-                rows.append({"kind": "scanner", "transport": "sane", "id": m.group(1),
-                             "name": m.group(2).strip(), "status": "connected",
-                             "forgettable": False, "detail": m.group(1)[:60]})
+            if not m:
+                continue
+            dev_id, desc = m.group(1), m.group(2).strip()
+            key = _scanner_key(desc)
+            row = {"kind": "scanner", "transport": "usb", "id": dev_id,
+                   "name": _scanner_name(desc), "status": "connected",
+                   "forgettable": False, "detail": dev_id[:60]}
+            if key not in by_key:
+                by_key[key] = row
+                order.append(key)
+            elif by_key[key]["id"].startswith("airscan:") and not dev_id.startswith("airscan:"):
+                by_key[key] = row   # same scanner: prefer the direct USB backend over the eSCL bridge
+        rows = [by_key[k] for k in order]
         if not rows:
-            rows = [{"kind": "scanner", "transport": "sane", "id": "",
+            rows = [{"kind": "scanner", "transport": "usb", "id": "",
                      "name": "No scanners detected", "status": "disconnected",
                      "forgettable": False}]
     _scanner_cache.update(t=now, rows=rows)
@@ -714,12 +795,57 @@ def niimbot_rows():
 
 
 def inventory(force=False):
+    # Niimbot label printers are NOT included here — they have their own managed
+    # section (fed by /niimbot/state) so they aren't listed twice.
     rows = []
     rows += cups_devices()
     rows += sane_devices(force)
-    rows += niimbot_rows()
     rows += usb_devices([r["name"] for r in rows if r.get("id")])
     return rows
+
+
+def _build_test_pdf(queue, out):
+    """A simple A4 test page: title, queue name, timestamp, paper size, and a
+    full-page border with corner ticks so alignment/coverage is easy to eyeball."""
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.units import mm
+    import datetime
+    pw, ph = 210.0, 297.0
+    c = canvas.Canvas(out, pagesize=(pw * mm, ph * mm))
+    c.setLineWidth(1)
+    c.rect(8 * mm, 8 * mm, (pw - 16) * mm, (ph - 16) * mm)
+    for cx, cy in ((8, 8), (pw - 8, 8), (8, ph - 8), (pw - 8, ph - 8)):
+        c.line((cx - 5) * mm, cy * mm, (cx + 5) * mm, cy * mm)
+        c.line(cx * mm, (cy - 5) * mm, cx * mm, (cy + 5) * mm)
+    c.setFont("Helvetica-Bold", 30)
+    c.drawCentredString(pw / 2 * mm, (ph / 2 + 12) * mm, "TEST PAGE")
+    c.setFont("Helvetica", 12)
+    c.drawCentredString(pw / 2 * mm, (ph / 2) * mm, queue)
+    c.drawCentredString(pw / 2 * mm, (ph / 2 - 7) * mm, datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    c.drawCentredString(pw / 2 * mm, (ph / 2 - 14) * mm, "A4 · 210 x 297 mm")
+    c.showPage()
+    c.save()
+
+
+def print_test_page(kind, dev_id):
+    """Print a device-appropriate test page: an A4 sheet to a CUPS queue, or a
+    small test label to a Niimbot (sized to its loaded roll)."""
+    if kind == "printer" and dev_id:
+        tmp = tempfile.mkdtemp(prefix="testpage-")
+        try:
+            pdf = os.path.join(tmp, "test.pdf")
+            _build_test_pdf(dev_id, pdf)
+            proc = subprocess.run(["lp", "-d", dev_id, "-o", "media=A4", pdf],
+                                  capture_output=True, text=True, timeout=60)
+            if proc.returncode != 0:
+                raise RuntimeError((proc.stderr or proc.stdout or "lp failed").strip().splitlines()[-1])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        return
+    if kind == "label-printer" and dev_id:
+        _niimbot().manager.sync_print("text", "TEST", dev_id)
+        return
+    raise RuntimeError("Can't print a test page for this device")
 
 
 def forget_device(kind, dev_id):
@@ -739,7 +865,7 @@ def niimbot_state(with_adapter=True):
     return {"enabled": True,
             "adapter": nb.manager.sync_adapter_ok() if with_adapter else True,
             "printers": nb.manager.state(), "active": nb.manager.active,
-            "log": nb.manager.recent_log()[-60:]}
+            "log": nb.manager.recent_log()[-200:]}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -788,6 +914,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/devices/forget":
                 forget_device(obj.get("kind", ""), obj.get("id", ""))
                 return self._json(200, {"ok": True, "devices": inventory(force=True)})
+            if path == "/devices/testpage":
+                print_test_page(obj.get("kind", ""), obj.get("id", ""))
+                return self._json(200, {"ok": True})
             nb = _niimbot()
             if path == "/niimbot/scan":
                 return self._json(200, {"ok": True, "candidates": nb.manager.sync_scan()})
@@ -797,6 +926,8 @@ class Handler(BaseHTTPRequestHandler):
                 nb.manager.sync_reconnect(obj.get("address", ""))
             elif path == "/niimbot/disconnect":
                 nb.manager.sync_disconnect(obj.get("address", ""))
+            elif path == "/niimbot/clearlog":
+                nb.manager.clear_log(obj.get("address"))
             elif path == "/niimbot/select":
                 nb.manager.select(obj.get("address", ""))
             elif path == "/niimbot/labelsize":
@@ -823,7 +954,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
-        if path in ("/", "/index.html", "/scan", "/print", "/devices"):
+        if path in ("/", "/index.html", "/scan", "/print"):
             self._send(200, render_page(path))
         elif path == "/recent":
             self._json(200, {"scans": list_scans()})
@@ -936,19 +1067,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def render_page(path="/"):
-    if path == "/print" and PRINT_ENABLED:
-        tab = "print"
-    elif path == "/devices" and DEVICES_ENABLED:
-        tab = "devices"
-    else:
-        tab = "scan"
+    tab = "print" if (path == "/print" and PRINT_ENABLED) else "scan"
     return (PAGE
             .replace("__SCAN_ACTIVE__", " active" if tab == "scan" else "")
             .replace("__PRINT_ACTIVE__", " active" if tab == "print" else "")
-            .replace("__DEVICES_ACTIVE__", " active" if tab == "devices" else "")
             .replace("__SCAN_SEL__", "true" if tab == "scan" else "false")
             .replace("__PRINT_SEL__", "true" if tab == "print" else "false")
-            .replace("__DEVICES_SEL__", "true" if tab == "devices" else "false")
             .replace("__TITLE__", html.escape(TITLE))
             .replace("__SHARE__", html.escape(SHARE))
             .replace("__MODE_OPTS__", mode_options(DEF_MODE))
@@ -1163,11 +1287,19 @@ input[type=number]{font-variant-numeric:tabular-nums}
 /* --- Devices --- */
 .devlist,.candlist{display:flex;flex-direction:column;gap:8px}
 .candlist:not(:empty){margin-top:8px}
-.drow{display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px solid var(--border);border-radius:11px}
+.drow{display:flex;align-items:center;gap:11px;padding:10px 12px;min-height:56px;border:1px solid var(--border);border-radius:11px}
 .drow .dinfo{flex:1;min-width:0}
-.drow .dname{font-weight:600;font-size:13.5px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.drow .dsub{font:500 11.5px var(--mono);color:var(--faint);margin-top:3px;word-break:break-all}
-.drow .dacts{display:flex;gap:6px;flex:none;align-items:center}
+.drow .dname{font-weight:600;font-size:13.5px;letter-spacing:-.01em;display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drow .dsub{font:500 11.5px var(--mono);color:var(--faint);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drow .dacts{display:flex;gap:5px;flex:none;align-items:center}
+.ifi{display:inline-flex;flex:none;color:var(--muted)}
+.ifi svg{width:15px;height:15px}
+.mini.ic{padding:0;width:30px;height:30px;flex:none;display:inline-flex;align-items:center;justify-content:center}
+.mini.ic svg{width:16px;height:16px}
+.mini.ic.pri{background:var(--accent-weak);color:var(--accent)}
+.mini.ic.on{color:var(--accent);background:var(--accent-weak)}
+.mini.ic.warn:hover{color:var(--danger)}
+.mini.ic.armed{background:var(--danger);color:#fff}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
 .dot.on{background:var(--accent)}
 .dot.err{background:var(--danger)}
@@ -1179,25 +1311,57 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .drow.active{border-color:var(--accent);background:var(--accent-weak)}
 .blelog{margin:0;max-height:180px;overflow:auto;background:var(--bg);border:1px solid var(--border);
   border-radius:8px;padding:8px 10px;font:500 11px/1.5 var(--mono);color:var(--muted);white-space:pre-wrap;word-break:break-all}
+.headright{display:flex;align-items:center;gap:12px;flex:none}
+.iconbtn{position:relative;border:1px solid var(--border);background:var(--surface);border-radius:10px;
+  width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
+  color:var(--muted);box-shadow:var(--shadow);transition:color .15s,border-color .15s}
+.iconbtn:hover{color:var(--text);border-color:var(--accent)}
+.iconbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.iconbtn .badge-dot{position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;
+  background:var(--danger);border:2px solid var(--surface);display:none}
+.iconbtn.alert .badge-dot{display:block}
+.deverr{margin:2px 0 12px;font:500 12px var(--mono);color:var(--danger);min-height:0}
+.modal-card.wide{max-width:520px}
+.msub{font:600 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:18px 2px 10px}
+.iconbtn.sm{width:30px;height:30px;border-radius:8px}
+.iconbtn.spin svg{animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.grp{font:600 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:16px 2px 8px}
+.grp:first-child{margin-top:2px}
+.iface{font:600 9.5px var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--bg);border:1px solid var(--border);padding:1px 6px;border-radius:5px}
+#invGroups .drow{margin-bottom:9px}
+.loghead{display:flex;align-items:center;gap:12px;margin:2px 0 12px}
+.loghead strong{font-size:14px;font-weight:640;letter-spacing:-.01em}
+.logacts{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+#devLog{max-height:340px;min-height:120px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="brand">__TITLE__<small>Brother DCP-1511 · LAN</small></div>
-    <span class="status" id="status" data-state="idle" role="status" aria-live="polite">
-      <i class="led"></i><span id="statusText">Ready</span>
-    </span>
+    <div class="brand">__TITLE__</div>
+    <div class="headright">
+      <span class="status" id="status" data-state="idle" role="status" aria-live="polite">
+        <i class="led"></i><span id="statusText">Ready</span>
+      </span>
+      <button class="iconbtn" id="devicesBtn" title="Devices" aria-label="Manage devices"__DEVICES_HIDDEN__>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="badge-dot"></span>
+      </button>
+    </div>
   </header>
 
   <nav class="tabs" role="tablist" aria-label="Tools">
     <button class="tab-btn" id="tabScanBtn" data-tab="scan" role="tab" aria-selected="__SCAN_SEL__" aria-controls="tab-scan">Scan</button>
     <button class="tab-btn" id="tabPrintBtn" data-tab="print" role="tab" aria-selected="__PRINT_SEL__" aria-controls="tab-print"__PRINT_HIDDEN__>Print</button>
-    <button class="tab-btn" id="tabDevicesBtn" data-tab="devices" role="tab" aria-selected="__DEVICES_SEL__" aria-controls="tab-devices"__DEVICES_HIDDEN__>Devices</button>
   </nav>
 
   <section class="tab-panel__SCAN_ACTIVE__" id="tab-scan" role="tabpanel" aria-labelledby="tabScanBtn">
     <form class="card" id="form">
+      <div class="controls" id="scannerSelRow" hidden>
+        <label class="field"><span class="lbl">Scanner</span>
+          <select id="scannerSel"></select></label>
+      </div>
       <div class="controls">
         <label class="field"><span class="lbl">Mode</span>
           <select name="mode" id="mode">__MODE_OPTS__</select></label>
@@ -1235,113 +1399,135 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
   <section class="tab-panel__PRINT_ACTIVE__" id="tab-print" role="tabpanel" aria-labelledby="tabPrintBtn"__PRINT_HIDDEN__>
     <div class="card">
-      <div class="controls tplrow">
-        <label class="field"><span class="lbl">Label sheet</span>
-          <select id="tpl">__PRINT_TEMPLATE_OPTS__</select></label>
-        <button type="button" class="mini manage" id="manageBtn">Manage</button>
+      <!-- Printer selector: shown only when more than one printer is available -->
+      <div class="controls" id="printerSelRow" hidden>
+        <label class="field"><span class="lbl">Printer</span>
+          <select id="printerSel"></select></label>
       </div>
 
-      <div class="sheetHead">
-        <span class="lbl" id="selInfo">Tap cells to place your label</span>
-        <span class="sheetActs">
-          <button type="button" class="mini" id="selAll">All</button>
-          <button type="button" class="mini" id="selNone">Clear</button>
-        </span>
-      </div>
-      <div class="sheet-wrap"><svg class="sheet" id="sheet" viewBox="0 0 210 297" role="group" aria-label="Label sheet">__SHEET_INIT__</svg></div>
+      <!-- A4 / CUPS sheet composer -->
+      <div id="a4Composer">
+        <div class="controls tplrow">
+          <label class="field"><span class="lbl">Label sheet</span>
+            <select id="tpl">__PRINT_TEMPLATE_OPTS__</select></label>
+          <button type="button" class="mini manage" id="manageBtn">Manage</button>
+        </div>
 
-      <div class="seg" role="tablist" aria-label="Content type">
-        <button type="button" class="seg-btn" id="segText" role="tab" aria-selected="true">Text</button>
-        <button type="button" class="seg-btn" id="segFile" role="tab" aria-selected="false">Image / PDF</button>
+        <div class="sheetHead">
+          <span class="lbl" id="selInfo">Tap cells to place your label</span>
+          <span class="sheetActs">
+            <button type="button" class="mini" id="selAll">All</button>
+            <button type="button" class="mini" id="selNone">None</button>
+          </span>
+        </div>
+        <div class="sheet-wrap"><svg class="sheet" id="sheet" viewBox="0 0 210 297" role="group" aria-label="Label sheet">__SHEET_INIT__</svg></div>
+
+        <div class="seg" role="tablist" aria-label="Content type">
+          <button type="button" class="seg-btn" id="segText" role="tab" aria-selected="true">Text</button>
+          <button type="button" class="seg-btn" id="segFile" role="tab" aria-selected="false">Image / PDF</button>
+          <button type="button" class="seg-btn" id="segQr" role="tab" aria-selected="false">QR</button>
+        </div>
+
+        <div id="textPane">
+          <label class="field"><span class="lbl">Text <span class="opt">one line per row</span></span>
+            <textarea class="txt" id="ptext" rows="2" maxlength="200" autocomplete="off"
+                      placeholder="e.g. 42 — or a short&#10;label on two lines"></textarea></label>
+        </div>
+        <div id="filePane" hidden>
+          <label class="field"><span class="lbl">Image or PDF</span>
+            <input class="filein" id="pfile" type="file" accept="image/*,application/pdf"></label>
+          <div class="chip" id="fileChip" hidden><span id="fileName"></span><button type="button" id="fileClear" aria-label="Remove file">×</button></div>
+          <img class="filepv" id="filePv" hidden alt="">
+          <div class="hint">Tip: paste an image with ⌘V / Ctrl+V</div>
+        </div>
+        <div id="qrPane" hidden>
+          <label class="field"><span class="lbl">QR text or URL</span>
+            <textarea class="txt" id="pqr" rows="2" maxlength="512" autocomplete="off"
+                      placeholder="e.g. https://example.com or any text"></textarea></label>
+        </div>
+
+        <div class="buildacts">
+          <button class="scan" id="addBtn" type="button" disabled>Add to sheet</button>
+          <button class="btn2" id="eraseBtn" type="button" hidden>Erase</button>
+        </div>
+
+        <hr class="pdiv">
+
+        <button class="scan" id="printBtn" type="button" disabled>Print sheet</button>
+        <button class="linkbtn subtle" id="clearSheetBtn" type="button" hidden>Clear sheet</button>
       </div>
 
-      <div id="textPane">
-        <label class="field"><span class="lbl">Text <span class="opt">one line per row</span></span>
-          <textarea class="txt" id="ptext" rows="2" maxlength="200" autocomplete="off"
-                    placeholder="e.g. 42 — or a short&#10;label on two lines"></textarea></label>
-      </div>
-      <div id="filePane" hidden>
-        <label class="field"><span class="lbl">Image or PDF</span>
-          <input class="filein" id="pfile" type="file" accept="image/*,application/pdf"></label>
-        <div class="chip" id="fileChip" hidden><span id="fileName"></span><button type="button" id="fileClear" aria-label="Remove file">×</button></div>
-        <img class="filepv" id="filePv" hidden alt="">
-        <div class="hint">Tip: paste an image with ⌘V / Ctrl+V</div>
+      <!-- Niimbot label composer (shown when a Niimbot printer is selected) -->
+      <div id="labelComposer" hidden>
+        <div class="controls">
+          <label class="field"><span class="lbl">Label width <span class="opt">mm</span></span>
+            <input class="txt" id="niimW" type="number" min="5" max="120" step="1"></label>
+          <label class="field"><span class="lbl">Label length <span class="opt">mm</span></span>
+            <input class="txt" id="niimH" type="number" min="5" max="300" step="1"></label>
+        </div>
+
+        <div class="seg" role="tablist" aria-label="Label content">
+          <button type="button" class="seg-btn" id="nsegText" role="tab" aria-selected="true">Text</button>
+          <button type="button" class="seg-btn" id="nsegImg" role="tab" aria-selected="false">Image</button>
+          <button type="button" class="seg-btn" id="nsegQr" role="tab" aria-selected="false">QR</button>
+        </div>
+        <div id="nTextPane">
+          <label class="field"><span class="lbl" id="nTextLbl">Text <span class="opt">one line per row</span></span>
+            <textarea class="txt" id="nText" rows="2" maxlength="200" autocomplete="off"
+                      placeholder="e.g. 42 — or a short&#10;label on two lines"></textarea></label>
+        </div>
+        <div id="nImgPane" hidden>
+          <label class="field"><span class="lbl">Image</span>
+            <input class="filein" id="nFile" type="file" accept="image/*"></label>
+          <img class="filepv" id="nPv" hidden alt="">
+        </div>
+
+        <hr class="pdiv">
+        <button class="scan" id="niimPrint" type="button" disabled>Print label</button>
       </div>
 
-      <div class="buildacts">
-        <button class="scan" id="addBtn" type="button" disabled>Add to sheet</button>
-        <button class="btn2" id="eraseBtn" type="button" hidden>Erase</button>
-      </div>
-
-      <hr class="pdiv">
-
-      <button class="scan" id="printBtn" type="button" disabled>Print sheet</button>
-      <button class="linkbtn subtle" id="clearSheetBtn" type="button" hidden>Clear sheet</button>
       <p class="note" id="pnote" aria-live="polite"></p>
     </div>
   </section>
+</div>
 
-  <section class="tab-panel__DEVICES_ACTIVE__" id="tab-devices" role="tabpanel" aria-labelledby="tabDevicesBtn"__DEVICES_HIDDEN__>
-    <div class="card">
-      <div class="sheetHead">
-        <span class="lbl">Connected hardware</span>
-        <span class="sheetActs">
-          <button type="button" class="mini" id="devRefresh">Refresh</button>
-        </span>
-      </div>
-      <div class="devlist" id="devList"><p class="empty">Loading…</p></div>
+<!-- Devices modal (opened from the header gear) -->
+<div class="modal" id="devicesModal" hidden>
+  <div class="modal-card card wide" role="dialog" aria-modal="true" aria-labelledby="devModalTitle">
+    <div class="modal-head">
+      <strong id="devModalTitle">Devices</strong>
+      <span style="display:flex;gap:6px;align-items:center">
+        <button type="button" class="iconbtn sm" id="devRefresh" title="Refresh" aria-label="Refresh">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+        <button type="button" class="mclose" id="devModalClose" aria-label="Close">×</button>
+      </span>
     </div>
+    <p class="deverr" id="devNote"></p>
 
-    <div class="card" id="niimCard" style="margin-top:18px">
-      <div class="sheetHead">
-        <span class="lbl">Niimbot label printers</span>
-        <span class="sheetActs">
-          <button type="button" class="mini" id="niimScan">Scan for printers</button>
-        </span>
+    <div id="devMain">
+      <div id="invGroups"><p class="empty">Loading…</p></div>
+
+      <div class="msub">Label printers
+        <button type="button" class="mini" id="niimScan" style="float:right;text-transform:none;letter-spacing:0">Scan for printers</button>
       </div>
       <p class="hint" id="niimAdapter" hidden>Bluetooth adapter not available on this host.</p>
       <div class="devlist" id="niimList"></div>
       <div class="candlist" id="candList"></div>
-
-      <hr class="pdiv">
-
-      <div class="controls tplrow">
-        <label class="field"><span class="lbl">Print to</span>
-          <select id="niimActive"><option value="">No printer connected</option></select></label>
-      </div>
-      <div class="controls">
-        <label class="field"><span class="lbl">Label width <span class="opt">mm</span></span>
-          <input class="txt" id="niimW" type="number" min="5" max="120" step="1"></label>
-        <label class="field"><span class="lbl">Label length <span class="opt">mm</span></span>
-          <input class="txt" id="niimH" type="number" min="5" max="300" step="1"></label>
-      </div>
-
-      <div class="seg" role="tablist" aria-label="Label content">
-        <button type="button" class="seg-btn" id="nsegText" role="tab" aria-selected="true">Text</button>
-        <button type="button" class="seg-btn" id="nsegQr" role="tab" aria-selected="false">QR</button>
-        <button type="button" class="seg-btn" id="nsegImg" role="tab" aria-selected="false">Image</button>
-      </div>
-      <div id="nTextPane">
-        <label class="field"><span class="lbl" id="nTextLbl">Text <span class="opt">one line per row</span></span>
-          <textarea class="txt" id="nText" rows="2" maxlength="200" autocomplete="off"
-                    placeholder="e.g. 42 — or a short&#10;label on two lines"></textarea></label>
-      </div>
-      <div id="nImgPane" hidden>
-        <label class="field"><span class="lbl">Image</span>
-          <input class="filein" id="nFile" type="file" accept="image/*"></label>
-        <img class="filepv" id="nPv" hidden alt="">
-      </div>
-
-      <hr class="pdiv">
-      <button class="scan" id="niimPrint" type="button" disabled>Print label</button>
-      <p class="note" id="niimNote" aria-live="polite"></p>
-
-      <details class="adv" id="niimLogWrap">
-        <summary>Bluetooth log</summary>
-        <pre class="blelog" id="niimLog"></pre>
-      </details>
     </div>
-  </section>
+
+    <div id="devLogView" hidden>
+      <div class="loghead">
+        <button type="button" class="mini" id="logBack">← Back</button>
+        <strong id="logTitle"></strong>
+      </div>
+      <pre class="blelog" id="devLog"></pre>
+      <div class="logacts">
+        <button type="button" class="mini" id="logCopy">Copy</button>
+        <button type="button" class="mini danger" id="logClear">Clear</button>
+      </div>
+    </div>
+  </div>
 </div>
 <div class="modal" id="sheetModal" hidden>
   <div class="modal-card card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -1415,14 +1601,11 @@ input[type=number]{font-variant-numeric:tabular-nums}
   var tabBtns=Array.prototype.slice.call(document.querySelectorAll('.tab-btn'));
   function tabHidden(name){ var b=document.querySelector('.tab-btn[data-tab="'+name+'"]'); return !b || b.hidden; }
   function pathTab(){ var p=location.pathname.replace(/\/+$/,'');
-    if(p==='/print' && !tabHidden('print')) return 'print';
-    if(p==='/devices' && !tabHidden('devices')) return 'devices';
-    return 'scan'; }
+    return (p==='/print' && !tabHidden('print')) ? 'print' : 'scan'; }
   function selectTab(name, push){
     tabBtns.forEach(function(x){ x.setAttribute('aria-selected', x.dataset.tab===name?'true':'false'); });
     Array.prototype.forEach.call(document.querySelectorAll('.tab-panel'),function(p){
       p.classList.toggle('active', p.id==='tab-'+name); });
-    if(name==='devices' && window.initDevices) window.initDevices();
     if(push){ try{ history.pushState({tab:name}, '', '/'+name); }catch(e){} }
   }
   tabBtns.forEach(function(b){
@@ -1548,8 +1731,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
   var selInfo=document.getElementById('selInfo'), printBtn=document.getElementById('printBtn'), pnote=document.getElementById('pnote');
   var addBtn=document.getElementById('addBtn'), eraseBtn=document.getElementById('eraseBtn'), clearSheetBtn=document.getElementById('clearSheetBtn');
   var ptext=document.getElementById('ptext');
-  var segText=document.getElementById('segText'), segFile=document.getElementById('segFile');
-  var textPane=document.getElementById('textPane'), filePane=document.getElementById('filePane');
+  var segText=document.getElementById('segText'), segFile=document.getElementById('segFile'), segQr=document.getElementById('segQr');
+  var textPane=document.getElementById('textPane'), filePane=document.getElementById('filePane'), qrPane=document.getElementById('qrPane'), pqr=document.getElementById('pqr');
   var pfile=document.getElementById('pfile'), fileChip=document.getElementById('fileChip');
   var fileNameEl=document.getElementById('fileName'), fileClear=document.getElementById('fileClear'), filePv=document.getElementById('filePv');
   var sel=new Set(), cellContent={}, pmode='text', fileData=null, fileNm='', filePvUrl=null, fileAspect=1, printing=false;
@@ -1573,6 +1756,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
   function curTpl(){ return TBYID[tplSel.value] || TEMPLATES[0]; }
   function pendingContent(){   // the content currently in the panel (or null)
     if(pmode==='text'){ var v=ptext.value; return v.trim()?{mode:'text',text:v}:null; }
+    if(pmode==='qr'){ var q=pqr.value; return q.trim()?{mode:'qr',text:q.trim()}:null; }
     return fileData?{mode:'image',dataB64:fileData,filename:fileNm,aspect:fileAspect,thumbUrl:filePvUrl}:null;
   }
   function filledCount(){ return Object.keys(cellContent).length; }
@@ -1590,6 +1774,16 @@ input[type=number]{font-variant-numeric:tabular-nums}
       var fN=textFit(cw,ch,maxlen,nl,lg), fR=textFit(ch,cw,maxlen,nl,lg), rot=fR>fN*1.15, fs=rot?fR:fN, lh=fs*lg, y0=cy-(nl-1)*lh/2, tt='';
       for(var k2=0;k2<nl;k2++){ tt+='<text class="ptext" x="'+f2(cx)+'" y="'+f2(y0+k2*lh)+'" font-size="'+f2(fs)+'">'+esc(lines[k2])+'</text>'; }
       s+= rot?('<g transform="rotate(-90 '+f2(cx)+' '+f2(cy)+')">'+tt+'</g>'):tt;
+    } else if(content.mode==='qr'){
+      // Preview only (server renders the real QR): a small QR glyph plus the
+      // payload text truncated, so different QR cells are distinguishable.
+      var q=(content.text||'').trim(); if(!q) return '';
+      var bs=Math.min(cw,ch)*0.42, bx=cx-bs/2, by=y+ch*0.12;
+      s+='<rect x="'+f2(bx)+'" y="'+f2(by)+'" width="'+f2(bs)+'" height="'+f2(bs)+'" rx="0.6" fill="none" stroke="var(--accent)" stroke-width="0.5"/>';
+      s+='<text class="ptext" x="'+f2(cx)+'" y="'+f2(by+bs*0.55)+'" font-size="'+f2(bs*0.42)+'">QR</text>';
+      var lab=q.length>16?q.slice(0,15)+'…':q;
+      var fs=Math.min(ch*0.15,(cw*0.92)/(Math.max(lab.length,1)*0.6));
+      s+='<text class="ptext" x="'+f2(cx)+'" y="'+f2(y+ch*0.82)+'" font-size="'+f2(fs)+'">'+esc(lab)+'</text>';
     }
     return s;
   }
@@ -1626,7 +1820,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
     pmode=m;
     segText.setAttribute('aria-selected', m==='text'?'true':'false');
     segFile.setAttribute('aria-selected', m==='file'?'true':'false');
-    textPane.hidden = m!=='text'; filePane.hidden = m!=='file';
+    segQr.setAttribute('aria-selected', m==='qr'?'true':'false');
+    textPane.hidden = m!=='text'; filePane.hidden = m!=='file'; qrPane.hidden = m!=='qr';
     renderSheet(); updateUI();
   }
 
@@ -1654,8 +1849,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
       renderSheet(); updateUI();
     });
     ptext.addEventListener('input',function(){ renderSheet(); updateUI(); });
+    pqr.addEventListener('input',function(){ renderSheet(); updateUI(); });
     segText.addEventListener('click',function(){ setMode('text'); });
     segFile.addEventListener('click',function(){ setMode('file'); });
+    segQr.addEventListener('click',function(){ setMode('qr'); });
     function loadFileForPrint(file, name){
       fileNm = name || file.name || 'image';
       var reader=new FileReader();
@@ -1672,6 +1869,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
     }
     function loadContentToPanel(content){   // put a cell's stored content back in the panel to edit
       if(content.mode==='text'){ setMode('text'); ptext.value=content.text||''; }
+      else if(content.mode==='qr'){ setMode('qr'); pqr.value=content.text||''; }
       else {
         setMode('file');
         fileData=content.dataB64; fileNm=content.filename||'image'; fileAspect=content.aspect||1; filePvUrl=content.thumbUrl||null;
@@ -1722,7 +1920,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
       var count=keys.length, cells={};
       keys.forEach(function(k){
         var cc=cellContent[k];
-        cells[k] = (cc.mode==='image') ? {mode:'file', dataB64:cc.dataB64, filename:cc.filename} : {mode:'text', text:cc.text};
+        cells[k] = (cc.mode==='image') ? {mode:'file', dataB64:cc.dataB64, filename:cc.filename}
+                 : (cc.mode==='qr') ? {mode:'qr', text:cc.text}
+                 : {mode:'text', text:cc.text};
       });
       var body={template:curTpl().id, calX:0, calY:0, fontScale:0.9, cells:cells};
       var ctrl=new AbortController(), to=setTimeout(function(){ ctrl.abort(); }, 60000);
@@ -1916,178 +2116,278 @@ input[type=number]{font-variant-numeric:tabular-nums}
     renderSheet(); updateUI();
   }
 
-  // --- Devices tab ---------------------------------------------------------
+  // --- Devices manager (gear modal) + Print/Scan device selectors ----------
   (function(){
-    var devList=document.getElementById('devList');
-    if(!devList) return;  // tab disabled
+    var gear=document.getElementById('devicesBtn');
+    if(!gear) return;  // devices disabled -> A4 composer stays the default
+    var modal=document.getElementById('devicesModal'), invGroups=document.getElementById('invGroups');
     var niimList=document.getElementById('niimList'), candList=document.getElementById('candList');
-    var activeSel=document.getElementById('niimActive'), nW=document.getElementById('niimW'), nH=document.getElementById('niimH');
+    var devNote=document.getElementById('devNote');
+    var printerSel=document.getElementById('printerSel'), printerSelRow=document.getElementById('printerSelRow');
+    var scannerSel=document.getElementById('scannerSel'), scannerSelRow=document.getElementById('scannerSelRow');
+    var a4C=document.getElementById('a4Composer'), labelC=document.getElementById('labelComposer');
+    var nW=document.getElementById('niimW'), nH=document.getElementById('niimH');
     var nText=document.getElementById('nText'), nFile=document.getElementById('nFile'), nPv=document.getElementById('nPv');
-    var niimNote=document.getElementById('niimNote'), printBtn=document.getElementById('niimPrint');
-    var kind='text', imgB64='', printers=[], loaded=false, busy=false;
+    var nTextLbl=document.getElementById('nTextLbl'), niimBtn=document.getElementById('niimPrint');
+    var nsegText=document.getElementById('nsegText'), nsegImg=document.getElementById('nsegImg'), nsegQr=document.getElementById('nsegQr');
+    var devMain=document.getElementById('devMain'), devLogView=document.getElementById('devLogView');
+    var devLog=document.getElementById('devLog'), logTitle=document.getElementById('logTitle');
+    var state={printers:[],active:null,adapter:true,log:[]}, inventory=[];
+    var kind='text', imgB64='', busy=false, curPrinter=null, lastApplied='', curLogAddr=null;
 
     function jpost(url, body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(body||{})}).then(function(r){return r.json();}); }
-    function nnote(msg, cls){ niimNote.className='note'+(cls?' '+cls:''); niimNote.textContent=msg||''; }
+    function dnote(msg, cls){ devNote.textContent=msg||''; devNote.style.color = cls==='err'?'var(--danger)':'var(--muted)'; }
 
-    // Inventory --------------------------------------------------------------
+    // ---- per-device connection log (lines are tagged '[address] ...') --------
+    function deviceLog(addr){ return (state.log||[]).filter(function(ln){ return ln.indexOf('['+addr+']')>=0; }); }
+    function renderLog(){
+      if(!curLogAddr) return;
+      var lines=deviceLog(curLogAddr).map(function(ln){ return ln.split('] ').slice(1).join('] ')||ln; });
+      devLog.textContent = lines.length ? lines.join('\n') : 'No log yet for this device.';
+      devLog.scrollTop=devLog.scrollHeight;
+    }
+    function openLog(p){ curLogAddr=p.address; logTitle.textContent=p.name+' · log'; renderLog(); devMain.hidden=true; devLogView.hidden=false; }
+    function closeLog(){ curLogAddr=null; devLogView.hidden=true; devMain.hidden=false; }
+    document.getElementById('logBack').addEventListener('click',closeLog);
+    document.getElementById('logCopy').addEventListener('click',function(){
+      var b=this, text=devLog.textContent;
+      function done(){ b.textContent='Copied'; setTimeout(function(){ b.textContent='Copy'; },1500); }
+      function fail(){ b.textContent='Copy failed'; setTimeout(function(){ b.textContent='Copy'; },1500); }
+      // navigator.clipboard only works in a secure context; the UI is plain HTTP,
+      // so fall back to a hidden-textarea execCommand copy.
+      function legacy(){
+        var ta=document.createElement('textarea'); ta.value=text;
+        ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.top='-1000px'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        var ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+        document.body.removeChild(ta); ok?done():fail();
+      }
+      if(navigator.clipboard && window.isSecureContext){ navigator.clipboard.writeText(text).then(done).catch(legacy); }
+      else legacy();
+    });
+    document.getElementById('logClear').addEventListener('click',function(){
+      jpost('/niimbot/clearlog',{address:curLogAddr}).then(function(r){ if(r.ok){ renderNiim(r); renderLog(); } });
+    });
+
+    // ---- modal open/close ----
+    gear.addEventListener('click',function(){ modal.hidden=false; loadInv(false); loadNiim(); });
+    function closeModal(){ modal.hidden=true; closeLog(); }
+    document.getElementById('devModalClose').addEventListener('click',closeModal);
+    modal.addEventListener('click',function(e){ if(e.target===modal) closeModal(); });
+    document.addEventListener('keydown',function(e){ if(e.key==='Escape' && !modal.hidden) closeModal(); });
+    document.getElementById('devRefresh').addEventListener('click',function(){
+      var rb=this; rb.classList.add('spin');
+      Promise.all([loadInv(true), loadNiim()]).catch(function(){}).then(function(){ rb.classList.remove('spin'); });
+    });
+
+    function updateBadge(){ gear.classList.toggle('alert', inventory.some(function(d){return d.status==='error';})); }
+
+    // ---- icons + row helpers ------------------------------------------------
+    var DICON={
+      usb:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="20.5" r="1.5"/><path d="M11 19V4"/><path d="M8 7l3-3 3 3"/><path d="M11 13l4-2.5V8"/><rect x="13.6" y="6.4" width="2.8" height="2.4" rx=".4" fill="currentColor" stroke="none"/><path d="M11 10L7.5 8V6"/><circle cx="7.5" cy="5.5" r="1.3" fill="currentColor" stroke="none"/></svg>',
+      bluetooth:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8l10 8-5 4V4l5 4-10 8"/></svg>',
+      network:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 3.6 6 3.6 9s-1 6.3-3.6 9c-2.6-2.7-3.6-6-3.6-9S9.4 5.7 12 3z"/></svg>',
+      test:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7" rx="1"/></svg>',
+      log:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+      forget:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>',
+      reconnect:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>',
+      disconnect:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><path d="M12 2v10"/></svg>',
+      connect:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>'
+    };
+    var TRANSPORT={usb:'USB',bluetooth:'Bluetooth',network:'Network',cups:'Network',sane:'USB'};
+    function ifaceLabel(t){ return TRANSPORT[t] || (t?t.toUpperCase():''); }
+    function ifaceIcon(t){ var k=(t==='bluetooth')?'bluetooth':(t==='network'||t==='cups')?'network':'usb';
+      return '<span class="ifi" title="'+esc(ifaceLabel(t))+'">'+DICON[k]+'</span>'; }
+    function iconBtn(act, icon, title, cls){
+      return '<button type="button" class="mini ic'+(cls?' '+cls:'')+'" data-act="'+act+'" title="'+esc(title)+'" aria-label="'+esc(title)+'">'+DICON[icon]+'</button>'; }
+    function devRowHTML(name, transport, status, sub, isErr, acts){
+      var dot = status==='error'?'err':(status==='connected'?'on':'');
+      return '<i class="dot '+dot+'"></i>'+(transport?ifaceIcon(transport):'')+
+        '<div class="dinfo"><div class="dname">'+esc(name)+'</div>'+
+          '<div class="dsub'+(isErr?' derr':'')+'" title="'+esc(sub)+'">'+esc(sub)+'</div></div>'+
+        '<div class="dacts">'+(acts||'')+'</div>';
+    }
+    function testPage(d, tb){
+      if(tb.disabled) return; tb.disabled=true; dnote('Sending test page to '+d.name+'…');
+      jpost('/devices/testpage',{kind:d.kind,id:d.id}).then(function(r){
+        dnote(r.ok?('Test page sent to '+d.name):(r.error||'Test page failed'), r.ok?'':'err');
+      }).catch(function(){ dnote('Test page failed','err'); }).finally(function(){ tb.disabled=false; });
+    }
     function renderInv(devs){
-      devList.innerHTML='';
-      if(!devs||!devs.length){ devList.innerHTML='<p class="empty">No devices found.</p>'; return; }
-      devs.forEach(function(d){
-        var row=document.createElement('div'); row.className='drow';
-        var dot = d.status==='error'?'err':(d.status==='connected'?'on':'');
-        var right='';
-        if(d.forgettable) right='<button type="button" class="mini danger" data-forget="1">Forget</button>';
-        row.innerHTML='<i class="dot '+dot+'"></i>'+
-          '<div class="dinfo"><div class="dname">'+esc(d.name)+' <span class="kind">'+esc(d.kind)+'</span></div>'+
-          '<div class="dsub'+(d.error?' derr':'')+'">'+esc(d.error||d.detail||(d.transport+' · '+d.status))+'</div></div>'+
-          '<div class="dacts">'+right+'</div>';
-        if(d.forgettable){
-          var fb=row.querySelector('[data-forget]');
-          fb.addEventListener('click',function(){
-            if(!fb.classList.contains('armed')){ fb.classList.add('armed'); fb.textContent='Confirm';
-              setTimeout(function(){ fb.classList.remove('armed'); fb.textContent='Forget'; },3000); return; }
-            jpost('/devices/forget',{kind:d.kind,id:d.id}).then(function(r){
-              if(r.ok){ renderInv(r.devices); loadNiim(); } });
-          });
-        }
-        devList.appendChild(row);
+      inventory = devs||[];
+      invGroups.innerHTML='';
+      var groups=[['printer','Printers'],['scanner','Scanners'],['usb','Other']], any=false;
+      groups.forEach(function(g){
+        var rows=inventory.filter(function(d){return d.kind===g[0];});
+        if(!rows.length) return; any=true;
+        var h=document.createElement('div'); h.className='grp'; h.textContent=g[1]; invGroups.appendChild(h);
+        rows.forEach(function(d){
+          var row=document.createElement('div'); row.className='drow';
+          // Only auto-detected printers get a Test page; no Forget on USB/network hardware.
+          var acts = (d.kind==='printer' && d.status==='connected' && d.id) ? iconBtn('test','test','Print test page') : '';
+          row.innerHTML=devRowHTML(d.name, d.transport, d.status, d.error||d.detail||d.status, !!d.error, acts);
+          var tb=row.querySelector('[data-act="test"]'); if(tb) tb.addEventListener('click',function(){ testPage(d, tb); });
+          invGroups.appendChild(row);
+        });
       });
+      if(!any) invGroups.innerHTML='<p class="empty">No devices found.</p>';
+      syncSelectors(); updateBadge();
     }
     function loadInv(force){
       return (force?jpost('/devices/refresh',{}):fetch('/devices/list').then(function(r){return r.json();}))
-        .then(function(r){ renderInv(r.devices||[]); }).catch(function(){ devList.innerHTML='<p class="empty derr">Could not load devices.</p>'; });
+        .then(function(r){ renderInv(r.devices||[]); })
+        .catch(function(){ invGroups.innerHTML='<p class="empty derr">Could not load devices.</p>'; });
     }
 
-    // Niimbot ----------------------------------------------------------------
+    // ---- niimbot management ----
     function renderNiim(st){
-      printers = st.printers||[];
-      if(st.log){ var lg=document.getElementById('niimLog'); lg.textContent=(st.log||[]).join('\n'); lg.scrollTop=lg.scrollHeight; }
-      document.getElementById('niimAdapter').hidden = (st.adapter!==false) || printers.length>0;
+      state = st||state;
+      if(curLogAddr) renderLog();   // keep an open per-device log fresh
+      var prs = state.printers||[];
+      document.getElementById('niimAdapter').hidden = (state.adapter!==false) || prs.length>0;
       niimList.innerHTML='';
-      if(!printers.length){ niimList.innerHTML='<p class="empty">No Niimbot printers yet. Tap “Scan for printers”.</p>'; }
-      printers.forEach(function(p){
+      if(!prs.length){ niimList.innerHTML='<p class="empty">No Niimbot printers yet. Tap “Scan for printers”.</p>'; }
+      prs.forEach(function(p){
         var row=document.createElement('div'); row.className='drow'+(p.active?' active':'');
         var conn = p.status==='connected';
-        var acts = (conn?'<button type="button" class="mini" data-act="disconnect">Disconnect</button>'
-                        :'<button type="button" class="mini pri" data-act="reconnect">Reconnect</button>')+
-                   '<button type="button" class="mini danger" data-act="forget">Forget</button>';
-        row.innerHTML='<i class="dot '+(conn?'on':'')+'"></i>'+
-          '<div class="dinfo"><div class="dname">'+esc(p.name)+' <span class="kind">'+esc(p.model_label||p.model)+'</span></div>'+
-          '<div class="dsub">'+esc(p.address)+' · '+p.status+(p.label_mm?(' · '+p.label_mm[0]+'×'+p.label_mm[1]+' mm'):'')+'</div></div>'+
+        var hasLog = deviceLog(p.address).length>0;
+        var acts = (conn? iconBtn('test','test','Print test label')+iconBtn('disconnect','disconnect','Disconnect')
+                        : iconBtn('reconnect','reconnect','Reconnect','pri'))+
+                   iconBtn('log','log','Connection log', hasLog?'on':'')+
+                   iconBtn('forget','forget','Forget','warn');
+        var sub = esc(p.name)+' · '+p.status+(p.label_mm?(' · '+p.label_mm[0]+'×'+p.label_mm[1]+' mm'):'');
+        row.innerHTML='<i class="dot '+(conn?'on':'')+'"></i>'+ifaceIcon('bluetooth')+
+          '<div class="dinfo"><div class="dname">'+esc(p.model_label||p.model)+'</div>'+
+          '<div class="dsub" title="'+sub+'">'+sub+'</div></div>'+
           '<div class="dacts">'+acts+'</div>';
         row.querySelectorAll('[data-act]').forEach(function(bb){
-          bb.addEventListener('click',function(){ niimAction(bb.dataset.act, p, bb); });
+          bb.addEventListener('click',function(){ if(bb.dataset.act==='log') openLog(p); else niimAction(bb.dataset.act, p, bb); });
         });
         niimList.appendChild(row);
       });
-      // active selector
-      var cur = st.active||'';
-      activeSel.innerHTML = printers.length? '' : '<option value="">No printer connected</option>';
-      printers.forEach(function(p){
-        var o=document.createElement('option'); o.value=p.address;
-        o.textContent=p.name+(p.status==='connected'?'':' (offline)'); if(p.address===cur)o.selected=true;
-        activeSel.appendChild(o);
-      });
-      var act = printers.filter(function(p){return p.address===cur;})[0] || printers[0];
-      if(act && act.label_mm){ if(!nW.value)nW.value=act.label_mm[0]; if(!nH.value)nH.value=act.label_mm[1]; }
-      updatePrintBtn();
+      syncSelectors(); updateBadge();
     }
     function loadNiim(){
       return fetch('/niimbot/state').then(function(r){return r.json();}).then(function(st){
-        if(st.error) nnote(st.error,'err'); renderNiim(st);
+        if(st.error) dnote(st.error,'err'); renderNiim(st);
       }).catch(function(){});
     }
     function niimAction(act, p, bb){
       if(busy) return;
-      if(act==='forget'){
-        if(!bb.classList.contains('armed')){ bb.classList.add('armed'); bb.textContent='Confirm';
-          setTimeout(function(){ bb.classList.remove('armed'); bb.textContent='Forget'; },3000); return; }
+      if(act==='test'){
+        busy=true; bb.disabled=true; dnote('Printing test label…');
+        jpost('/devices/testpage',{kind:'label-printer',id:p.address}).then(function(r){ dnote(r.ok?'Test label sent':(r.error||'Test failed'), r.ok?'':'err'); })
+          .catch(function(){ dnote('Test failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
+        return;
       }
-      busy=true; nnote(act+'…'); if(bb) bb.disabled=true;
+      if(act==='forget' && !bb.classList.contains('armed')){ bb.classList.add('armed'); bb.title='Click again to remove';
+        setTimeout(function(){ bb.classList.remove('armed'); bb.title='Forget'; },3000); return; }
+      busy=true; dnote(act+'…'); bb.disabled=true;
       var url = act==='reconnect'?'/niimbot/reconnect':(act==='disconnect'?'/niimbot/disconnect':'/niimbot/forget');
       jpost(url,{address:p.address}).then(function(r){
-        if(r.ok){ nnote(''); renderNiim(r); } else nnote(r.error||'Failed','err');
+        if(r.ok){ dnote(''); renderNiim(r); } else dnote(r.error||'Failed','err');
         loadInv(false);
-      }).catch(function(){ nnote('Request failed','err'); })
-        .finally(function(){ busy=false; if(bb) bb.disabled=false; });
+      }).catch(function(){ dnote('Request failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
     }
-
     function renderCands(cands){
       candList.innerHTML='';
-      var known={}; printers.forEach(function(p){known[p.address]=1;});
+      var known={}; (state.printers||[]).forEach(function(p){known[p.address]=1;});
       cands=(cands||[]).filter(function(c){return !known[c.address];});
       if(!cands.length){ candList.innerHTML='<p class="hint">No new printers found.</p>'; return; }
       cands.forEach(function(c){
         var row=document.createElement('div'); row.className='drow';
-        row.innerHTML='<i class="dot"></i><div class="dinfo"><div class="dname">'+esc(c.name)+'</div>'+
+        row.innerHTML='<i class="dot"></i>'+ifaceIcon('bluetooth')+'<div class="dinfo"><div class="dname">'+esc(c.name)+'</div>'+
           '<div class="dsub">'+esc(c.address)+' · '+(c.rssi||'')+' dBm</div></div>'+
-          '<div class="dacts"><button type="button" class="mini pri" data-connect="1">Connect</button></div>';
+          '<div class="dacts"><button type="button" class="mini ic pri" data-connect="1" title="Connect" aria-label="Connect">'+DICON.connect+'</button></div>';
         row.querySelector('[data-connect]').addEventListener('click',function(bev){
-          var bb=bev.target; if(busy) return; busy=true; bb.disabled=true; nnote('Connecting…');
+          var bb=bev.target; if(busy) return; busy=true; bb.disabled=true; dnote('Connecting…');
           jpost('/niimbot/connect',{address:c.address,name:c.name}).then(function(r){
-            if(r.ok){ nnote(''); candList.innerHTML=''; renderNiim(r); loadInv(false); }
-            else nnote(r.error||'Connect failed','err');
-          }).catch(function(){ nnote('Connect failed','err'); })
-            .finally(function(){ busy=false; bb.disabled=false; });
+            if(r.ok){ dnote(''); candList.innerHTML=''; renderNiim(r); loadInv(false); } else dnote(r.error||'Connect failed','err');
+          }).catch(function(){ dnote('Connect failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
         });
         candList.appendChild(row);
       });
     }
-
-    document.getElementById('devRefresh').addEventListener('click',function(){ loadInv(true); loadNiim(); });
     document.getElementById('niimScan').addEventListener('click',function(){
-      if(busy) return; busy=true; var b=this; b.disabled=true; nnote('Scanning for Bluetooth printers…');
+      if(busy) return; busy=true; var b=this; b.disabled=true; dnote('Scanning for Bluetooth printers…');
       jpost('/niimbot/scan',{}).then(function(r){
-        if(r.ok){ nnote(''); renderCands(r.candidates); } else nnote(r.error||'Scan failed','err');
-      }).catch(function(){ nnote('Scan failed','err'); })
-        .finally(function(){ busy=false; b.disabled=false; });
+        if(r.ok){ dnote(''); renderCands(r.candidates); } else dnote(r.error||'Scan failed','err');
+      }).catch(function(){ dnote('Scan failed','err'); }).finally(function(){ busy=false; b.disabled=false; });
     });
-    activeSel.addEventListener('change',function(){
-      jpost('/niimbot/select',{address:activeSel.value}).then(function(r){ if(r.ok) renderNiim(r); });
-    });
-    function saveSize(){
-      var addr=activeSel.value; if(!addr) return;
-      jpost('/niimbot/labelsize',{address:addr,w:parseFloat(nW.value),h:parseFloat(nH.value)});
-    }
-    nW.addEventListener('change',saveSize); nH.addEventListener('change',saveSize);
 
-    // content type toggle
-    var segs={text:document.getElementById('nsegText'),qr:document.getElementById('nsegQr'),image:document.getElementById('nsegImg')};
+    // ---- Print/Scan selectors (fed from inventory + niimbot state) ----------
+    function printerOptions(){
+      var opts=[];
+      inventory.forEach(function(d){ if(d.kind==='printer' && d.id) opts.push({v:'cups:'+d.id, label:d.name, type:'cups', id:d.id}); });
+      (state.printers||[]).forEach(function(p){ if(p.status==='connected') opts.push({v:'niim:'+p.address, label:p.name+' — '+(p.model_label||p.model), type:'niim', address:p.address, label_mm:p.label_mm}); });
+      return opts;
+    }
+    function syncSelectors(){
+      var opts=printerOptions();
+      if(opts.length){
+        var prev = curPrinter ? curPrinter.v : (function(){try{return localStorage.getItem('pm_printer')||'';}catch(e){return '';}})();
+        printerSel.innerHTML = opts.map(function(o){ return '<option value="'+esc(o.v)+'">'+esc(o.label)+'</option>'; }).join('');
+        var match = opts.filter(function(o){return o.v===prev;})[0] || opts[0];
+        printerSel.value = match.v; printerSelRow.hidden = opts.length<2;
+        applyPrinter(match);
+      } else { printerSelRow.hidden=true; }
+      var scs=inventory.filter(function(d){return d.kind==='scanner' && d.status==='connected' && d.id;});
+      scannerSel.innerHTML = scs.map(function(d){ return '<option value="'+esc(d.id)+'">'+esc(d.name)+'</option>'; }).join('');
+      scannerSelRow.hidden = scs.length<2;
+    }
+    function applyPrinter(o){
+      var changed = o.v!==lastApplied; lastApplied=o.v; curPrinter=o;
+      try{ localStorage.setItem('pm_printer', o.v); }catch(e){}
+      var isNiim = o.type==='niim';
+      a4C.hidden = isNiim; labelC.hidden = !isNiim;
+      if(isNiim){
+        if(changed){ jpost('/niimbot/select',{address:o.address}); if(o.label_mm){ nW.value=o.label_mm[0]; nH.value=o.label_mm[1]; } }
+        updateNiimBtn();
+      }
+    }
+    printerSel.addEventListener('change',function(){
+      var o=printerOptions().filter(function(x){return x.v===printerSel.value;})[0]; if(o) applyPrinter(o);
+    });
+
+    // ---- Niimbot label composer (in the Print tab) --------------------------
     function setKind(k){ kind=k;
-      Object.keys(segs).forEach(function(x){ segs[x].setAttribute('aria-selected', x===k?'true':'false'); });
+      nsegText.setAttribute('aria-selected', k==='text'?'true':'false');
+      nsegImg.setAttribute('aria-selected', k==='image'?'true':'false');
+      nsegQr.setAttribute('aria-selected', k==='qr'?'true':'false');
       document.getElementById('nTextPane').hidden = (k==='image');
       document.getElementById('nImgPane').hidden = (k!=='image');
-      document.getElementById('nTextLbl').innerHTML = (k==='qr')?'Text or URL':'Text <span class="opt">one line per row</span>';
-      updatePrintBtn();
+      nTextLbl.innerHTML = (k==='qr')?'Text or URL':'Text <span class="opt">one line per row</span>';
+      updateNiimBtn();
     }
-    segs.text.addEventListener('click',function(){setKind('text');});
-    segs.qr.addEventListener('click',function(){setKind('qr');});
-    segs.image.addEventListener('click',function(){setKind('image');});
-    nText.addEventListener('input',updatePrintBtn);
+    nsegText.addEventListener('click',function(){setKind('text');});
+    nsegImg.addEventListener('click',function(){setKind('image');});
+    nsegQr.addEventListener('click',function(){setKind('qr');});
+    nText.addEventListener('input',updateNiimBtn);
     nFile.addEventListener('change',function(){
       var f=nFile.files&&nFile.files[0]; imgB64=''; nPv.hidden=true;
-      if(!f) return updatePrintBtn();
-      var rd=new FileReader(); rd.onload=function(){ var s=rd.result||''; imgB64=(s.split(',')[1]||'');
-        nPv.src=s; nPv.hidden=false; updatePrintBtn(); }; rd.readAsDataURL(f);
+      if(!f) return updateNiimBtn();
+      var rd=new FileReader(); rd.onload=function(){ var s=rd.result||''; imgB64=(s.split(',')[1]||''); nPv.src=s; nPv.hidden=false; updateNiimBtn(); }; rd.readAsDataURL(f);
     });
+    function saveSize(){ if(curPrinter && curPrinter.type==='niim') jpost('/niimbot/labelsize',{address:curPrinter.address,w:parseFloat(nW.value),h:parseFloat(nH.value)}); }
+    nW.addEventListener('change',saveSize); nH.addEventListener('change',saveSize);
     function hasContent(){ return kind==='image'? !!imgB64 : !!nText.value.trim(); }
-    function updatePrintBtn(){ var conn=printers.some(function(p){return p.status==='connected';});
-      printBtn.disabled = busy || !conn || !hasContent(); }
-
-    printBtn.addEventListener('click',function(){
-      if(busy||printBtn.disabled) return; busy=true; printBtn.disabled=true;
-      var old=printBtn.textContent; printBtn.textContent='Printing…'; nnote('Sending to printer…');
-      var body={kind:kind,address:activeSel.value};
+    function updateNiimBtn(){ niimBtn.disabled = busy || !(curPrinter && curPrinter.type==='niim') || !hasContent(); }
+    niimBtn.addEventListener('click',function(){
+      if(busy||niimBtn.disabled) return; busy=true; niimBtn.disabled=true;
+      var old=niimBtn.textContent; niimBtn.textContent='Printing…'; setStatus('busy','Printing');
+      pnote.className='note'; pnote.textContent='';
+      var body={kind:kind,address:curPrinter.address};
       if(kind==='image') body.dataB64=imgB64; else body.text=nText.value.trim();
       jpost('/niimbot/print',body).then(function(r){
-        if(r.ok){ nnote('Printed ✓','ok'); } else nnote(r.error||'Print failed','err');
-      }).catch(function(){ nnote('Print failed','err'); })
-        .finally(function(){ busy=false; printBtn.textContent=old; updatePrintBtn(); });
+        if(r.ok){ setStatus('idle','Ready'); pnote.className='note ok'; pnote.textContent='Printed label ✓'; }
+        else { setStatus('error','Failed'); pnote.className='note err'; pnote.textContent=r.error||'Print failed.'; }
+      }).catch(function(){ setStatus('error','Failed'); pnote.className='note err'; pnote.textContent='Print failed.'; })
+        .finally(function(){ busy=false; niimBtn.textContent=old; updateNiimBtn(); });
     });
 
-    window.initDevices=function(){ if(loaded) return; loaded=true; loadInv(false); loadNiim(); };
+    // Populate selectors on load (no modal needed).
+    loadInv(false); loadNiim();
   })();
 
   // open the tab named by the URL (/scan, /print, /devices)

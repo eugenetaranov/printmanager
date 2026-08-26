@@ -1,0 +1,13 @@
+# Managed by Tack — roles/web-ui. Rendered from role variables and loaded by
+# scan-web.py (SCAN_WEB_CONFIG). Keeps the Python a plain .py with no templating.
+dir: "{{ .scan_dir }}"
+data: "/var/lib/scan-web"
+script: "/usr/local/lib/scan-web/scan-to-share.sh"
+port: {{ .scan_web_port }}
+title: "{{ .scan_web_title }}"
+share: "{{ .scan_web_share }}"
+default_mode: "{{ .scan_web_default_mode }}"
+default_res: {{ .scan_web_default_res }}
+print_enabled: {{ .scan_web_print_enabled }}
+print_queue: "{{ .scan_web_print_queue }}"
+devices_enabled: {{ .scan_web_devices_enabled }}
