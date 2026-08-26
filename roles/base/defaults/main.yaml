@@ -14,6 +14,7 @@ base_packages:
   - curl
   - usbutils
   - iptables-persistent
+  - iw
 
 # Ensure the `<codename>-updates` apt pocket is enabled before installing
 # packages. Ubuntu ships it on by default; if it has been removed, installed
@@ -28,3 +29,12 @@ base_firewall_enabled: true
 
 # SSH port allowed before the default-deny DROP rule is added (prevents lockout).
 base_ssh_port: 22
+
+# Disable Wi-Fi power saving. On the Pi's brcmfmac radio, power-save causes the
+# link to briefly drop/stall (the host goes unreachable for seconds, breaks mDNS
+# + long SSH), so we turn it off. Two mechanisms for portability across Ubuntu /
+# Raspberry Pi OS: a NetworkManager global drop-in (applies on every wifi
+# (re)connect where NM manages the link) and a systemd oneshot running `iw`
+# (immediate + covers non-NM setups). Set false to leave power management alone.
+base_wifi_powersave_off: true
+base_wifi_iface: wlan0

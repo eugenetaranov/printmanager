@@ -1,0 +1,6 @@
+# Managed by Tack — roles/base. Disable Wi-Fi power saving for all NetworkManager
+# managed wireless connections (2 = disable). Prevents the brcmfmac link from
+# stalling/dropping. Takes effect on the next (re)connect; applied immediately
+# out-of-band via `iw`.
+[connection]
+wifi.powersave = 2

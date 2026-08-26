@@ -28,14 +28,23 @@
     update_cache: true
 
 # Generate en_US.UTF-8 so SSH sessions that forward LANG/LC_* don't warn
-# "cannot change locale". Idempotent (skips once the locale exists).
+# "cannot change locale". Portable across Ubuntu and Raspberry Pi OS/Debian:
+# Debian's locale-gen IGNORES a CLI locale argument and only (re)generates the
+# entries enabled in /etc/locale.gen, so we enable the entry there and then run
+# locale-gen with no args (works on Ubuntu too). Idempotent (early-exits once
+# the locale exists) and best-effort (cosmetic, never fails the play).
 - name: Ensure the en_US.UTF-8 locale exists
   command:
     cmd: >
-      sh -c 'locale -a 2>/dev/null | grep -qiE "^en_US\.utf-?8$" ||
-      { apt-get install -y locales >/dev/null 2>&1;
-      locale-gen en_US.UTF-8 >/dev/null 2>&1;
-      update-locale LANG=en_US.UTF-8 >/dev/null 2>&1; }'
+      sh -c 'locale -a 2>/dev/null | grep -qiE "^en_US\.utf-?8$" && exit 0;
+      apt-get install -y locales >/dev/null 2>&1 || true;
+      if [ -f /etc/locale.gen ]; then
+      sed -i "s/^# *\(en_US\.UTF-8 UTF-8\)/\1/" /etc/locale.gen;
+      grep -qiE "^en_US\.UTF-8 UTF-8" /etc/locale.gen || echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen;
+      fi;
+      locale-gen >/dev/null 2>&1 || locale-gen en_US.UTF-8 >/dev/null 2>&1 || true;
+      update-locale LANG=en_US.UTF-8 >/dev/null 2>&1 || true;
+      exit 0'
 
 # --- Firewall: default-deny baseline (iptables; restored on boot by ------------
 # iptables-persistent) ---------------------------------------------------------
@@ -68,6 +77,19 @@
     destination_port: "{{ base_ssh_port }}"
     jump: ACCEPT
     comment: "base: ssh"
+    persist: true
+  when: base_firewall_enabled
+
+# Allow ICMP (ping/diagnostics). Uses action: insert (like the service roles) so
+# it lands ABOVE the default-deny DROP even when re-applied to an already-
+# provisioned host; echo-replies to our own pings return via established/related.
+- name: Allow ICMP (IPv4)
+  iptables:
+    chain: INPUT
+    protocol: icmp
+    jump: ACCEPT
+    action: insert
+    comment: "base: icmp"
     persist: true
   when: base_firewall_enabled
 
@@ -113,6 +135,19 @@
     persist: true
   when: base_firewall_enabled
 
+# ICMPv6 is not just ping -- it carries Neighbor Discovery / RA, so IPv6 needs it
+# to work at all. action: insert so it lands above the v6 DROP on re-apply too.
+- name: Allow ICMPv6 (IPv6)
+  iptables:
+    chain: INPUT
+    ip_version: ipv6
+    protocol: ipv6-icmp
+    jump: ACCEPT
+    action: insert
+    comment: "base: icmpv6"
+    persist: true
+  when: base_firewall_enabled
+
 - name: Default-deny incoming (IPv6)
   iptables:
     chain: INPUT
@@ -121,3 +156,35 @@
     comment: "base: default-deny"
     persist: true
   when: base_firewall_enabled
+
+# --- Wi-Fi power saving off (stops the brcmfmac link dropping) ----------------
+- name: Ensure the NetworkManager drop-in dir exists
+  file:
+    path: /etc/NetworkManager/conf.d
+    state: directory
+    mode: "0755"
+  when: base_wifi_powersave_off
+
+- name: Disable Wi-Fi power saving in NetworkManager (persists across reconnects)
+  template:
+    src: wifi-powersave-off.conf.j2
+    dest: /etc/NetworkManager/conf.d/wifi-powersave-off.conf
+    mode: "0644"
+  when: base_wifi_powersave_off
+
+- name: Install the Wi-Fi power-save-off service (universal + immediate)
+  template:
+    src: wifi-powersave-off.service.j2
+    dest: /etc/systemd/system/wifi-powersave-off.service
+    mode: "0644"
+  when: base_wifi_powersave_off
+
+# Enabling + starting runs `iw ... power_save off` now (immediate effect) and on
+# every boot; the NM drop-in keeps it off across wifi reconnects.
+- name: Enable and start the Wi-Fi power-save-off service
+  systemd:
+    name: wifi-powersave-off.service
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: base_wifi_powersave_off

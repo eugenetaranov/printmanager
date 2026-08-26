@@ -1,0 +1,17 @@
+# Managed by Tack — roles/base. Universal fallback (works whether NM or
+# systemd-networkd manages the link): turn Wi-Fi power saving off at boot once
+# the interface exists. Idempotent and harmless if the iface is absent.
+[Unit]
+Description=Disable Wi-Fi power saving on {{ .base_wifi_iface }}
+After=network.target sys-subsystem-net-devices-{{ .base_wifi_iface }}.device
+Wants=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/iw dev {{ .base_wifi_iface }} set power_save off
+RemainAfterExit=yes
+# Don't fail the boot if the radio isn't present or already off.
+SuccessExitStatus=0 156 240 255
+
+[Install]
+WantedBy=multi-user.target
