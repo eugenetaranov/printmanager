@@ -1,0 +1,30 @@
+# Watchdog role — keep the Pi self-healing when it hangs or loses the network.
+#
+# Two independent layers:
+#  1) Hardware watchdog via systemd. systemd opens /dev/watchdog (the BCM2712
+#     SoC watchdog on the Pi 5) and pets it continuously; if systemd or the
+#     kernel HANGS and stops petting, the SoC hard-resets the board. This is the
+#     real "it locked up, reboot itself" safety net and can't false-trigger on a
+#     working system.
+#  2) Connectivity self-heal. A timer pings a target; after a short outage it
+#     bounces Wi-Fi, and only after a longer outage reboots (last resort). This
+#     catches "kernel alive but network wedged" — which is what this host does.
+
+watchdog_enabled: true
+
+# --- Hardware watchdog -------------------------------------------------------
+# The BCM2712 watchdog max timeout is ~15s, so keep RuntimeWatchdogSec at/under
+# that; systemd pets at half this interval. RebootWatchdogSec bounds a hung
+# shutdown so a stuck reboot still completes.
+watchdog_runtime_sec: 14s
+watchdog_reboot_sec: 2min
+
+# --- Connectivity self-heal --------------------------------------------------
+# Set false to run the hardware watchdog only.
+watchdog_net_enabled: true
+watchdog_net_interval: 60           # seconds between checks
+watchdog_net_iface: wlan0
+watchdog_net_ping_target: ""        # empty -> auto-detect the default gateway
+watchdog_net_extra_target: 1.1.1.1  # 2nd target so a dead gateway alone != offline
+watchdog_net_fail_recover: 5        # consecutive fails -> bounce the network
+watchdog_net_fail_reboot: 15        # consecutive fails -> reboot (last resort)

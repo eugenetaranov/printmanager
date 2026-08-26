@@ -1,0 +1,9 @@
+# Re-exec systemd so RuntimeWatchdogSec/RebootWatchdogSec take effect (a plain
+# daemon-reload does NOT re-open /dev/watchdog; a re-exec does).
+- name: Reexec systemd
+  command: systemctl daemon-reexec
+
+# Pick up new/changed net-watchdog unit files.
+- name: Reload systemd units
+  systemd:
+    daemon_reload: true

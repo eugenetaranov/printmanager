@@ -1,0 +1,8 @@
+# Managed by Tack — roles/watchdog.
+# Hardware watchdog via systemd: systemd pets /dev/watchdog (the BCM2712 SoC
+# watchdog) at half RuntimeWatchdogSec; if systemd/kernel hangs and stops
+# petting, the SoC hard-resets the board. RebootWatchdogSec bounds a hung
+# shutdown. Applied via `systemctl daemon-reexec`.
+[Manager]
+RuntimeWatchdogSec={{ .watchdog_runtime_sec }}
+RebootWatchdogSec={{ .watchdog_reboot_sec }}

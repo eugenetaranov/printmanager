@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Managed by Tack — roles/watchdog.
+# Connectivity self-heal: ping a target, track CONSECUTIVE failures in a state
+# file, and escalate — bounce Wi-Fi after a short outage, reboot only after a
+# long one. The state file lives in /run so it resets on reboot (no reboot loop
+# tighter than the reboot threshold). A second target means a single dead host
+# doesn't count as offline.
+set -u
+
+STATE=/run/net-watchdog.fails
+IFACE="{{ .watchdog_net_iface }}"
+RECOVER={{ .watchdog_net_fail_recover }}
+REBOOT={{ .watchdog_net_fail_reboot }}
+EXTRA="{{ .watchdog_net_extra_target }}"
+TARGET="{{ .watchdog_net_ping_target }}"
+
+# Default target = current default gateway (auto-detected each run).
+if [ -z "$TARGET" ]; then
+  TARGET="$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}')"
+fi
+
+online=0
+if [ -n "$TARGET" ] && ping -c1 -W2 "$TARGET" >/dev/null 2>&1; then
+  online=1
+elif [ -n "$EXTRA" ] && ping -c1 -W2 "$EXTRA" >/dev/null 2>&1; then
+  online=1
+fi
+
+fails=0
+[ -f "$STATE" ] && fails="$(cat "$STATE" 2>/dev/null || echo 0)"
+
+if [ "$online" = 1 ]; then
+  echo 0 > "$STATE"
+  exit 0
+fi
+
+fails=$((fails + 1))
+echo "$fails" > "$STATE"
+logger -t net-watchdog "connectivity check failed (${fails}; target=${TARGET:-none})"
+
+if [ "$fails" -ge "$REBOOT" ]; then
+  logger -t net-watchdog "still offline after ${fails} checks -> rebooting"
+  systemctl reboot
+elif [ "$fails" -ge "$RECOVER" ]; then
+  logger -t net-watchdog "offline (${fails}) -> bouncing ${IFACE} and network stack"
+  ip link set "$IFACE" down 2>/dev/null || true
+  sleep 2
+  ip link set "$IFACE" up 2>/dev/null || true
+  systemctl try-restart NetworkManager 2>/dev/null || true
+  systemctl try-restart wpa_supplicant 2>/dev/null || true
+  systemctl try-restart dhcpcd 2>/dev/null || true
+fi

@@ -1,0 +1,11 @@
+# Managed by Tack — roles/watchdog. Fires the connectivity check periodically.
+[Unit]
+Description=Run the connectivity self-heal check periodically
+
+[Timer]
+OnBootSec={{ .watchdog_net_interval }}
+OnUnitActiveSec={{ .watchdog_net_interval }}
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

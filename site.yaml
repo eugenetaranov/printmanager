@@ -12,9 +12,11 @@ roles:
   # Order matters: base sets up the firewall + common packages; scan-share
   # creates the scan directory and group that scan-server writes into; web-ui
   # runs last because it shells out to scan-server's pipeline and print-server's
-  # CUPS queue.
+  # CUPS queue. watchdog is independent (self-healing) and runs right after base.
   - role: base
     tags: [base]
+  - role: watchdog
+    tags: [watchdog]
   - role: print-server
     tags: [print]
   - role: scan-share

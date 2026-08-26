@@ -1,0 +1,50 @@
+# Watchdog role. Hardware watchdog (systemd) + optional connectivity self-heal.
+# Overridable variables: see defaults/main.yaml.
+
+# --- Hardware watchdog -------------------------------------------------------
+- name: Ensure the systemd drop-in dir exists
+  file:
+    path: /etc/systemd/system.conf.d
+    state: directory
+    mode: "0755"
+  when: watchdog_enabled
+
+- name: Configure the systemd hardware watchdog
+  template:
+    src: watchdog.conf.j2
+    dest: /etc/systemd/system.conf.d/watchdog.conf
+    mode: "0644"
+  when: watchdog_enabled
+  notify: Reexec systemd
+
+# --- Connectivity self-heal --------------------------------------------------
+- name: Install the connectivity self-heal script
+  template:
+    src: net-watchdog.sh.j2
+    dest: /usr/local/sbin/net-watchdog.sh
+    mode: "0755"
+  when: watchdog_enabled and watchdog_net_enabled
+
+- name: Install the net-watchdog service unit
+  template:
+    src: net-watchdog.service.j2
+    dest: /etc/systemd/system/net-watchdog.service
+    mode: "0644"
+  when: watchdog_enabled and watchdog_net_enabled
+  notify: Reload systemd units
+
+- name: Install the net-watchdog timer unit
+  template:
+    src: net-watchdog.timer.j2
+    dest: /etc/systemd/system/net-watchdog.timer
+    mode: "0644"
+  when: watchdog_enabled and watchdog_net_enabled
+  notify: Reload systemd units
+
+- name: Enable and start the net-watchdog timer
+  systemd:
+    name: net-watchdog.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: watchdog_enabled and watchdog_net_enabled

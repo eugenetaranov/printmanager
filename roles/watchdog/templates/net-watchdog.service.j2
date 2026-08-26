@@ -1,0 +1,8 @@
+# Managed by Tack — roles/watchdog. Oneshot connectivity check, run by the timer.
+[Unit]
+Description=Connectivity self-heal check
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/net-watchdog.sh
