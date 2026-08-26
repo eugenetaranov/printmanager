@@ -137,6 +137,8 @@ class Transport:
         self.chunk = 20
         self._listeners = []
         self.on_disconnect = None
+        self._disc_fired = False
+        self._up = False
 
     def on_packet(self, cb):
         self._listeners.append(cb)
@@ -150,24 +152,56 @@ class Transport:
         from bleak import BleakClient
 
         def _disc(_c):
+            # Ignore drops during the connect handshake — the retry loop owns
+            # those; only report a disconnect once we're fully up.
+            if not self._up or self._disc_fired:
+                return
+            self._disc_fired = True
             self.log("printer disconnected")
             if self.on_disconnect:
                 self.on_disconnect()
 
-        client = BleakClient(address, disconnected_callback=_disc)
-        await client.connect()
-        self.client = client
-        # Subscribe first: start_notify resolves GATT services on BlueZ, so the
-        # later mtu_size read won't warn "Service Discovery has not been performed".
-        await client.start_notify(CHAR, self._notify)
+        # Niimbots frequently drop the first BlueZ connect mid-handshake; retry a
+        # few times before giving up (a later attempt usually sticks).
+        self._up = False
+        last = None
+        for attempt in range(4):
+            client = BleakClient(address, disconnected_callback=_disc, timeout=15)
+            try:
+                await client.connect()
+                if not client.is_connected:
+                    raise RuntimeError("link dropped during connect")
+                # start_notify resolves GATT services on BlueZ (also lets acks in).
+                await client.start_notify(CHAR, self._notify)
+                self.client = client
+                self._up = True
+                break
+            except Exception as e:
+                last = e
+                self.log("connect attempt %d failed: %r" % (attempt + 1, e))
+                try:
+                    await client.disconnect()
+                except Exception:
+                    pass
+                await asyncio.sleep(0.6)
+        if not self._up:
+            raise last or RuntimeError("connect failed")
+
+        # Explicitly negotiate the ATT MTU (BlueZ private helper) so mtu_size
+        # returns the real value instead of warning + defaulting to 23.
+        try:
+            if hasattr(self.client, "_acquire_mtu"):
+                await self.client._acquire_mtu()
+        except Exception:
+            pass
         mtu = 23
         try:
-            mtu = client.mtu_size or 23
+            mtu = self.client.mtu_size or 23
         except Exception:
             pass
         self.chunk = max(20, mtu - 3)
         self.log("connected, mtu=%s" % mtu)
-        return client
+        return self.client
 
     async def write(self, data, response=False):
         if not self.client:
@@ -593,8 +627,17 @@ class PrinterManager:
 
     # --- connection
     async def _open(self, address, name, model_id=None, label_mm=None):
-        if address in self.printers:
-            return self.printers[address]
+        existing = self.printers.get(address)
+        if existing and existing.connected:
+            return existing
+        if existing:
+            # Stale entry whose BLE link died without a disconnect event — drop it
+            # so we actually reconnect instead of returning a dead handle.
+            self.printers.pop(address, None)
+            try:
+                await existing.transport.disconnect()
+            except Exception:
+                pass
         t = Transport(lambda s: self.log("[%s] %s" % (address, s)))
 
         def _dropped():
@@ -602,7 +645,12 @@ class PrinterManager:
             if mp and mp.transport is t:
                 del self.printers[address]
         t.on_disconnect = _dropped
-        await t.connect(address)
+        self.log("[%s] connecting…" % address)
+        try:
+            await t.connect(address)
+        except Exception as e:
+            self.log("[%s] connect failed: %s" % (address, e))
+            raise
         client = Client(t, lambda s: self.log("[%s] %s" % (address, s)))
         try:
             await client.ping()
@@ -669,7 +717,8 @@ class PrinterManager:
         for addr, mp in self.printers.items():
             seen.add(addr)
             rows.append({"address": addr, "name": mp.name, "model": mp.model["id"],
-                         "model_label": mp.model["label"], "status": "connected",
+                         "model_label": mp.model["label"],
+                         "status": "connected" if mp.connected else "disconnected",
                          "label_mm": list(mp.label_mm), "active": addr == self.active})
         for addr, r in self.remembered.items():
             if addr in seen:
