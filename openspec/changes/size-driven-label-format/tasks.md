@@ -4,12 +4,12 @@ All changes are in `roles/web-ui/files/scan-web.py` (the inline HTML/JS app + Py
 
 ## 1. Format model + single size-sorted selector
 
-- [ ] 1.1 Add `formatOptions()`: build A4 entries from `LABEL_TEMPLATES` (`w/h = cell_w/cell_h`, size-first label, target = default CUPS queue) + thermal entries from remembered Niimbots (`label_mm`, target = address), emitting A4 only when a CUPS printer exists
-- [ ] 1.2 Sort the list by longest edge descending (tiebreak: area); render into a single `formatSel`, replacing `printerSel`; remove the separate "Label sheet" (`tpl`) selector and fold template activation into A4 format selection
-- [ ] 1.3 Relabel A4 entries size-first ("A4 · 99×68mm (2×4)"); thermal as "<model> · <w>×<h>mm"
-- [ ] 1.4 Extend `applyPrinter` → `applyFormat(f)`: `a4` shows grid + activates the template + sets the print queue target; `thermal` shows the label composer + `/niimbot/select` + seeds size inputs
-- [ ] 1.5 Persist the last format (`pm_format`), replacing `pm_printer`/`pm_tpl`; preselect on load
-- [ ] 1.6 Empty state: when `formatOptions()` is empty, show a "connect a printer" hint instead of a blank selector
+- [x] 1.1 Add `formatOptions()`: build A4 entries from `LABEL_TEMPLATES` (`w/h = cell_w/cell_h`, size-first label, target = default CUPS queue) + thermal entries from remembered Niimbots (`label_mm`, target = address), emitting A4 only when a CUPS printer exists
+- [x] 1.2 Sort the list by longest edge descending (tiebreak: area); render into a single `formatSel`, replacing `printerSel`; remove the separate "Label sheet" (`tpl`) selector and fold template activation into A4 format selection
+- [x] 1.3 Relabel A4 entries size-first ("A4 · 99×68mm (2×4)"); thermal as "<model> · <w>×<h>mm"
+- [x] 1.4 Extend `applyPrinter` → `applyFormat(f)`: `a4` shows grid + activates the template + sets the print queue target; `thermal` shows the label composer + `/niimbot/select` + seeds size inputs
+- [x] 1.5 Persist the last format (`pm_format`), replacing `pm_printer`/`pm_tpl`; preselect on load
+- [x] 1.6 Empty state: when `formatOptions()` is empty, show a "connect a printer" hint instead of a blank selector
 
 ## 2. On-demand connect modal
 

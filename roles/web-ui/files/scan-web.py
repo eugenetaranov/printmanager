@@ -1461,20 +1461,25 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
   <section class="tab-panel__PRINT_ACTIVE__" id="tab-print" role="tabpanel" aria-labelledby="tabPrintBtn"__PRINT_HIDDEN__>
     <div class="card">
-      <!-- Printer selector: all printers (CUPS A4 queues + connected Niimbots);
-           picking one switches the composer below. Hidden only when there are no
-           printers at all. -->
-      <div class="controls" id="printerSelRow" hidden>
-        <label class="field"><span class="lbl">Printer</span>
-          <select id="printerSel"></select></label>
+      <!-- Label format selector: a size-sorted list of the formats the host has
+           hardware for — A4 sheet templates + one entry per remembered Niimbot,
+           by label size. Picking one selects the layout AND the device, and
+           switches the composer below. Hidden only when there are no printers. -->
+      <div class="controls" id="formatSelRow" hidden>
+        <label class="field"><span class="lbl">Label format</span>
+          <select id="formatSel"></select></label>
       </div>
+      <p class="note" id="noPrinters" hidden>No printers yet. Connect one from the Devices manager (gear icon).</p>
 
       <!-- A4 / CUPS sheet composer -->
       <div id="a4Composer">
+        <!-- The label size is chosen in the format selector above; this select is
+             kept (hidden) as the source of truth for the active sheet template
+             and for the Manage editor. -->
         <div class="controls tplrow">
-          <label class="field"><span class="lbl">Label sheet</span>
+          <label class="field" id="tplField" hidden><span class="lbl">Label sheet</span>
             <select id="tpl">__PRINT_TEMPLATE_OPTS__</select></label>
-          <button type="button" class="mini manage" id="manageBtn">Manage</button>
+          <button type="button" class="mini manage" id="manageBtn">Manage sheets</button>
         </div>
 
         <div class="sheetHead">
@@ -1803,6 +1808,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
   var pfile=document.getElementById('pfile'), fileChip=document.getElementById('fileChip');
   var fileNameEl=document.getElementById('fileName'), fileClear=document.getElementById('fileClear'), filePv=document.getElementById('filePv');
   var sel=new Set(), cellContent={}, pmode='text', fileData=null, fileNm='', filePvUrl=null, fileAspect=1, printing=false;
+  // Set by the format selector (in the nested selectors IIFE): the CUPS queue an
+  // A4 print goes to ('' for a thermal format). refreshFormats() lets the (outer)
+  // Manage flow rebuild the (inner) format list after sheets change.
+  var pmQueue='', refreshFormats=null;
 
   function f2(n){ return Math.round(n*100)/100; }
   function makeThumb(dataUrl, cb){
@@ -1992,10 +2001,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
                  : {mode:'text', text:cc.text};
       });
       var body={template:curTpl().id, calX:0, calY:0, fontScale:0.9, cells:cells};
-      // Target the CUPS queue picked in the unified printer selector (value is
-      // "cups:<queue>"); falls back to the server default when unset.
-      var _pv=(document.getElementById('printerSel')||{}).value||'';
-      if(_pv.slice(0,5)==='cups:') body.queue=_pv.slice(5);
+      // Target the CUPS queue of the selected A4 format; falls back to the
+      // server default when unset.
+      if(pmQueue) body.queue=pmQueue;
       var ctrl=new AbortController(), to=setTimeout(function(){ ctrl.abort(); }, 60000);
       fetch('/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctrl.signal})
         .then(function(r){return r.json();})
@@ -2033,6 +2041,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
       tplSel.innerHTML=TEMPLATES.map(function(t){ return '<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>'; }).join('');
       if(TBYID[cur]) tplSel.value=cur; else if(TEMPLATES[0]) tplSel.value=TEMPLATES[0].id;
       sel=new Set(); renderSheet(); updateUI();
+      if(refreshFormats) refreshFormats();   // A4 sheets changed -> rebuild the format list
     }
     function deriveCells(v){
       var pw=v.page_w||210, ph=v.page_h||297;
@@ -2194,7 +2203,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
     var modal=document.getElementById('devicesModal'), invGroups=document.getElementById('invGroups');
     var niimList=document.getElementById('niimList'), candList=document.getElementById('candList');
     var devNote=document.getElementById('devNote');
-    var printerSel=document.getElementById('printerSel'), printerSelRow=document.getElementById('printerSelRow');
+    var formatSel=document.getElementById('formatSel'), formatSelRow=document.getElementById('formatSelRow');
+    var noPrinters=document.getElementById('noPrinters');
     var scannerSel=document.getElementById('scannerSel'), scannerSelRow=document.getElementById('scannerSelRow');
     var a4C=document.getElementById('a4Composer'), labelC=document.getElementById('labelComposer');
     var nW=document.getElementById('niimW'), nH=document.getElementById('niimH');
@@ -2425,37 +2435,65 @@ input[type=number]{font-variant-numeric:tabular-nums}
     });
 
     // ---- Print/Scan selectors (fed from inventory + niimbot state) ----------
-    function printerOptions(){
+    // Build the size-sorted "Label format" list: A4 sheet templates (only when a
+    // CUPS printer exists) + one entry per remembered Niimbot (connected or not),
+    // each carrying its physical label size. Sorted by longest edge, largest first.
+    function formatOptions(){
       var opts=[];
-      inventory.forEach(function(d){ if(d.kind==='printer' && d.id) opts.push({v:'cups:'+d.id, label:d.name, type:'cups', id:d.id}); });
-      (state.printers||[]).forEach(function(p){ if(p.status==='connected') opts.push({v:'niim:'+p.address, label:p.name+' — '+(p.model_label||p.model), type:'niim', address:p.address, label_mm:p.label_mm}); });
+      var cups=inventory.filter(function(d){return d.kind==='printer' && d.id;});
+      if(cups.length){
+        var q=cups[0].id;   // default A4 queue (single-printer case; multi is deferred)
+        (TEMPLATES||[]).forEach(function(t){
+          var w=Math.round(t.cell_w), h=Math.round(t.cell_h);
+          opts.push({v:'a4:'+t.id, kind:'a4', w:t.cell_w, h:t.cell_h,
+                     label:'A4 · '+w+'×'+h+'mm ('+t.cols+'×'+t.rows+')', tplId:t.id, queue:q});
+        });
+      }
+      (state.printers||[]).forEach(function(p){
+        var mm=p.label_mm||[12,40];
+        opts.push({v:'niim:'+p.address, kind:'thermal', w:mm[0], h:mm[1],
+                   label:(p.model_label||p.model)+' · '+mm[0]+'×'+mm[1]+'mm',
+                   address:p.address, label_mm:mm, connected:p.status==='connected'});
+      });
+      opts.sort(function(a,b){ var ma=Math.max(a.w,a.h), mb=Math.max(b.w,b.h);
+        return mb!==ma ? mb-ma : (b.w*b.h)-(a.w*a.h); });
       return opts;
     }
     function syncSelectors(){
-      var opts=printerOptions();
+      var opts=formatOptions();
+      formatSel.innerHTML = opts.map(function(o){ return '<option value="'+esc(o.v)+'">'+esc(o.label)+'</option>'; }).join('');
+      formatSelRow.hidden = !opts.length;
+      noPrinters.hidden = opts.length>0;
       if(opts.length){
-        var prev = curPrinter ? curPrinter.v : (function(){try{return localStorage.getItem('pm_printer')||'';}catch(e){return '';}})();
-        printerSel.innerHTML = opts.map(function(o){ return '<option value="'+esc(o.v)+'">'+esc(o.label)+'</option>'; }).join('');
+        var prev = curPrinter ? curPrinter.v : (function(){try{return localStorage.getItem('pm_format')||'';}catch(e){return '';}})();
         var match = opts.filter(function(o){return o.v===prev;})[0] || opts[0];
-        printerSel.value = match.v; printerSelRow.hidden = !opts.length;
-        applyPrinter(match);
-      } else { printerSelRow.hidden=true; }
+        formatSel.value = match.v; applyFormat(match);
+      }
       var scs=inventory.filter(function(d){return d.kind==='scanner' && d.status==='connected' && d.id;});
       scannerSel.innerHTML = scs.map(function(d){ return '<option value="'+esc(d.id)+'">'+esc(d.name)+'</option>'; }).join('');
       scannerSelRow.hidden = scs.length<2;
     }
-    function applyPrinter(o){
+    // Selecting a format sets the composer AND the target device. curPrinter keeps
+    // the shape the Niimbot composer expects (type/address/label_mm); pmQueue (an
+    // outer-scope var) carries the A4 target queue to the print button.
+    function applyFormat(o){
       var changed = o.v!==lastApplied; lastApplied=o.v; curPrinter=o;
-      try{ localStorage.setItem('pm_printer', o.v); }catch(e){}
-      var isNiim = o.type==='niim';
+      try{ localStorage.setItem('pm_format', o.v); }catch(e){}
+      var isNiim = o.kind==='thermal';
+      o.type = isNiim ? 'niim' : 'cups';   // compat with the Niimbot composer
       a4C.hidden = isNiim; labelC.hidden = !isNiim;
+      pmQueue = isNiim ? '' : (o.queue||'');
       if(isNiim){
         if(changed){ jpost('/niimbot/select',{address:o.address}); if(o.label_mm){ nW.value=o.label_mm[0]; nH.value=o.label_mm[1]; } }
         updateNiimBtn();
+      } else {
+        if(changed && tplSel.value!==o.tplId){ tplSel.value=o.tplId; sel=new Set(); cellContent={}; }
+        renderSheet(); updateUI();
       }
     }
-    printerSel.addEventListener('change',function(){
-      var o=printerOptions().filter(function(x){return x.v===printerSel.value;})[0]; if(o) applyPrinter(o);
+    refreshFormats = syncSelectors;   // let the outer Manage flow rebuild the list
+    formatSel.addEventListener('change',function(){
+      var o=formatOptions().filter(function(x){return x.v===formatSel.value;})[0]; if(o) applyFormat(o);
     });
 
     // ---- Niimbot label composer (in the Print tab) --------------------------
