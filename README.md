@@ -13,12 +13,12 @@ designed to run the same on **Raspberry Pi OS (Debian)** and **Ubuntu**.
 
 | Area | What you get |
 | --- | --- |
-| **LAN printing** | CUPS + the open-source `brlaser` driver; a shared queue advertised over **AirPrint** (mDNS/IPP) — Apple/iOS/mobile print with no driver. |
+| **LAN printing** | CUPS shared over **AirPrint** (mDNS/IPP) — Apple/iOS/mobile print with no driver. **Config-driven**: declare one or more printers in a `printers:` list, each **driverless** (IPP Everywhere) or a named driver (the USB Brother DCP-1511 ships as a `brlaser` example). |
 | **Scanning** | Brother's real `brscan4` driver run under **i386 emulation** (pixel-perfect), published as **eSCL/AirScan** (native macOS Image Capture / iOS) and reachable as a SANE network host. |
 | **Searchable scans** | Every scan gets an invisible **OCR** text layer (ocrmypdf/Tesseract), configurable languages. |
 | **Scan storage** | Scans land in a cross-platform **Samba share** (`\\printmanager.local\scans`), auto-pruned after a retention window. |
 | **Label printers** | **Niimbot D110 / B1** over **Bluetooth LE** — discover, connect, one-click reconnect, and print **text / QR / image** labels sized to the roll. |
-| **Web UI** | A single stdlib-Python app on port 80: **Scan**, **Print** (A4 label sheets *and* Niimbot labels, with a device picker), and a **Devices** manager. |
+| **Web UI** | A single stdlib-Python app on port 80: **Scan**, **Print** (a size-first **label-format** picker → A4 label sheets *or* Niimbot labels, with a live **preview**), and a **Devices** manager. |
 | **Device manager** | A gear-menu inventory of *all* hardware (CUPS printers, SANE scanners, USB, Bluetooth) with traffic-light status, a **test page** per printer, forget, and a per-device connection log. |
 | **Self-healing** | A hardware watchdog reboots the box if it hangs, plus a connectivity self-heal that bounces Wi-Fi (and reboots as a last resort) if the network wedges. |
 | **Hardened base** | Default-deny `iptables` firewall (LAN-scoped service ports), Wi-Fi power-save disabled (stops the radio stalling), ICMP allowed, portable locale setup. |
@@ -38,8 +38,11 @@ base ──> watchdog ──> print-server ──> scan-share ──> scan-serve
 - **watchdog** — the SoC **hardware watchdog** via systemd (resets the board on a
   true hang) plus a **connectivity self-heal** timer (`net-watchdog`) that pings
   out and, after a sustained outage, bounces Wi-Fi and finally reboots.
-- **print-server** — CUPS + `brlaser` (native on ARM), a shared queue, and Avahi
-  so the printer is discovered as **AirPrint** over mDNS. Listens on 631.
+- **print-server** — CUPS + Avahi (**AirPrint** over mDNS), listening on 631.
+  Printers come from a config-driven `printers:` list — one shared queue per
+  entry, each **driverless** (IPP Everywhere, no driver package) or a named
+  driver/PPD. The shipped example is the USB **Brother DCP-1511** on `brlaser`;
+  add your own by appending to the list (override it from `site.yaml` `vars:`).
 - **scan-share** — the Samba `[scans]` share backed by `/srv/scans`.
 - **scan-server** — the scanning stack:
   - Brother's proprietary **brscan4** runs in a small **i386 Debian chroot**
@@ -62,12 +65,14 @@ the role** (`SCAN_WEB_CONFIG`) and loaded at startup. Three surfaces:
 
 - **Scan** — run a scan (mode/resolution), see recent scans (thumbnail, rename,
   download, remove).
-- **Print** — a **printer picker** that appears when more than one target
-  exists, switching between:
-  - the **A4 label-sheet** composer (click cells on a rendered sheet; drop in
-    **text / image-PDF / QR**; submits to the CUPS queue), and
-  - the **Niimbot label** composer (label size in mm; **text / QR / image**;
-    prints over Bluetooth).
+- **Print** — a single **Label format** picker (your label sizes, largest
+  first) that selects both the layout and the target device:
+  - **A4 sheet** sizes → the grid composer (click cells; drop in **text /
+    image-PDF / QR**; submits to the chosen CUPS queue). Add/edit/delete A4
+    sizes via **Manage labels** next to the picker.
+  - **thermal** sizes (Niimbot) → a single-label composer (**text / QR /
+    image**) over Bluetooth, with a live **preview** of the exact label;
+    selecting an offline printer connects it on the spot.
 - **Devices** (header gear → modal) — a unified inventory grouped by role
   (Printers / Scanners / Label printers), each with an interface icon
   (USB/Bluetooth/Network) and **traffic-light status** (green = ready, amber =
@@ -97,7 +102,7 @@ site.yaml            # Tack playbook: host + role order
 roles/
   base/              # packages, iptables firewall, wifi power-save off, locale
   watchdog/          # hardware watchdog + connectivity self-heal
-  print-server/      # CUPS, brlaser, Avahi, shared DCP1511 queue (AirPrint)
+  print-server/      # CUPS + Avahi (AirPrint); config-driven printers: (driverless or named driver)
   scan-share/        # Samba [scans] share -> /srv/scans
   scan-server/       # brscan4 i386 chroot + saned bridge + AirSane (eSCL) + OCR
   web-ui/            # scan-web app (:80): Scan / Print / Devices; Niimbot via bleak
@@ -150,9 +155,12 @@ Or scan from the web UI's **Scan** tab and pull the PDF from the share.
 
 **Label printers (Niimbot D110 / B1):** open the web UI → header **gear** →
 Devices. Under *Label printers*, tap the **search** icon to discover a powered-on
-printer over Bluetooth, **Connect**, then on the **Print** tab pick it and compose
-a **text / QR / image** label (set the roll size in mm) and print. Connected
-printers are remembered; a dropped link shows a one-click **Reconnect**.
+printer over Bluetooth and **Connect** (set its **roll size** on the card, via
+the ruler icon). Then on the **Print** tab pick that size from **Label format**
+and compose a **text / QR / image** label — if the printer is offline it connects
+when you select it or hit print. Remembered printers show a one-click
+**Reconnect**, and a wedged BLE link (a stuck connection after a print) is
+cleared automatically on the next attempt.
 
 > Niimbots sleep aggressively and accept only one BLE connection. If a printer
 > won't connect: **wake it** (press the button), make sure the **phone app isn't

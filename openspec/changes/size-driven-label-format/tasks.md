@@ -31,7 +31,7 @@ All changes are in `roles/web-ui/files/scan-web.py` (the inline HTML/JS app + Py
 
 - [x] 4.1 Done: printerSel/pm_printer fully replaced by formatSel/pm_format (no leftovers); do_print queue targeting kept
 - [x] 4.2 Done: Group 4 (`print-target-selection`) marked SUPERSEDED in printer-agnostic-multi-device/tasks.md
-- [ ] 4.3 Update the README Print-tab description to the format-first flow
+- [x] 4.3 Update the README Print-tab description to the format-first flow
 
 ## 5. Verify on the Pi (needs live host + D110/B1)
 
