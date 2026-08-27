@@ -210,8 +210,6 @@ def save_all(items):
     out = []
     for t in items:
         d = {k: t.get(k) for k in _TEMPLATE_KEYS}
-        if t.get("fav"):
-            d["fav"] = True
         out.append(d)
     tmp = TEMPLATES_FILE + ".tmp"
     with open(tmp, "w") as f:
@@ -249,21 +247,6 @@ def upsert_template(obj):
 def delete_template(tid):
     with _templates_lock:
         save_all([t for t in load_all() if t["id"] != tid])
-        refresh_templates()
-
-
-def set_favorite(tid):
-    """Toggle the favorite sheet (the one preselected on load); at most one."""
-    with _templates_lock:
-        items = load_all()
-        was = next((t for t in items if t.get("fav")), None)
-        for t in items:
-            t.pop("fav", None)
-        if not (was and was["id"] == tid):
-            for t in items:
-                if t["id"] == tid:
-                    t["fav"] = True
-        save_all(items)
         refresh_templates()
 
 
@@ -621,10 +604,9 @@ def res_options(default):
 
 
 def _initial_template():
-    """The sheet shown first: the favorite, else the first. The dropdown and the
-    server-rendered grid both use this so there's no swap on load."""
-    return (next((t for t in LABEL_TEMPLATES if t.get("fav")), None)
-            or (LABEL_TEMPLATES[0] if LABEL_TEMPLATES else None))
+    """The sheet the hidden tpl select + server-rendered grid start on (the format
+    selector overrides it once loaded); just the first template."""
+    return LABEL_TEMPLATES[0] if LABEL_TEMPLATES else None
 
 
 def tpl_options():
@@ -1086,13 +1068,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"ok": True, "templates": LABEL_TEMPLATES})
             except Exception as e:
                 return self._json(200, {"ok": False, "error": str(e)})
-        if path == "/templates/favorite":
-            tid = (self._json_body() or {}).get("id", "")
-            try:
-                set_favorite(tid)
-                return self._json(200, {"ok": True, "templates": LABEL_TEMPLATES})
-            except Exception as e:
-                return self._json(200, {"ok": False, "error": str(e)})
         if path == "/print":
             obj = self._json_body()
             try:
@@ -1291,8 +1266,6 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .badge{font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent);background:var(--accent-weak);padding:2px 6px;border-radius:5px}
 .badge.ed{color:var(--muted);background:var(--bg)}
 .srow .ra{display:flex;gap:2px;flex:none}
-.act.star.on{color:#e0a800}
-.act.star:hover{color:#e0a800}
 .scan.alt{background:var(--surface);color:var(--text);border:1px dashed var(--border)}
 .scan.alt:hover{opacity:1;border-color:var(--accent);color:var(--accent)}
 .editacts{display:flex;align-items:stretch;gap:10px;margin-top:18px}
@@ -1751,8 +1724,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
     rm:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10M6 4V3h4v1M5 4l1 9h4l1-9"/></svg>',
     dup:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M2.5 10.5V3.5a1 1 0 011-1h7"/></svg>',
     rs:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 11-1.5-3.6"/><path d="M13 2v3h-3"/></svg>',
-    star:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M8 2l1.76 3.57 3.94.57-2.85 2.78.67 3.92L8 11.77 4.48 12.9l.67-3.92L2.3 6.14l3.94-.57z"/></svg>',
-    starf:'<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2l1.76 3.57 3.94.57-2.85 2.78.67 3.92L8 11.77 4.48 12.9l.67-3.92L2.3 6.14l3.94-.57z"/></svg>'
+    starf:''
   };
   function esc(s){return (s+'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function fmtSize(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(b<10240?1:0)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
@@ -2212,11 +2184,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
       sheetList.innerHTML='';
       TEMPLATES.forEach(function(t){
         var row=document.createElement('div'); row.className='srow'; row.dataset.id=t.id;
-        var star = (TEMPLATES.length>1)
-          ? '<button type="button" class="act star'+(t.fav?' on':'')+'" data-a="fav" title="'+(t.fav?'Default sheet':'Make default')+'" aria-label="Favorite">'+(t.fav?ICON.starf:ICON.star)+'</button>'
-          : '';
-        var acts=star+
-                 '<button type="button" class="act" data-a="edit" title="Edit" aria-label="Edit">'+ICON.ed+'</button>'+
+        var acts='<button type="button" class="act" data-a="edit" title="Edit" aria-label="Edit">'+ICON.ed+'</button>'+
                  '<button type="button" class="act" data-a="dup" title="Duplicate" aria-label="Duplicate">'+ICON.dup+'</button>'+
                  '<button type="button" class="act del" data-a="del" title="Delete" aria-label="Delete">'+ICON.rm+'</button>';
         row.innerHTML='<div class="info"><div class="nm">'+esc(t.name)+'</div>'+
@@ -2274,11 +2242,6 @@ input[type=number]{font-variant-numeric:tabular-nums}
       var b=e.target.closest('[data-a]'); if(!b) return;
       var row=b.closest('.srow'), t=TBYID[row.dataset.id]; if(!t) return;
       var a=b.dataset.a;
-      if(a==='fav'){
-        fetch('/templates/favorite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:t.id})})
-          .then(function(r){return r.json();}).then(function(d){ if(d.ok){ applyTemplates(d.templates); renderList(); } }).catch(function(){});
-        return;
-      }
       if(a==='edit') openEditor(t,'edit');
       else if(a==='dup') openEditor(t,'duplicate');
       else if(a==='del'){
