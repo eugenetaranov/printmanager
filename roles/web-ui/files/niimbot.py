@@ -164,26 +164,17 @@ class Transport:
         self._up = False
         last = None
 
-        # Discover the device before connecting. BlueZ refuses to connect by bare
-        # address ("device not found") unless it has seen the advertisement
-        # recently, so a cold reconnect-by-address fails even when the printer is
-        # powered on. find_device_by_address runs a scan and returns as soon as it
-        # sees the printer; connecting to that BLEDevice is the reliable path. If
-        # it isn't seen at all, it's off or already connected to another device
-        # (e.g. the phone app), so say so instead of a cryptic "not found".
-        self.log("scanning for %s…" % address)
-        try:
-            target = await BleakScanner.find_device_by_address(address, timeout=10.0)
-        except Exception as e:
-            self.log("scan error: %r" % e)
-            target = None
-        if target is None:
-            raise RuntimeError("Printer not found — make sure it's on and not "
-                               "connected to another device (e.g. the phone app)")
-
-        # Niimbots frequently drop the first BlueZ connect mid-handshake; retry a
-        # few times before giving up (a later attempt usually sticks).
-        for attempt in range(3):
+        # Connect target: start with the bare address. That's the fast path and,
+        # importantly, it reattaches when BlueZ still holds the device — e.g. a
+        # leftover connection from a prior print, which keeps the printer from
+        # advertising. Only if a connect attempt reports the device isn't found
+        # (BlueZ hasn't seen it advertise and has no live connection) do we run one
+        # discovery scan and switch to the scanned BLEDevice. If that scan is also
+        # empty, the printer is off or paired elsewhere and genuinely unreachable.
+        # Niimbots also drop the first BlueZ connect mid-handshake, so retry.
+        target = address
+        scanned = False
+        for attempt in range(4):
             client = BleakClient(target, disconnected_callback=_disc, timeout=12)
             try:
                 await client.connect()
@@ -201,10 +192,19 @@ class Transport:
                     await client.disconnect()
                 except Exception:
                     pass
-                # "Not found" means the printer isn't advertising (asleep/off);
-                # retrying won't help, so fail fast instead of burning ~36s.
-                if "not found" in str(e).lower():
-                    break
+                if "not found" in str(e).lower() and not scanned:
+                    scanned = True
+                    self.log("scanning for %s…" % address)
+                    try:
+                        dev = await BleakScanner.find_device_by_address(address, timeout=10.0)
+                    except Exception as se:
+                        self.log("scan error: %r" % se)
+                        dev = None
+                    if dev is None:
+                        raise RuntimeError("Printer not found — make sure it's on and "
+                                           "not connected to another device (e.g. the phone app)")
+                    target = dev
+                    continue
                 await asyncio.sleep(0.6)
         if not self._up:
             raise last or RuntimeError("connect failed")

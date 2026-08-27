@@ -1304,6 +1304,10 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chip button{border:none;background:none;color:inherit;cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
 .filepv{display:block;max-width:120px;max-height:120px;margin-top:12px;border-radius:6px;border:1px solid var(--border)}
+.npvwrap{position:relative;display:inline-block}
+.npvwrap .filepv{margin-top:12px}
+.pvx{position:absolute;top:6px;right:6px;width:24px;height:24px;padding:0;border:none;border-radius:50%;background:rgba(20,20,16,.62);color:#fff;font:600 16px/1 var(--sans);cursor:pointer;display:grid;place-items:center;transition:background .15s}
+.pvx:hover{background:var(--danger)}
 .adv{margin:6px 0 16px}
 .adv summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding:8px 0;list-style:none}
 .adv summary::-webkit-details-marker{display:none}
@@ -1566,7 +1570,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
         <div id="nImgPane" hidden>
           <label class="field"><span class="lbl">Image</span>
             <input class="filein" id="nFile" type="file" accept="image/*"></label>
-          <img class="filepv" id="nPv" hidden alt="">
+          <div class="npvwrap" id="nPvWrap" hidden>
+            <img class="filepv" id="nPv" alt="">
+            <button type="button" class="pvx" id="nImgClear" aria-label="Remove image">×</button>
+          </div>
           <div class="hint">Tip: paste an image with ⌘V / Ctrl+V</div>
         </div>
 
@@ -2252,6 +2259,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         connStatus=document.getElementById('connStatus'), connRetry=document.getElementById('connRetry'),
         connDismiss=document.getElementById('connDismiss'), connTarget=null;
     var nText=document.getElementById('nText'), nFile=document.getElementById('nFile'), nPv=document.getElementById('nPv');
+    var nPvWrap=document.getElementById('nPvWrap'), nImgClear=document.getElementById('nImgClear');
     var nTextLbl=document.getElementById('nTextLbl'), niimBtn=document.getElementById('niimPrint');
     var nsegText=document.getElementById('nsegText'), nsegImg=document.getElementById('nsegImg'), nsegQr=document.getElementById('nsegQr');
     var devMain=document.getElementById('devMain'), devLogView=document.getElementById('devLogView');
@@ -2577,13 +2585,14 @@ input[type=number]{font-variant-numeric:tabular-nums}
     nsegImg.addEventListener('click',function(){setKind('image');});
     nsegQr.addEventListener('click',function(){setKind('qr');});
     nText.addEventListener('input',updateNiimBtn);
+    function clearNiimImage(){ imgB64=''; nPv.removeAttribute('src'); nPvWrap.hidden=true; nFile.value=''; updateNiimBtn(); }
     function loadNiimImage(f){
-      imgB64=''; nPv.hidden=true;
-      if(!f) return updateNiimBtn();
+      if(!f) return clearNiimImage();
       var rd=new FileReader(); rd.onload=function(){ var s=rd.result||''; imgB64=(s.split(',')[1]||'');
-        nPv.src=s; nPv.hidden=false; setKind('image'); updateNiimBtn(); }; rd.readAsDataURL(f);
+        nPv.src=s; nPvWrap.hidden=false; setKind('image'); updateNiimBtn(); }; rd.readAsDataURL(f);
     }
     nFile.addEventListener('change',function(){ loadNiimImage(nFile.files&&nFile.files[0]); });
+    nImgClear.addEventListener('click',clearNiimImage);
     pasteImageToNiim = loadNiimImage;   // let the outer paste handler feed this composer
     function hasContent(){ return kind==='image'? !!imgB64 : !!nText.value.trim(); }
     function updateNiimBtn(){ niimBtn.disabled = busy || !(curPrinter && curPrinter.type==='niim') || !hasContent(); }
