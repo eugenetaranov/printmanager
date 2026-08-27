@@ -81,6 +81,15 @@ unprivileged service user drive the adapter. Requires a working Bluetooth radio
 (built-in or a USB BLE dongle); with none, the Devices modal reports Bluetooth
 unavailable. Set `scan_web_devices_enabled: false` to hide it entirely.
 
+<p align="center">
+  <img src="docs/img/scans.png" width="32%" alt="Scan tab — mode/resolution, scan, recent scans">
+  &nbsp;
+  <img src="docs/img/a4_labels.png" width="32%" alt="Print tab — A4 label-sheet composer">
+  &nbsp;
+  <img src="docs/img/devices.png" width="32%" alt="Devices manager — grouped inventory with traffic-light status">
+</p>
+<p align="center"><em>Scan · A4 label sheets · the Devices manager (green = ready, amber = not connected, red = error)</em></p>
+
 ## Layout
 
 ```
