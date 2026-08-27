@@ -2484,18 +2484,19 @@ input[type=number]{font-variant-numeric:tabular-nums}
         (TEMPLATES||[]).forEach(function(t){
           var w=Math.round(t.cell_w), h=Math.round(t.cell_h);
           opts.push({v:'a4:'+t.id, kind:'a4', w:t.cell_w, h:t.cell_h,
-                     label:'A4 · '+w+'×'+h+'mm ('+t.cols+'×'+t.rows+')', tplId:t.id, queue:q});
+                     label:w+'×'+h+'mm · A4 ('+t.cols+'×'+t.rows+')', tplId:t.id, queue:q});
         });
       }
       (state.printers||[]).forEach(function(p){
         var mm=p.label_mm||[12,40];
         opts.push({v:'niim:'+p.address, kind:'thermal', w:mm[0], h:mm[1],
                    name:(p.model_label||p.model),
-                   label:(p.model_label||p.model)+' · '+mm[0]+'×'+mm[1]+'mm',
+                   label:mm[0]+'×'+mm[1]+'mm · '+(p.model_label||p.model),
                    address:p.address, label_mm:mm, connected:p.status==='connected'});
       });
-      opts.sort(function(a,b){ var ma=Math.max(a.w,a.h), mb=Math.max(b.w,b.h);
-        return mb!==ma ? mb-ma : (b.w*b.h)-(a.w*a.h); });
+      // Sort by perimeter (overall size), largest first; area as tiebreak.
+      opts.sort(function(a,b){ var pa=2*(a.w+a.h), pb=2*(b.w+b.h);
+        return pb!==pa ? pb-pa : (b.w*b.h)-(a.w*a.h); });
       return opts;
     }
     function syncSelectors(){
