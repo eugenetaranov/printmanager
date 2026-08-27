@@ -703,6 +703,35 @@ def cups_devices():
     return rows
 
 
+# --- CUPS-queue cache --------------------------------------------------------
+# lpstat is ~1s on this host — it queries colord over D-Bus and that call stalls
+# — so never run it inline on a request. Cache the printer rows and refresh in
+# the background; queues change rarely (provisioning / forgetting a printer).
+_cups_cache = {"rows": [], "ts": 0.0}
+_cups_cache_lock = threading.Lock()
+
+
+def _refresh_cups_cache():
+    if not _cups_cache_lock.acquire(blocking=False):
+        return
+    try:
+        _cups_cache["rows"] = [r for r in cups_devices()
+                               if r.get("kind") == "printer" and r.get("id")]
+        _cups_cache["ts"] = time.monotonic()
+    except Exception:
+        pass
+    finally:
+        _cups_cache_lock.release()
+
+
+def _cups_seed():
+    """Cached CUPS printer rows for the page seed / format list: returns instantly
+    and refreshes in the background when cold or stale (~15s)."""
+    if _cups_cache["ts"] == 0.0 or (time.monotonic() - _cups_cache["ts"]) > 15:
+        threading.Thread(target=_refresh_cups_cache, daemon=True).start()
+    return _cups_cache["rows"]
+
+
 def print_queues():
     """The real CUPS queue names, used to validate a print request's target
     queue (so we never pass an arbitrary -d). Reuses the CUPS enumeration."""
@@ -1111,10 +1140,7 @@ def render_page(path="/"):
             .replace("__PRINT_TEMPLATE_OPTS__", tpl_options())
             .replace("__SHEET_INIT__", initial_sheet_svg())
             .replace("__TEMPLATES_JSON__", json.dumps(LABEL_TEMPLATES))
-            # Seed the CUPS queues (fast: lpstat only) so A4 label formats appear
-            # on first paint instead of waiting for the full device inventory,
-            # whose scanner enumeration (scanimage -L) is slow.
-            .replace("__INVENTORY_SEED_JSON__", json.dumps(cups_devices() if PRINT_ENABLED else []))
+            .replace("__INVENTORY_SEED_JSON__", json.dumps(_cups_seed()))
             .replace("__PRINT_HIDDEN__", "" if PRINT_ENABLED else " hidden")
             .replace("__DEVICES_HIDDEN__", "" if DEVICES_ENABLED else " hidden"))
 
@@ -2697,4 +2723,5 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
 
 if __name__ == "__main__":
+    threading.Thread(target=_refresh_cups_cache, daemon=True).start()  # warm the queue cache
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
