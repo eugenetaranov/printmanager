@@ -1358,7 +1358,6 @@ input[type=number]{font-variant-numeric:tabular-nums}
 /* "active" is the default print target, NOT a health state — show it as a badge
    so it never overrides the traffic-light border/dot (a disconnected active
    printer must still read amber, not green). */
-.abadge{flex:none;font:600 9px/1 var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:5px;padding:2px 5px}
 /* Niimbot rows are a card: the main row plus a per-device status line at the
    bottom (grows the box only when there is a message). */
 .niimrow{flex-direction:column;align-items:stretch;gap:8px}
@@ -2407,7 +2406,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         var st = deviceStatus[p.address];
         var state = (st&&st.cls==='err') ? 'err' : (conn ? 'ready' : 'off');
         var dotcls = state==='err'?'err':(state==='ready'?'on':'warn');
-        row.className='drow niimrow st-'+state+(p.active?' active':'');
+        row.className='drow niimrow st-'+state;
         row.dataset.addr=p.address; row.dataset.conn=conn?'1':'';
         var hasLog = deviceLog(p.address).length>0;
         var acts = (conn? iconBtn('test','test','Print test label')+iconBtn('disconnect','disconnect','Disconnect')
@@ -2416,7 +2415,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
                    iconBtn('forget','forget','Forget','warn');
         var sub = esc(p.name)+' · '+p.status+(p.label_mm?(' · '+p.label_mm[0]+'×'+p.label_mm[1]+' mm'):'');
         row.innerHTML='<div class="drowmain"><i class="dot '+dotcls+'"></i>'+ifaceIcon('bluetooth')+
-          '<div class="dinfo"><div class="dname">'+esc(p.model_label||p.model)+(p.active?' <span class="abadge">active</span>':'')+'</div>'+
+          '<div class="dinfo"><div class="dname">'+esc(p.model_label||p.model)+'</div>'+
           '<div class="dsub" title="'+sub+'">'+sub+'</div></div>'+
           '<div class="dacts">'+acts+'</div></div>'+
           '<p class="drowstatus'+(st&&st.cls?' '+st.cls:'')+'">'+esc(st?st.msg:'')+'</p>';
