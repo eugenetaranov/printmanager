@@ -1111,6 +1111,10 @@ def render_page(path="/"):
             .replace("__PRINT_TEMPLATE_OPTS__", tpl_options())
             .replace("__SHEET_INIT__", initial_sheet_svg())
             .replace("__TEMPLATES_JSON__", json.dumps(LABEL_TEMPLATES))
+            # Seed the CUPS queues (fast: lpstat only) so A4 label formats appear
+            # on first paint instead of waiting for the full device inventory,
+            # whose scanner enumeration (scanimage -L) is slow.
+            .replace("__INVENTORY_SEED_JSON__", json.dumps(cups_devices() if PRINT_ENABLED else []))
             .replace("__PRINT_HIDDEN__", "" if PRINT_ENABLED else " hidden")
             .replace("__DEVICES_HIDDEN__", "" if DEVICES_ENABLED else " hidden"))
 
@@ -1448,7 +1452,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
   <nav class="tabs" role="tablist" aria-label="Tools">
     <button class="tab-btn" id="tabScanBtn" data-tab="scan" role="tab" aria-selected="__SCAN_SEL__" aria-controls="tab-scan">Scan</button>
-    <button class="tab-btn" id="tabPrintBtn" data-tab="print" role="tab" aria-selected="__PRINT_SEL__" aria-controls="tab-print"__PRINT_HIDDEN__>Print</button>
+    <button class="tab-btn" id="tabPrintBtn" data-tab="print" role="tab" aria-selected="__PRINT_SEL__" aria-controls="tab-print"__PRINT_HIDDEN__>Labels</button>
   </nav>
 
   <section class="tab-panel__SCAN_ACTIVE__" id="tab-scan" role="tabpanel" aria-labelledby="tabScanBtn">
@@ -2283,7 +2287,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
     var nsegText=document.getElementById('nsegText'), nsegImg=document.getElementById('nsegImg'), nsegQr=document.getElementById('nsegQr');
     var devMain=document.getElementById('devMain'), devLogView=document.getElementById('devLogView');
     var devLog=document.getElementById('devLog'), logTitle=document.getElementById('logTitle');
-    var state={printers:[],active:null,adapter:true,log:[]}, inventory=[];
+    var state={printers:[],active:null,adapter:true,log:[]}, inventory=__INVENTORY_SEED_JSON__;
     var kind='text', imgB64='', busy=false, curPrinter=null, lastApplied='', curLogAddr=null, deviceStatus={}, editSize=null;
 
     var niimNote=document.getElementById('niimNote');
@@ -2677,6 +2681,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
     });
 
     // Populate selectors on load (no modal needed).
+    syncSelectors();          // render A4 formats immediately from the seeded CUPS queues
     loadInv(false); loadNiim();
   })();
 
