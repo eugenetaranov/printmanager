@@ -1325,6 +1325,11 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .drow.st-off{border-color:var(--warn)}
 .drow.st-err{border-color:var(--danger);background:rgba(176,58,44,.07)}
 @media (prefers-color-scheme:dark){.drow.st-err{background:rgba(226,116,95,.12)}}
+/* On an amber/red card, the interface + action icons follow the state color. */
+.drow.st-off .ifi,.drow.st-off .dacts .mini.ic{color:var(--warn)}
+.drow.st-err .ifi,.drow.st-err .dacts .mini.ic{color:var(--danger)}
+.drow.st-off .dacts .mini.ic.pri,.drow.st-off .dacts .mini.ic.on{background:transparent;color:var(--warn)}
+.drow.st-err .dacts .mini.ic.pri,.drow.st-err .dacts .mini.ic.on{background:transparent;color:var(--danger)}
 .kind{font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--bg);padding:2px 6px;border-radius:5px}
 .derr{color:var(--danger)}
 .mini.danger:hover{color:var(--danger)}
@@ -2357,7 +2362,17 @@ input[type=number]{font-variant-numeric:tabular-nums}
         if(r.ok){ if(act==='forget') delete deviceStatus[p.address]; else setDeviceStatus(p.address,''); renderNiim(r); }
         else setDeviceStatus(p.address, r.error||'Failed','err');
         loadInv(false);
-      }).catch(function(){ setDeviceStatus(p.address,'Request failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
+      }).catch(function(){
+        // The request can die on flaky wifi while the server actually completes
+        // it (BLE connects take a while) — re-sync and only flag an error if it
+        // really didn't take.
+        delete deviceStatus[p.address];
+        loadNiim().then(function(){
+          var np=(state.printers||[]).filter(function(x){return x.address===p.address;})[0];
+          if(!(np && np.status==='connected')) setDeviceStatus(p.address,'Request failed — try again','err');
+          renderNiim(state);
+        }).catch(function(){ setDeviceStatus(p.address,'Request failed','err'); });
+      }).finally(function(){ busy=false; bb.disabled=false; });
     }
     function renderCands(cands){
       candList.innerHTML='';

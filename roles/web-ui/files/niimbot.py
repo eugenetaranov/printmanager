@@ -165,8 +165,8 @@ class Transport:
         # few times before giving up (a later attempt usually sticks).
         self._up = False
         last = None
-        for attempt in range(4):
-            client = BleakClient(address, disconnected_callback=_disc, timeout=15)
+        for attempt in range(3):
+            client = BleakClient(address, disconnected_callback=_disc, timeout=12)
             try:
                 await client.connect()
                 if not client.is_connected:
@@ -183,6 +183,10 @@ class Transport:
                     await client.disconnect()
                 except Exception:
                     pass
+                # "Not found" means the printer isn't advertising (asleep/off);
+                # retrying won't help, so fail fast instead of burning ~36s.
+                if "not found" in str(e).lower():
+                    break
                 await asyncio.sleep(0.6)
         if not self._up:
             raise last or RuntimeError("connect failed")
