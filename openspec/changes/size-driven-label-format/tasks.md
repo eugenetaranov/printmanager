@@ -10,7 +10,7 @@ All changes are in `roles/web-ui/files/scan-web.py` (the inline HTML/JS app + Py
 - [x] 1.4 Extend `applyPrinter` → `applyFormat(f)`: `a4` shows grid + activates the template + sets the print queue target; `thermal` shows the label composer + `/niimbot/select` + seeds size inputs
 - [x] 1.5 Persist the last format (`pm_format`), replacing `pm_printer`/`pm_tpl`; preselect on load
 - [x] 1.6 Empty state: when `formatOptions()` is empty, show a "connect a printer" hint instead of a blank selector
-- [ ] 1.7 Move thermal roll-size editing to the Devices Niimbot card (removed the misplaced width/length inputs from the print composer; size now read-only there). _(follow-up — sizes are already remembered per printer)_
+- [x] 1.7 Move thermal roll-size editing to the Devices Niimbot card (removed the misplaced width/length inputs from the print composer; size now read-only there). _(follow-up — sizes are already remembered per printer)_
 
 ## 2. On-demand connect modal
 

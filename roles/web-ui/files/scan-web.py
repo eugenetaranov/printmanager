@@ -1370,6 +1370,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .drowmain{display:flex;align-items:center;gap:11px;min-height:34px}
 .dstat.ok{color:var(--accent)}
 .dstat.err{color:var(--danger)}
+.sizeedit{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px}
+.szin{width:66px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font:500 14px var(--mono)}
+.sizeedit .szx,.sizeedit .szmm{color:var(--faint);font:500 12px var(--mono)}
 .iconbtn.pulse{animation:btnpulse 1s ease-in-out infinite}
 @keyframes btnpulse{0%,100%{opacity:1}50%{opacity:.35}}
 .blelog{margin:0;max-height:180px;overflow:auto;background:var(--bg);border:1px solid var(--border);
@@ -2280,7 +2283,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
     var devMain=document.getElementById('devMain'), devLogView=document.getElementById('devLogView');
     var devLog=document.getElementById('devLog'), logTitle=document.getElementById('logTitle');
     var state={printers:[],active:null,adapter:true,log:[]}, inventory=[];
-    var kind='text', imgB64='', busy=false, curPrinter=null, lastApplied='', curLogAddr=null, deviceStatus={};
+    var kind='text', imgB64='', busy=false, curPrinter=null, lastApplied='', curLogAddr=null, deviceStatus={}, editSize=null;
 
     var niimNote=document.getElementById('niimNote');
     function jpost(url, body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -2350,7 +2353,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
       reconnect:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>',
       disconnect:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><path d="M12 2v10"/></svg>',
       connect:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
-      search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>'
+      search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+      size:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="7" width="19" height="10" rx="1.5"/><path d="M7 7v3M11 7v4M15 7v3M19 7v4"/></svg>'
     };
     var TRANSPORT={usb:'USB',bluetooth:'Bluetooth',network:'Network',cups:'Network',sane:'USB'};
     function ifaceLabel(t){ return TRANSPORT[t] || (t?t.toUpperCase():''); }
@@ -2418,6 +2422,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         var hasLog = deviceLog(p.address).length>0;
         var acts = (conn? iconBtn('test','test','Print test label')+iconBtn('disconnect','disconnect','Disconnect')
                         : iconBtn('reconnect','reconnect','Reconnect','pri'))+
+                   iconBtn('size','size','Roll size', editSize===p.address?'on':'')+
                    iconBtn('log','log','Connection log', hasLog?'on':'')+
                    iconBtn('forget','forget','Forget','warn');
         // Status word lives inline on line 2 (no separate status row): a
@@ -2427,10 +2432,21 @@ input[type=number]{font-variant-numeric:tabular-nums}
         var sizePart = p.label_mm?(' · '+p.label_mm[0]+'×'+p.label_mm[1]+' mm'):'';
         var subTitle = p.name+' · '+stTxt+sizePart;
         var subHtml = esc(p.name)+' · <span class="dstat'+(st&&st.cls?' '+st.cls:'')+'">'+esc(stTxt)+'</span>'+esc(sizePart);
+        // Inline roll-size editor (shown for the device whose size icon is active).
+        var mm=p.label_mm||[12,40];
+        var editor = (editSize===p.address)
+          ? '<div class="sizeedit"><span class="lbl">Roll size</span>'+
+            '<input class="szin szw" type="number" min="5" max="120" step="1" value="'+mm[0]+'" aria-label="Width mm">'+
+            '<span class="szx">×</span>'+
+            '<input class="szin szh" type="number" min="5" max="300" step="1" value="'+mm[1]+'" aria-label="Length mm">'+
+            '<span class="szmm">mm</span>'+
+            '<button type="button" class="mini pri" data-act="sizesave">Save</button>'+
+            '<button type="button" class="mini" data-act="sizecancel">Cancel</button></div>'
+          : '';
         row.innerHTML='<div class="drowmain"><i class="dot '+dotcls+'"></i>'+ifaceIcon('bluetooth')+
           '<div class="dinfo"><div class="dname">'+esc(p.model_label||p.model)+'</div>'+
           '<div class="dsub" title="'+esc(subTitle)+'">'+subHtml+'</div></div>'+
-          '<div class="dacts">'+acts+'</div></div>';
+          '<div class="dacts">'+acts+'</div></div>'+editor;
         row.querySelectorAll('[data-act]').forEach(function(bb){
           bb.addEventListener('click',function(){ if(bb.dataset.act==='log') openLog(p); else niimAction(bb.dataset.act, p, bb); });
         });
@@ -2444,6 +2460,18 @@ input[type=number]{font-variant-numeric:tabular-nums}
       }).catch(function(){});
     }
     function niimAction(act, p, bb){
+      // Roll-size editor (toggle / cancel / save) — independent of the busy lock.
+      if(act==='size'){ editSize = (editSize===p.address ? null : p.address); renderNiim();
+        var inp=niimList.querySelector('.niimrow[data-addr="'+p.address+'"] .szw'); if(inp){ inp.focus(); inp.select(); } return; }
+      if(act==='sizecancel'){ editSize=null; renderNiim(); return; }
+      if(act==='sizesave'){
+        var rw=bb.closest('.niimrow'); var w=parseFloat(rw.querySelector('.szw').value), h=parseFloat(rw.querySelector('.szh').value);
+        if(!(w>0 && h>0)) return;
+        editSize=null; setDeviceStatus(p.address,'Saving size…');
+        jpost('/niimbot/labelsize',{address:p.address,w:w,h:h}).then(function(){ setDeviceStatus(p.address,''); loadNiim(); loadInv(false); })
+          .catch(function(){ setDeviceStatus(p.address,'Could not save size','err'); });
+        return;
+      }
       if(busy) return;
       if(act==='test'){
         busy=true; bb.disabled=true; setDeviceStatus(p.address,'Printing…');
