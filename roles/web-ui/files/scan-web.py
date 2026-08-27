@@ -976,6 +976,32 @@ class Handler(BaseHTTPRequestHandler):
                         raise RuntimeError("Nothing to print")
                 res = nb.manager.sync_print(kind, payload, obj.get("address"))
                 return self._json(200, dict(res, ok=True))
+            elif path == "/niimbot/preview":
+                # WYSIWYG label preview — renders the exact bitmap the printer
+                # would get, via the same code path, with no BLE or print lock.
+                kind = obj.get("kind", "text")
+                if kind == "image":
+                    payload = base64.b64decode(obj.get("dataB64") or "")
+                    if not payload:
+                        return self._json(200, {"ok": True, "png": ""})
+                    if len(payload) > 20 * 1024 * 1024:
+                        raise RuntimeError("Image too large (max 20 MB)")
+                else:
+                    payload = (obj.get("text") or "").strip()
+                    if not payload:
+                        return self._json(200, {"ok": True, "png": ""})
+                model = nb.model_by_id(obj.get("model") or "d110")
+                try:
+                    w = float(obj.get("w_mm") or model["label_mm"][0])
+                    h = float(obj.get("h_mm") or model["label_mm"][1])
+                except (TypeError, ValueError):
+                    w, h = model["label_mm"]
+                img = nb.render_label_image(kind, payload, model, (w, h))
+                buf = io.BytesIO()
+                img.convert("L").save(buf, format="PNG")
+                b64 = base64.b64encode(buf.getvalue()).decode()
+                return self._json(200, {"ok": True, "png": "data:image/png;base64," + b64,
+                                        "w": img.width, "h": img.height})
             else:
                 return self._json(404, {"ok": False, "error": "Unknown action"})
             return self._json(200, dict(niimbot_state(with_adapter=False), ok=True))
@@ -1309,6 +1335,9 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .pvx{position:absolute;top:6px;right:6px;width:22px;height:22px;padding:0;border:none;border-radius:50%;background:var(--danger);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.25);transition:filter .15s}
 .pvx svg{width:11px;height:11px;display:block}
 .pvx:hover{filter:brightness(1.08)}
+.lblprev{margin-top:16px}
+.lblprev-frame{display:inline-block;margin-top:6px;padding:7px;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow)}
+.lblprev-frame img{display:block;max-height:150px;max-width:100%;image-rendering:pixelated;border-radius:2px}
 .adv{margin:6px 0 16px}
 .adv summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding:8px 0;list-style:none}
 .adv summary::-webkit-details-marker{display:none}
@@ -1573,6 +1602,11 @@ input[type=number]{font-variant-numeric:tabular-nums}
             <button type="button" class="pvx" id="nImgClear" aria-label="Remove image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button>
           </div>
           <div class="hint">Tip: paste an image with ⌘V / Ctrl+V</div>
+        </div>
+
+        <div class="lblprev" id="niimPrev" hidden>
+          <span class="lbl">Preview</span>
+          <div class="lblprev-frame"><img id="niimPrevImg" alt="Label preview"></div>
         </div>
 
         <hr class="pdiv">
@@ -2258,6 +2292,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         connDismiss=document.getElementById('connDismiss'), connTarget=null;
     var nText=document.getElementById('nText'), nFile=document.getElementById('nFile'), nPv=document.getElementById('nPv');
     var nPvWrap=document.getElementById('nPvWrap'), nImgClear=document.getElementById('nImgClear');
+    var niimPrev=document.getElementById('niimPrev'), niimPrevImg=document.getElementById('niimPrevImg'), prevTimer=null, prevCtrl=null;
     var nTextLbl=document.getElementById('nTextLbl'), niimBtn=document.getElementById('niimPrint');
     var nsegText=document.getElementById('nsegText'), nsegImg=document.getElementById('nsegImg'), nsegQr=document.getElementById('nsegQr');
     var devMain=document.getElementById('devMain'), devLogView=document.getElementById('devLogView');
@@ -2499,7 +2534,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
       (state.printers||[]).forEach(function(p){
         var mm=p.label_mm||[12,40];
         opts.push({v:'niim:'+p.address, kind:'thermal', w:mm[0], h:mm[1],
-                   name:(p.model_label||p.model),
+                   name:(p.model_label||p.model), model:p.model,
                    label:mm[0]+'×'+mm[1]+'mm · '+(p.model_label||p.model),
                    address:p.address, label_mm:mm, connected:p.status==='connected'});
       });
@@ -2535,7 +2570,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
       if(isNiim){
         if(changed){ jpost('/niimbot/select',{address:o.address}); }
         niimSize.textContent = 'Label '+o.w+'×'+o.h+' mm — change the roll size in Devices';
-        updateNiimBtn();
+        updateNiimBtn(); updatePreview();
       } else {
         if(changed && tplSel.value!==o.tplId){ tplSel.value=o.tplId; sel=new Set(); cellContent={}; }
         renderSheet(); updateUI();
@@ -2575,23 +2610,42 @@ input[type=number]{font-variant-numeric:tabular-nums}
       document.getElementById('nTextPane').hidden = (k==='image');
       document.getElementById('nImgPane').hidden = (k!=='image');
       nTextLbl.innerHTML = (k==='qr')?'Text or URL':'Text <span class="opt">one line per row</span>';
-      updateNiimBtn();
+      updateNiimBtn(); updatePreview();
     }
     nsegText.addEventListener('click',function(){setKind('text');});
     nsegImg.addEventListener('click',function(){setKind('image');});
     nsegQr.addEventListener('click',function(){setKind('qr');});
-    nText.addEventListener('input',updateNiimBtn);
-    function clearNiimImage(){ imgB64=''; nPv.removeAttribute('src'); nPvWrap.hidden=true; nFile.value=''; updateNiimBtn(); }
+    nText.addEventListener('input',function(){ updateNiimBtn(); updatePreview(); });
+    function clearNiimImage(){ imgB64=''; nPv.removeAttribute('src'); nPvWrap.hidden=true; nFile.value=''; updateNiimBtn(); updatePreview(); }
     function loadNiimImage(f){
       if(!f) return clearNiimImage();
       var rd=new FileReader(); rd.onload=function(){ var s=rd.result||''; imgB64=(s.split(',')[1]||'');
-        nPv.src=s; nPvWrap.hidden=false; setKind('image'); updateNiimBtn(); }; rd.readAsDataURL(f);
+        nPv.src=s; nPvWrap.hidden=false; setKind('image'); updateNiimBtn(); updatePreview(); }; rd.readAsDataURL(f);
     }
     nFile.addEventListener('change',function(){ loadNiimImage(nFile.files&&nFile.files[0]); });
     nImgClear.addEventListener('click',clearNiimImage);
     pasteImageToNiim = loadNiimImage;   // let the outer paste handler feed this composer
     function hasContent(){ return kind==='image'? !!imgB64 : !!nText.value.trim(); }
     function updateNiimBtn(){ niimBtn.disabled = busy || !(curPrinter && curPrinter.type==='niim') || !hasContent(); }
+    // WYSIWYG label preview: render the exact bitmap the printer would get, via
+    // /niimbot/preview (no BLE, so it works before the printer connects too).
+    // Debounced; hidden when there's no content or no thermal format selected.
+    function updatePreview(){
+      if(!niimPrev) return;
+      if(!curPrinter || curPrinter.type!=='niim'){ niimPrev.hidden=true; return; }
+      var body={kind:kind, w_mm:curPrinter.w, h_mm:curPrinter.h, model:curPrinter.model};
+      if(kind==='image'){ if(!imgB64){ niimPrev.hidden=true; return; } body.dataB64=imgB64; }
+      else { var t=nText.value.trim(); if(!t){ niimPrev.hidden=true; return; } body.text=t; }
+      if(prevTimer) clearTimeout(prevTimer);
+      prevTimer=setTimeout(function(){
+        if(prevCtrl){ try{ prevCtrl.abort(); }catch(e){} }
+        prevCtrl=new AbortController();
+        fetch('/niimbot/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:prevCtrl.signal})
+          .then(function(r){return r.json();}).then(function(d){
+            if(d&&d.ok&&d.png){ niimPrevImg.src=d.png; niimPrev.hidden=false; } else niimPrev.hidden=true;
+          }).catch(function(){});
+      }, 250);
+    }
     function doNiimPrint(){
       busy=true; niimBtn.disabled=true;
       var old=niimBtn.textContent; niimBtn.textContent='Printing…'; setStatus('busy','Printing');

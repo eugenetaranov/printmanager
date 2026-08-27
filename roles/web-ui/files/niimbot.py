@@ -604,8 +604,9 @@ def _render_landscape_image(raw, lw, lh):
     return canvas.convert("1").convert("L")  # Floyd–Steinberg dither to 1-bit
 
 
-def render_label(kind, payload, model, label_mm):
-    """Return (width, height, data) 1bpp for the given content kind."""
+def render_label_image(kind, payload, model, label_mm):
+    """The PIL 'L' image render_label packs (physical width×height, black/white) —
+    exposed so the web UI can show a WYSIWYG preview from the same code path."""
     from PIL import Image
     width, height = _label_px(model, label_mm)
     portrait = height > width  # narrow tape (D110): lay out along the length
@@ -618,7 +619,12 @@ def render_label(kind, payload, model, label_mm):
         img = _render_landscape_text(str(payload), lw, lh)
     if portrait:
         img = img.rotate(-90, expand=True)  # into physical (width×height)
-    return _pack_1bpp(img)
+    return img
+
+
+def render_label(kind, payload, model, label_mm):
+    """Return (width, height, data) 1bpp for the given content kind."""
+    return _pack_1bpp(render_label_image(kind, payload, model, label_mm))
 
 
 # --- Persistence -------------------------------------------------------------
