@@ -410,7 +410,7 @@ def do_print(obj):
     queue = PRINT_QUEUE
     req_q = (obj.get("queue") or "").strip()
     if req_q and req_q != PRINT_QUEUE:
-        if req_q not in {q["queue"] for q in print_queues()}:
+        if req_q not in set(print_queues()):
             raise RuntimeError("Unknown printer: %s" % req_q)
         queue = req_q
     tpl = TEMPLATES_BY_ID.get(obj.get("template"))
@@ -722,14 +722,10 @@ def cups_devices():
 
 
 def print_queues():
-    """CUPS queues for the Print-tab selector: [{queue, name, default}], with a
-    friendly brand+model name. Reuses the Devices-tab CUPS enumeration."""
-    out = []
-    for r in cups_devices():
-        if r.get("kind") == "printer" and r.get("id"):
-            out.append({"queue": r["id"], "name": r["name"],
-                        "default": r["id"] == PRINT_QUEUE})
-    return out
+    """The real CUPS queue names, used to validate a print request's target
+    queue (so we never pass an arbitrary -d). Reuses the CUPS enumeration."""
+    return [r["id"] for r in cups_devices()
+            if r.get("kind") == "printer" and r.get("id")]
 
 
 def _scanner_key(desc):
@@ -1002,9 +998,6 @@ class Handler(BaseHTTPRequestHandler):
                                  "printers": [], "active": None, "adapter": False})
         elif path == "/templates":
             self._json(200, {"templates": LABEL_TEMPLATES})
-        elif path == "/print/queues":
-            self._json(200, {"queues": print_queues() if PRINT_ENABLED else [],
-                             "default": PRINT_QUEUE})
         elif path.startswith("/file/"):
             self._serve_pdf(urllib.parse.unquote(path[len("/file/"):]))
         elif path.startswith("/thumb/"):
@@ -1468,7 +1461,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
   <section class="tab-panel__PRINT_ACTIVE__" id="tab-print" role="tabpanel" aria-labelledby="tabPrintBtn"__PRINT_HIDDEN__>
     <div class="card">
-      <!-- Printer selector: shown only when more than one printer is available -->
+      <!-- Printer selector: all printers (CUPS A4 queues + connected Niimbots);
+           picking one switches the composer below. Hidden only when there are no
+           printers at all. -->
       <div class="controls" id="printerSelRow" hidden>
         <label class="field"><span class="lbl">Printer</span>
           <select id="printerSel"></select></label>
@@ -1476,10 +1471,6 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
       <!-- A4 / CUPS sheet composer -->
       <div id="a4Composer">
-        <div class="controls" id="pqRow" hidden>
-          <label class="field"><span class="lbl">Printer</span>
-            <select id="printQueue"></select></label>
-        </div>
         <div class="controls tplrow">
           <label class="field"><span class="lbl">Label sheet</span>
             <select id="tpl">__PRINT_TEMPLATE_OPTS__</select></label>
@@ -1989,29 +1980,6 @@ input[type=number]{font-variant-numeric:tabular-nums}
       renderSheet(); updateUI();
     });
 
-    // Printer selector: list CUPS queues, remember the choice, hide when there's
-    // only one (nothing to pick). The chosen queue rides along in the print body.
-    var printQueueSel=document.getElementById('printQueue'), pqRow=document.getElementById('pqRow');
-    function loadPrintQueues(){
-      if(!printQueueSel) return;
-      fetch('/print/queues').then(function(r){return r.json();}).then(function(d){
-        var qs=(d&&d.queues)||[]; if(!qs.length){ pqRow.hidden=true; return; }
-        var saved=''; try{ saved=localStorage.getItem('pm_queue')||''; }catch(e){}
-        if(saved && !qs.some(function(q){return q.queue===saved;})) saved='';   // stale
-        printQueueSel.innerHTML='';
-        qs.forEach(function(q){
-          var o=document.createElement('option'); o.value=q.queue;
-          o.textContent=q.name+(q.queue!==q.name?(' ('+q.queue+')'):'');
-          if(q.queue===saved || (!saved && q.default)) o.selected=true;
-          printQueueSel.appendChild(o);
-        });
-        pqRow.hidden = qs.length<2;
-      }).catch(function(){ pqRow.hidden=true; });
-    }
-    if(printQueueSel) printQueueSel.addEventListener('change',function(){
-      try{ localStorage.setItem('pm_queue',printQueueSel.value); }catch(e){} });
-    loadPrintQueues();
-
     printBtn.addEventListener('click',function(){
       if(printBtn.disabled) return;
       var keys=Object.keys(cellContent); if(!keys.length) return;
@@ -2024,7 +1992,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
                  : {mode:'text', text:cc.text};
       });
       var body={template:curTpl().id, calX:0, calY:0, fontScale:0.9, cells:cells};
-      if(printQueueSel && printQueueSel.value) body.queue=printQueueSel.value;
+      // Target the CUPS queue picked in the unified printer selector (value is
+      // "cups:<queue>"); falls back to the server default when unset.
+      var _pv=(document.getElementById('printerSel')||{}).value||'';
+      if(_pv.slice(0,5)==='cups:') body.queue=_pv.slice(5);
       var ctrl=new AbortController(), to=setTimeout(function(){ ctrl.abort(); }, 60000);
       fetch('/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctrl.signal})
         .then(function(r){return r.json();})
@@ -2466,7 +2437,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         var prev = curPrinter ? curPrinter.v : (function(){try{return localStorage.getItem('pm_printer')||'';}catch(e){return '';}})();
         printerSel.innerHTML = opts.map(function(o){ return '<option value="'+esc(o.v)+'">'+esc(o.label)+'</option>'; }).join('');
         var match = opts.filter(function(o){return o.v===prev;})[0] || opts[0];
-        printerSel.value = match.v; printerSelRow.hidden = opts.length<2;
+        printerSel.value = match.v; printerSelRow.hidden = !opts.length;
         applyPrinter(match);
       } else { printerSelRow.hidden=true; }
       var scs=inventory.filter(function(d){return d.kind==='scanner' && d.status==='connected' && d.id;});

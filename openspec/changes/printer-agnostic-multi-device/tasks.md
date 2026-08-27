@@ -26,9 +26,9 @@ Design constraint (see design.md §2): **tack renders templates single-pass and 
 
 ## 4. web-ui: Print-tab printer selector
 
-- [x] 4.1 Server route `/print/queues` lists CUPS queues via `cups_devices()`/`lpstat` with friendly names from `_printer_name()` + a `default` flag — verified: returns `{queue:DCP1511, name:"Brother DCP-1510", default:true}`
-- [x] 4.2 `<select id="printQueue">` on the Print tab, populated from that route, remembers the choice in `localStorage`, and hides when there is only one queue (single queue needs no choice)
-- [x] 4.3 `do_print` accepts the chosen `queue`, validates it against the real queues (rejects unknown — verified) and `lp -d <queue>`; `PRINT_QUEUE` is the fallback; confirmation reports the queue used
+- [x] 4.1 Use the EXISTING unified printer selector (`printerSel`/`syncSelectors`/`printerOptions`) which already lists all printers (CUPS queues via inventory + connected Niimbots) with friendly names — no new route needed. (Correction: first added a redundant `#printQueue` dropdown + `/print/queues` route; removed both when the existing selector was found. It switches the composer via `applyPrinter` already.)
+- [x] 4.2 Un-hid the selector: `printerSelRow.hidden = !opts.length` (was `<2`) so it shows with a single printer — the user's ask ("dropdown should appear"). Selecting a printer switches A4 grid ↔ Niimbot composer (existing behavior); choice persists via `pm_printer`.
+- [x] 4.3 `do_print` accepts the chosen `queue`, validates it against the real CUPS queues (rejects unknown — verified) and `lp -d <queue>`; the Print button now sends the selected CUPS queue (`printerSel` value `cups:<queue>`); `PRINT_QUEUE` is the fallback; confirmation reports the queue used
 - [ ] 4.4 If more than one scanner is configured, add the analogous (minimal) scanner picker to the Scan tab; otherwise omit it  _(deferred — depends on Group 3 `scanners:` config)_
 - [x] 4.5 Default queue comes from config (`scan_web_print_queue` = the selector's pre-selected default); no config template change needed for the print side. Scanner default deferred with Group 3.
 
