@@ -88,7 +88,7 @@ unavailable. Set `scan_web_devices_enabled: false` to hide it entirely.
   &nbsp;
   <img src="docs/img/devices.png" width="32%" alt="Devices manager — grouped inventory with traffic-light status">
 </p>
-<p align="center"><em>Scan · A4 label sheets · the Devices manager (green = ready, amber = not connected, red = error)</em></p>
+<p align="center"><em>Scan · A4 label sheets · the Devices manager</em></p>
 
 ## Layout
 
