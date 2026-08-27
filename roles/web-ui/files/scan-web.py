@@ -1567,6 +1567,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
           <label class="field"><span class="lbl">Image</span>
             <input class="filein" id="nFile" type="file" accept="image/*"></label>
           <img class="filepv" id="nPv" hidden alt="">
+          <div class="hint">Tip: paste an image with ⌘V / Ctrl+V</div>
         </div>
 
         <hr class="pdiv">
@@ -1845,7 +1846,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
   // Set by the format selector (in the nested selectors IIFE): the CUPS queue an
   // A4 print goes to ('' for a thermal format). refreshFormats() lets the (outer)
   // Manage flow rebuild the (inner) format list after sheets change.
-  var pmQueue='', refreshFormats=null;
+  var pmQueue='', refreshFormats=null, pasteImageToNiim=null;
 
   function f2(n){ return Math.round(n*100)/100; }
   function makeThumb(dataUrl, cb){
@@ -1989,6 +1990,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
     }
     pfile.addEventListener('change',function(){ var f=pfile.files[0]; if(f) loadFileForPrint(f); });
     // Paste an image from the clipboard (⌘V / Ctrl+V) while on the Print tab.
+    // Routes to whichever composer is showing: the A4 grid, or the thermal
+    // label composer (via the bridge the selectors IIFE registers).
     document.addEventListener('paste',function(e){
       if(!printTabActive() || !sheetModal.hidden) return;
       var items=(e.clipboardData&&e.clipboardData.items)||[];
@@ -1996,7 +1999,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
         if(items[i].type && items[i].type.indexOf('image/')===0){
           var blob=items[i].getAsFile(); if(!blob) continue;
           e.preventDefault();
-          loadFileForPrint(blob, 'pasted-image.png');
+          var thermal = !document.getElementById('labelComposer').hidden;
+          if(thermal && pasteImageToNiim){ pasteImageToNiim(blob); }
+          else { loadFileForPrint(blob, 'pasted-image.png'); }
           pnote.className='note ok'; pnote.textContent='Pasted image ready to print.';
           return;
         }
@@ -2572,11 +2577,14 @@ input[type=number]{font-variant-numeric:tabular-nums}
     nsegImg.addEventListener('click',function(){setKind('image');});
     nsegQr.addEventListener('click',function(){setKind('qr');});
     nText.addEventListener('input',updateNiimBtn);
-    nFile.addEventListener('change',function(){
-      var f=nFile.files&&nFile.files[0]; imgB64=''; nPv.hidden=true;
+    function loadNiimImage(f){
+      imgB64=''; nPv.hidden=true;
       if(!f) return updateNiimBtn();
-      var rd=new FileReader(); rd.onload=function(){ var s=rd.result||''; imgB64=(s.split(',')[1]||''); nPv.src=s; nPv.hidden=false; updateNiimBtn(); }; rd.readAsDataURL(f);
-    });
+      var rd=new FileReader(); rd.onload=function(){ var s=rd.result||''; imgB64=(s.split(',')[1]||'');
+        nPv.src=s; nPv.hidden=false; setKind('image'); updateNiimBtn(); }; rd.readAsDataURL(f);
+    }
+    nFile.addEventListener('change',function(){ loadNiimImage(nFile.files&&nFile.files[0]); });
+    pasteImageToNiim = loadNiimImage;   // let the outer paste handler feed this composer
     function hasContent(){ return kind==='image'? !!imgB64 : !!nText.value.trim(); }
     function updateNiimBtn(){ niimBtn.disabled = busy || !(curPrinter && curPrinter.type==='niim') || !hasContent(); }
     function doNiimPrint(){
