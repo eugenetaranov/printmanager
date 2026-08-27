@@ -1601,7 +1601,7 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 /* Toggle switch — label + switch as one tight, clickable unit */
 .switch-row{display:inline-flex;align-items:center;gap:11px;margin-top:18px;padding:6px;border:none;background:none;cursor:pointer;border-radius:9px}
 .switch-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.switch-label{font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.switch-label{font:600 14px var(--sans);letter-spacing:-.01em;color:var(--text)}
 .switch{position:relative;flex:none;width:44px;height:26px;border-radius:13px;background:var(--border);transition:background .18s}
 .switch-row[aria-checked="true"] .switch{background:var(--accent)}
 .switch .knob{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.28);transition:transform .18s}
