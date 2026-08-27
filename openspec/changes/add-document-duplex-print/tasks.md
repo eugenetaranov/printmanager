@@ -32,6 +32,6 @@ Reuses existing primitives in `roles/web-ui/files/scan-web.py` (`_submit_lp`, `_
 
 ## 5. Docs + verify
 
-- [ ] 5.1 Document the Document tab and duplex behavior in `README.md`; note the per-queue duplex override
+- [x] 5.1 Document the Document tab and duplex behavior in `README.md`; note the per-queue duplex override
 - [x] 5.2 Deploy to the Pi; verify single-sided, auto-duplex (if any capable queue exists), and the full guided manual-duplex flow end-to-end
 - [x] 5.3 Verify graceful behavior: disabled tab, invalid/oversized upload, and an abandoned two-phase job (reaper removes it, no stray second half)

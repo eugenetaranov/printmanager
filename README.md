@@ -18,7 +18,7 @@ designed to run the same on **Raspberry Pi OS (Debian)** and **Ubuntu**.
 | **Searchable scans** | Every scan gets an invisible **OCR** text layer (ocrmypdf/Tesseract), configurable languages. |
 | **Scan storage** | Scans land in a cross-platform **Samba share** (`\\printmanager.local\scans`), auto-pruned after a retention window. |
 | **Label printers** | **Niimbot D110 / B1** over **Bluetooth LE** — discover, connect, one-click reconnect, and print **text / QR / image** labels sized to the roll. |
-| **Web UI** | A single stdlib-Python app on port 80: **Scan**, **Print** (a size-first **label-format** picker → A4 label sheets *or* Niimbot labels, with a live **preview**), and a **Devices** manager. |
+| **Web UI** | A single stdlib-Python app on port 80: **Scan**, **Labels** (a size-first format picker → A4 sheets *or* Niimbot labels, with a live **preview**), **Print** (PDF/image/text documents, single- or **double-sided** incl. guided manual duplex), and a **Devices** manager. |
 | **Device manager** | A gear-menu inventory of *all* hardware (CUPS printers, SANE scanners, USB, Bluetooth) with traffic-light status, a **test page** per printer, forget, and a per-device connection log. |
 | **Self-healing** | A hardware watchdog reboots the box if it hangs, plus a connectivity self-heal that bounces Wi-Fi (and reboots as a last resort) if the network wedges. |
 | **Hardened base** | Default-deny `iptables` firewall (LAN-scoped service ports), Wi-Fi power-save disabled (stops the radio stalling), ICMP allowed, portable locale setup. |
@@ -65,7 +65,7 @@ the role** (`SCAN_WEB_CONFIG`) and loaded at startup. Three surfaces:
 
 - **Scan** — run a scan (mode/resolution), see recent scans (thumbnail, rename,
   download, remove).
-- **Print** — a single **Label format** picker (your label sizes, largest
+- **Labels** — a single **Label format** picker (your label sizes, largest
   first) that selects both the layout and the target device:
   - **A4 sheet** sizes → the grid composer (click cells; drop in **text /
     image-PDF / QR**; submits to the chosen CUPS queue). Add/edit/delete A4
@@ -73,6 +73,13 @@ the role** (`SCAN_WEB_CONFIG`) and loaded at startup. Three surfaces:
   - **thermal** sizes (Niimbot) → a single-label composer (**text / QR /
     image**) over Bluetooth, with a live **preview** of the exact label;
     selecting an offline printer connects it on the spot.
+- **Print** — print a document (**PDF, image, or text** — drag/drop, choose, or
+  paste an image) to an A4 queue, single- or **double-sided**. Auto-duplex
+  printers print in one job; a **simplex** printer (like the DCP-1511) gets a
+  guided **print-front → flip → print-back** flow. The flip behaviour (reload
+  direction, page order, 180° back-rotation) is per-printer config, **calibrated
+  for the DCP-1511** — recalibrate for a different simplex printer via the
+  `scan_web_duplex_*` vars (`reload`, `even_reverse`, `even_rotate`).
 - **Devices** (header gear → modal) — a unified inventory grouped by role
   (Printers / Scanners / Label printers), each with an interface icon
   (USB/Bluetooth/Network) and **traffic-light status** (green = ready, amber =
