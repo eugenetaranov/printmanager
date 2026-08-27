@@ -1,15 +1,33 @@
-# Host packages for scanning. Brother's real driver runs inside an i386 chroot
-# (qemu-user-static + debootstrap), so the host only needs: sane-utils (saned,
-# for the AirSane net bridge), img2pdf + imagemagick (PNM->JPEG->PDF), ocrmypdf +
-# a Tesseract language pack (searchable PDFs), and the emulation toolchain.
+# Base host packages for scanning (both backends): sane-utils, img2pdf +
+# imagemagick (PNM->JPEG->PDF), ocrmypdf + a Tesseract pack (searchable PDFs).
 scan_packages:
   - sane-utils
   - img2pdf
   - imagemagick
   - ocrmypdf            # add an OCR text layer -> searchable PDFs
+
+# --- Scan backend -------------------------------------------------------------
+# Pick how the scanner is driven:
+#   brscan4-emu  Brother's proprietary x86 brscan4 driver under i386 emulation
+#                (qemu chroot + saned net bridge + AirSane). Needed for the
+#                DCP-1510, which has no native eSCL. This is the default.
+#   escl         driverless eSCL via sane-airscan — most modern scanners; NO
+#                chroot/qemu/net-bridge/AirSane. Set scan_escl_enabled true and
+#                scan_brscan4_enabled false.
+scan_brscan4_enabled: true
+scan_escl_enabled: false
+
+# Extra packages per backend (installed only for the enabled one).
+brscan4_packages:
   - qemu-user-static
   - binfmt-support
   - debootstrap
+escl_packages:
+  - sane-airscan
+
+# SANE mode name for the eSCL backend (sane-airscan uses the standard SANE names,
+# not brscan4's "24bit Color"): Color | Gray | Lineart.
+scan_escl_mode: "Color"
 
 # --- OCR: searchable PDFs -----------------------------------------------------
 # Every scan gets an invisible OCR text layer (ocrmypdf/Tesseract) so text in the

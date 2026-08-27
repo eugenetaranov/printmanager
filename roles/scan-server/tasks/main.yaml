@@ -1,12 +1,12 @@
-# Scan server for the USB Brother DCP-1511. Brother's real brscan4 driver (x86)
-# runs under i386 emulation in a chroot; the web UI (roles/web-ui) scans through
-# it directly and drops PDFs into the share, while AirSane reaches it over a
-# localhost saned net bridge for native macOS/iOS discovery.
-#
-# Overridable variables: see defaults/main.yaml. Depends on `base` (firewall) and
-# `scan-share` (scan_dir, scan_group, scan_web_user must exist).
+# Scan server. Two selectable backends (see defaults/main.yaml):
+#   brscan4-emu — Brother's real x86 brscan4 driver under i386 emulation (chroot
+#     + saned net bridge + AirSane); the DCP-1510 needs this (no native eSCL).
+#   escl — driverless eSCL via sane-airscan; no chroot/qemu/net-bridge/AirSane.
+# The web UI (roles/web-ui) scans through the host SANE and drops PDFs into the
+# share. Depends on `base` (firewall) and `scan-share` (scan_dir, scan_group,
+# scan_web_user must exist).
 
-- name: Install host scan packages (SANE, img2pdf, ImageMagick, ocrmypdf, qemu)
+- name: Install base scan packages (SANE, img2pdf, ImageMagick, ocrmypdf)
   apt:
     name: "{{ scan_packages }}"
     state: present
@@ -20,31 +20,48 @@
   loop: "{{ scan_ocr_langs }}"
   when: scan_ocr_enabled
 
-# --- Brother brscan4 under i386 emulation ------------------------------------
+- name: Install the emulation toolchain (brscan4-emu backend)
+  apt:
+    name: "{{ brscan4_packages }}"
+    state: present
+  when: scan_brscan4_enabled
+
+- name: Install sane-airscan (eSCL backend)
+  apt:
+    name: "{{ escl_packages }}"
+    state: present
+  when: scan_escl_enabled
+
+# --- Brother brscan4 under i386 emulation (brscan4-emu backend) ---------------
 - name: Render the brscan4 emulation installer
   template:
     src: install-brscan4-emu.sh.j2
     dest: /usr/local/sbin/install-brscan4-emu.sh
     mode: "0755"
+  when: scan_brscan4_enabled
 
 # Builds the i386 chroot (debootstrap) and installs Brother's driver. Slow on
 # the first run (~a few minutes); a no-op once the chroot is ready.
 - name: Build the brscan4 emulation chroot
   command:
     cmd: /usr/local/sbin/install-brscan4-emu.sh
+  when: scan_brscan4_enabled
 
-# --- Scan pipeline (scan-web scans in the chroot directly) -------------------
+# --- Scan pipeline (scan-web scans through the host SANE directly) ------------
 - name: Create the scan-web / helper directory
   file:
     path: /usr/local/lib/scan-web
     state: directory
     mode: "0755"
 
+# Only the brscan4 net path short-reads the last row; the padder is used by the
+# pipeline only on that backend.
 - name: Install the PNM padder
   template:
     src: pad_pnm.py.j2
     dest: /usr/local/lib/scan-web/pad_pnm.py
     mode: "0644"
+  when: scan_brscan4_enabled
 
 - name: Install the scan-to-share script
   template:
@@ -63,6 +80,7 @@
     src: brscan-mounts.service.j2
     dest: /etc/systemd/system/brscan-mounts.service
     mode: "0644"
+  when: scan_brscan4_enabled
 
 - name: Enable the chroot bind mounts
   systemd:
@@ -70,6 +88,7 @@
     state: started
     enabled: true
     daemon_reload: true
+  when: scan_brscan4_enabled
 
 # --- AirSane net bridge (chroot saned on localhost:saned_port) ----------------
 # Free saned's port from anything that squats it (sane-utils' saned.socket;
@@ -77,6 +96,7 @@
 - name: Free saned's port (mask units that bind it)
   command:
     cmd: "sh -c 'systemctl mask --now saned.socket saned@.service scanbm.socket scanbd.socket scanbd.service openbsd-inetd inetd 2>/dev/null; true'"
+  when: scan_brscan4_enabled
 
 - name: Install the chroot saned socket + service
   template:
@@ -86,6 +106,7 @@
   loop:
     - { src: "brscan-saned.socket.j2", dest: "brscan-saned.socket" }
     - { src: "brscan-saned@.service.j2", dest: "brscan-saned@.service" }
+  when: scan_brscan4_enabled
 
 - name: Point host SANE at the chroot saned (net backend only)
   template:
@@ -95,24 +116,7 @@
   loop:
     - { src: "host-dll.conf.j2", dest: "/etc/sane.d/dll.conf" }
     - { src: "host-net.conf.j2", dest: "/etc/sane.d/net.conf" }
-
-# The sane-airscan package drops /etc/sane.d/dll.d/airscan (enabling the airscan
-# backend), which discovers AirSane's own eSCL advertisement and causes the
-# scanner to be advertised twice over Bonjour. Disable it.
-- name: Ensure the SANE dll.d directory exists
-  file:
-    path: /etc/sane.d/dll.d
-    state: directory
-    mode: "0755"
-  when: airsane_enabled
-
-- name: Disable the sane-airscan backend (avoids an eSCL self-advertise loop with AirSane)
-  template:
-    src: dll-airscan-disabled.j2
-    dest: /etc/sane.d/dll.d/airscan
-    mode: "0644"
-  when: airsane_enabled
-  notify: Restart airsaned
+  when: scan_brscan4_enabled
 
 - name: Enable the chroot saned socket
   systemd:
@@ -120,26 +124,45 @@
     state: started
     enabled: true
     daemon_reload: true
+  when: scan_brscan4_enabled
 
-# --- AirSane (eSCL/AirScan server) -------------------------------------------
+# --- AirSane (eSCL/AirScan server) — re-exports the chroot scanner as eSCL -----
+# The sane-airscan package drops /etc/sane.d/dll.d/airscan (enabling the airscan
+# backend), which discovers AirSane's own eSCL advertisement and causes the
+# scanner to be advertised twice over Bonjour. Disable it on the brscan4 path.
+- name: Ensure the SANE dll.d directory exists
+  file:
+    path: /etc/sane.d/dll.d
+    state: directory
+    mode: "0755"
+  when: scan_brscan4_enabled and airsane_enabled
+
+- name: Disable the sane-airscan backend (avoids an eSCL self-advertise loop with AirSane)
+  template:
+    src: dll-airscan-disabled.j2
+    dest: /etc/sane.d/dll.d/airscan
+    mode: "0644"
+  when: scan_brscan4_enabled and airsane_enabled
+  notify: Restart airsaned
+
 - name: Install AirSane build dependencies
   apt:
     name: "{{ airsane_build_packages }}"
     state: present
     update_cache: true
-  when: airsane_enabled
+  when: scan_brscan4_enabled and airsane_enabled
 
 - name: Render the AirSane installer
   template:
     src: install-airsane.sh.j2
     dest: /usr/local/sbin/install-airsane.sh
     mode: "0755"
-  when: airsane_enabled
+  when: scan_brscan4_enabled and airsane_enabled
 
 - name: Build and install AirSane from source
   command:
     cmd: /usr/local/sbin/install-airsane.sh
-  when: airsane_enabled
+  when: scan_brscan4_enabled and airsane_enabled
 
 - name: Ensure AirSane (airsaned) is running and enabled
   systemd:
@@ -147,7 +170,7 @@
     state: started
     enabled: true
     daemon_reload: true
-  when: airsane_enabled
+  when: scan_brscan4_enabled and airsane_enabled
 
 # Inserted above the base default-deny DROP (see the base role).
 - name: Open the firewall for AirSane (eSCL) from the LAN
@@ -160,10 +183,18 @@
     action: insert
     comment: "scan: airsane escl"
     persist: true
-  when: airsane_enabled
+  when: scan_brscan4_enabled and airsane_enabled
 
-# The Scan + Print web UI that scans through this pipeline lives in its own role
-# (roles/web-ui), which runs after this one.
+# --- Driverless eSCL backend (sane-airscan) ----------------------------------
+# The scanner is a native eSCL device — sane-airscan discovers it over mDNS and
+# the host SANE reaches it directly. No chroot, no net bridge, no AirSane. Point
+# dll.conf at airscan only (fast; skips probing every other backend).
+- name: Point host SANE at the airscan (eSCL) backend
+  template:
+    src: host-dll-escl.conf.j2
+    dest: /etc/sane.d/dll.conf
+    mode: "0644"
+  when: scan_escl_enabled
 
 # --- Retention: hourly cleanup of old scans ----------------------------------
 - name: Install the scan cleanup script

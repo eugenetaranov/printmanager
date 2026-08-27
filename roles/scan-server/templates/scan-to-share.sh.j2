@@ -7,7 +7,7 @@
 set -eu
 DEST='{{ .scan_dir }}'
 RES="${SCAN_RES:-{{ .scan_resolution }}}"
-MODE="${SCAN_MODE:-{{ .scan_mode }}}"
+MODE="${SCAN_MODE:-{{ if .scan_escl_enabled }}{{ .scan_escl_mode }}{{ else }}{{ .scan_mode }}{{ end }}}"
 QUALITY="${SCAN_QUALITY:-{{ .scan_jpeg_quality }}}"
 
 # Optional filename; keep only safe chars, spaces -> dashes (no slashes/dots, so
@@ -17,9 +17,11 @@ NAME="$(printf '%s' "${SCAN_NAME:-}" | tr -cd 'A-Za-z0-9 _-' | sed 's/  */ /g; s
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# Scan to raw PNM, then pad to full size (Brother short-reads ~1 row).
+# Scan to raw PNM. On the brscan4 net path pad to full size (Brother short-reads
+# ~1 row); the eSCL backend delivers full data, so no padding.
 scanimage --mode "$MODE" --resolution "$RES" --format=pnm > "$tmp/p.pnm"
-python3 /usr/local/lib/scan-web/pad_pnm.py "$tmp/p.pnm"
+{{ if not .scan_escl_enabled }}python3 /usr/local/lib/scan-web/pad_pnm.py "$tmp/p.pnm"
+{{ end -}}
 # -sampling-factor 1x1 (no chroma subsampling) keeps text edges crisp.
 convert "$tmp/p.pnm" -sampling-factor 1x1 -quality "$QUALITY" "$tmp/p.jpg"
 

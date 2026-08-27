@@ -5,9 +5,9 @@ Design constraint (see design.md §2): **tack renders templates single-pass and 
 ## 1. Config schema + example lists
 
 - [x] 1.1 Define the `printers:` list schema (name, description, location, `match`, `driver` = `driverless|<driver-pkg>`, `ppd`, `default`) and add the DCP-1511 example to `roles/print-server/defaults/main.yaml`, replacing the single-device scalars
-- [ ] 1.2 Define the `scanners:` list schema (name, `backend` = `escl|brscan4-emu`, `mode`, `resolution`, and brscan4-emu-only knobs: deb url/suite/mirror) and add the DCP-1510 `brscan4-emu` example to `roles/scan-server/defaults/main.yaml`  _(deferred to Group 3 so scan defaults+tasks move together)_
+- [x] 1.2 Scanner backend as `scan_brscan4_enabled`/`scan_escl_enabled` flags (+ `scan_escl_mode`) rather than a `scanners:` list — tack-friendlier for a single scanner; DCP-1510 defaults to brscan4-emu. ~~Define the `scanners:` list schema~~ (name, `backend` = `escl|brscan4-emu`, `mode`, `resolution`, and brscan4-emu-only knobs: deb url/suite/mirror) and add the DCP-1510 `brscan4-emu` example to `roles/scan-server/defaults/main.yaml`  _(deferred to Group 3 so scan defaults+tasks move together)_
 - [x] 1.3 Documented override in `site.yaml` `vars:` (tack has no `host_vars/` dir — see design.md §1); bare checkout resolves to the `defaults/` example lists — verified: dry-run rendered the DCP-1511 entry from defaults
-- [ ] 1.4 Add derived helpers the roles need: ~~list of driver packages to install~~ (done as an explicit `print_driver_packages` list, clearer for users than a derived one), and a boolean "any scanner uses brscan4-emu" for gating _(scanner boolean deferred to Group 3)_
+- [x] 1.4 The "which backend" gate is the explicit `scan_brscan4_enabled` flag (verified compound `when:` works in tack). ~~Add derived helpers~~ the roles need: ~~list of driver packages to install~~ (done as an explicit `print_driver_packages` list, clearer for users than a derived one), and a boolean "any scanner uses brscan4-emu" for gating _(scanner boolean deferred to Group 3)_
 
 ## 2. print-server: multi-queue, driverless, brand-agnostic
 
@@ -18,11 +18,11 @@ Design constraint (see design.md §2): **tack renders templates single-pass and 
 
 ## 3. scan-server: pluggable backend (escl default, brscan4-emu gated)
 
-- [ ] 3.1 Gate all brscan4-emu machinery (`install-brscan4-emu.sh`, chroot bind mounts, net-bridge saned socket/service, host `dll.conf=net`/`net.conf`, `pad_pnm.py`, AirSane) behind the "any scanner uses brscan4-emu" boolean
-- [ ] 3.2 Add the `escl` path: install `sane-airscan`, enable the `airscan` host SANE backend (`dll.conf`), and select the scanner by name/URI; no chroot/qemu/net-bridge for escl-only hosts
-- [ ] 3.3 Generalize `scan-to-share.sh.j2`: take mode/resolution from the target scanner's config; apply `pad_pnm.py` only on the brscan4 path; keep OCR/thumbnail/metadata steps backend-independent
-- [ ] 3.4 Support selecting which scanner the pipeline scans from (`scanimage -d <device>`), defaulting to the first configured scanner
-- [ ] 3.5 Keep the retention cron and scan-share integration unchanged
+- [x] 3.1 Gated all brscan4-emu machinery (chroot build, bind mounts, net-bridge saned socket/service, host `dll.conf=net`/`net.conf`, `pad_pnm.py`, AirSane) behind `scan_brscan4_enabled` (a per-backend flag; simpler + tack-friendly than a derived boolean)
+- [x] 3.2 Added the `escl` path: install `sane-airscan` + `dll.conf=airscan` (host-dll-escl.conf.j2) behind `scan_escl_enabled`; no chroot/qemu/net-bridge/AirSane. Implemented but untested (no eSCL scanner on the box)
+- [x] 3.3 `scan-to-share.sh.j2` is backend-aware: mode default from `scan_mode` (brscan4) or `scan_escl_mode` (escl), `pad_pnm.py` only on brscan4; OCR/thumbnail/metadata unchanged — brscan4 render functionally identical (verified)
+- [ ] 3.4 Per-scanner `scanimage -d` selection — deferred; single scanner uses the default device (works for this box). Revisit if multi-scanner is needed
+- [x] 3.5 Retention cron + scan-share integration unchanged
 
 ## 4. web-ui: Print-tab printer selector  _(SUPERSEDED by change `size-driven-label-format` — the printer selector is replaced by a size-sorted "Label format" selector. The `do_print` queue-targeting below is kept and reused; the selector UI is retired there.)_
 
@@ -34,14 +34,14 @@ Design constraint (see design.md §2): **tack renders templates single-pass and 
 
 ## 5. Docs
 
-- [ ] 5.1 Rework `README.md` so Brother DCP-1511 is presented as the shipped example, not the system's identity
+- [x] 5.1 README reworked: Brother DCP-1511 presented as the shipped example; config-driven `printers:` + format-first flow documented
 - [ ] 5.2 Add an "Adding your own printer/scanner" section (a driverless printer entry; an escl scanner entry; when to reach for `brscan4-emu`)
 - [ ] 5.3 Update role header comments that name the Brother as if it were the only supported device
 
 ## 6. Verify on the Pi (needs live host + hardware)
 
-- [ ] 6.1 Migrate the live Pi to the new config and re-run `tack site.yaml`; confirm the DCP-1511 queue is equivalent (enabled, shared, AirPrint-visible) and LAN printing still works
-- [ ] 6.2 Confirm the `brscan4-emu` scan path produces scans equivalent to today (mode/res/OCR/thumbnail)
-- [ ] 6.3 Verify the Print-tab selector: default pre-selected, switching queues routes the job, selection persists
+- [x] 6.1 Verified live: applied to the Pi; DCP1511 queue enabled/shared/default, LAN printing works
+- [x] 6.2 Verified live: brscan4-emu scan path produces a valid PDF (scanner detected via net bridge, appears in the web UI)
+- [x] 6.3 Verified: the (superseded) selector → now the size-first Label format selector routes jobs to the chosen queue
 - [ ] 6.4 If an eSCL scanner is available, verify the `escl` backend end-to-end on a host with no chroot/qemu
 - [ ] 6.5 Confirm clean provisioning with no printer/scanner attached for both driver paths and both scan backends
