@@ -671,6 +671,20 @@ def _niimbot():
     return niimbot
 
 
+def _printer_name(queue, u):
+    """A brand+model display name for a CUPS queue, derived from its device URI
+    (e.g. usb://Brother/DCP-1510%20series?... -> 'Brother DCP-1510'), so it reads
+    the same way as the scanner. Falls back to the queue name."""
+    m = re.match(r"[a-z]+://([^/]+)/([^?]+)", u or "")
+    if not m:
+        return queue
+    brand = urllib.parse.unquote(m.group(1)).strip()
+    model = urllib.parse.unquote(m.group(2)).strip()
+    model = re.sub(r"\s*series$", "", model, flags=re.I)
+    name = ("%s %s" % (brand, model)).strip()
+    return name or queue
+
+
 def cups_devices():
     rc, out, err = _run(["lpstat", "-p"])
     if rc != 0 and not out.strip():
@@ -693,8 +707,9 @@ def cups_devices():
         status = "disconnected" if "disabled" in low else "connected"
         u = uri.get(name, "")
         transport = "usb" if u.startswith("usb") else ("network" if u else "cups")
-        rows.append({"kind": "printer", "transport": transport, "id": name, "name": name,
-                     "status": status, "forgettable": True, "detail": u[:60]})
+        rows.append({"kind": "printer", "transport": transport, "id": name,
+                     "name": _printer_name(name, u), "status": status,
+                     "forgettable": True, "detail": u[:60]})
     return rows
 
 
@@ -1096,7 +1111,7 @@ PAGE = r"""<!doctype html>
 :root{
   --bg:#fbfbf9; --surface:#ffffff; --border:#e7e6e1; --text:#1b1b18;
   --muted:#6f6e67; --faint:#9c9b92; --accent:#0f7a63; --accent-weak:#e8f3ef;
-  --primary:#1b1b18; --primary-ink:#ffffff; --danger:#b03a2c;
+  --primary:#1b1b18; --primary-ink:#ffffff; --danger:#b03a2c; --warn:#c07d16;
   --shadow:0 1px 2px rgba(20,20,16,.05),0 8px 24px -14px rgba(20,20,16,.2);
   --pop:0 8px 30px -8px rgba(20,20,16,.35);
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
@@ -1106,7 +1121,7 @@ PAGE = r"""<!doctype html>
   :root{
     --bg:#151518; --surface:#1e1e22; --border:#2e2e34; --text:#eceae6;
     --muted:#9d9c96; --faint:#6d6c66; --accent:#43c3a4; --accent-weak:#16302a;
-    --primary:#eceae6; --primary-ink:#151518; --danger:#e2745f;
+    --primary:#eceae6; --primary-ink:#151518; --danger:#e2745f; --warn:#d69a3c;
     --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -16px rgba(0,0,0,.6);
     --pop:0 10px 34px -6px rgba(0,0,0,.7);
   }
@@ -1302,13 +1317,30 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .mini.ic.armed{background:var(--danger);color:#fff}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
 .dot.on{background:var(--accent)}
+.dot.warn{background:var(--warn)}
 .dot.err{background:var(--danger)}
+/* Traffic-light box coloring by device state (green=ready, amber=not
+   connected/new, red=error). Applies to inventory rows and Niimbot cards. */
+.drow.st-ready{border-color:var(--accent)}
+.drow.st-off{border-color:var(--warn)}
+.drow.st-err{border-color:var(--danger);background:rgba(176,58,44,.07)}
+@media (prefers-color-scheme:dark){.drow.st-err{background:rgba(226,116,95,.12)}}
 .kind{font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--bg);padding:2px 6px;border-radius:5px}
 .derr{color:var(--danger)}
 .mini.danger:hover{color:var(--danger)}
 .mini.armed{color:#fff;background:var(--danger)}
 .mini.pri{background:var(--accent-weak);color:var(--accent)}
 .drow.active{border-color:var(--accent);background:var(--accent-weak)}
+/* Niimbot rows are a card: the main row plus a per-device status line at the
+   bottom (grows the box only when there is a message). */
+.niimrow{flex-direction:column;align-items:stretch;gap:8px}
+.drowmain{display:flex;align-items:center;gap:11px;min-height:34px}
+.drowstatus{margin:0;font:500 11.5px var(--mono);color:var(--muted);word-break:break-word}
+.drowstatus.ok{color:var(--accent)}
+.drowstatus.err{color:var(--danger)}
+.drowstatus:empty{display:none}
+.iconbtn.pulse{animation:btnpulse 1s ease-in-out infinite}
+@keyframes btnpulse{0%,100%{opacity:1}50%{opacity:.35}}
 .blelog{margin:0;max-height:180px;overflow:auto;background:var(--bg);border:1px solid var(--border);
   border-radius:8px;padding:8px 10px;font:500 11px/1.5 var(--mono);color:var(--muted);white-space:pre-wrap;word-break:break-all}
 .headright{display:flex;align-items:center;gap:12px;flex:none}
@@ -2143,7 +2175,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
     var devMain=document.getElementById('devMain'), devLogView=document.getElementById('devLogView');
     var devLog=document.getElementById('devLog'), logTitle=document.getElementById('logTitle');
     var state={printers:[],active:null,adapter:true,log:[]}, inventory=[];
-    var kind='text', imgB64='', busy=false, curPrinter=null, lastApplied='', curLogAddr=null;
+    var kind='text', imgB64='', busy=false, curPrinter=null, lastApplied='', curLogAddr=null, deviceStatus={};
 
     var niimNote=document.getElementById('niimNote');
     function jpost(url, body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -2152,6 +2184,19 @@ input[type=number]{font-variant-numeric:tabular-nums}
     // Status for label-printer actions goes in the Label printers section (near
     // the button that triggered it), not the top of the modal.
     function nnote(msg, cls){ niimNote.className='secnote'+(cls?' '+cls:''); niimNote.textContent=msg||''; }
+    // Per-device status shown inside that device's card (bottom line).
+    function setDeviceStatus(addr, msg, cls){
+      if(msg) deviceStatus[addr]={msg:msg,cls:cls||''}; else delete deviceStatus[addr];
+      var row=niimList.querySelector('.niimrow[data-addr="'+addr+'"]');
+      if(row){
+        var el=row.querySelector('.drowstatus'); if(el){ el.className='drowstatus'+(cls?' '+cls:''); el.textContent=msg||''; }
+        // Recolor the box: error -> red, else green(connected)/amber(disconnected).
+        var conn = row.dataset.conn==='1';
+        var state = cls==='err' ? 'err' : (conn ? 'ready' : 'off');
+        row.classList.remove('st-ready','st-off','st-err'); row.classList.add('st-'+state);
+        var dot=row.querySelector('.dot'); if(dot) dot.className='dot '+(state==='err'?'err':(state==='ready'?'on':'warn'));
+      }
+    }
 
     // ---- per-device connection log (lines are tagged '[address] ...') --------
     function deviceLog(addr){ return (state.log||[]).filter(function(ln){ return ln.indexOf('['+addr+']')>=0; }); }
@@ -2216,9 +2261,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
       return '<span class="ifi" data-tip="'+esc(ifaceLabel(t))+'" title="'+esc(ifaceLabel(t))+'">'+DICON[k]+'</span>'; }
     function iconBtn(act, icon, title, cls){
       return '<button type="button" class="mini ic'+(cls?' '+cls:'')+'" data-act="'+act+'" data-tip="'+esc(title)+'" title="'+esc(title)+'" aria-label="'+esc(title)+'">'+DICON[icon]+'</button>'; }
+    function stateOf(status){ return status==='error'?'err':(status==='connected'?'ready':'off'); }
+    function dotOf(status){ var s=stateOf(status); return s==='err'?'err':(s==='ready'?'on':'warn'); }
     function devRowHTML(name, transport, status, sub, isErr, acts){
-      var dot = status==='error'?'err':(status==='connected'?'on':'');
-      return '<i class="dot '+dot+'"></i>'+(transport?ifaceIcon(transport):'')+
+      return '<i class="dot '+dotOf(status)+'"></i>'+(transport?ifaceIcon(transport):'')+
         '<div class="dinfo"><div class="dname">'+esc(name)+'</div>'+
           '<div class="dsub'+(isErr?' derr':'')+'" title="'+esc(sub)+'">'+esc(sub)+'</div></div>'+
         '<div class="dacts">'+(acts||'')+'</div>';
@@ -2238,7 +2284,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         if(!rows.length) return; any=true;
         var h=document.createElement('div'); h.className='grp'; h.textContent=g[1]; invGroups.appendChild(h);
         rows.forEach(function(d){
-          var row=document.createElement('div'); row.className='drow';
+          var row=document.createElement('div'); row.className='drow st-'+stateOf(d.status);
           // Every printer (any status) gets a Test page; the action surfaces any
           // connectivity error. No Forget on USB/network hardware.
           var acts = (d.kind==='printer' && d.id) ? iconBtn('test','test','Print test page') : '';
@@ -2265,18 +2311,24 @@ input[type=number]{font-variant-numeric:tabular-nums}
       niimList.innerHTML='';
       if(!prs.length){ niimList.innerHTML='<p class="empty">No Niimbot printers yet. Tap “Scan for printers”.</p>'; }
       prs.forEach(function(p){
-        var row=document.createElement('div'); row.className='drow'+(p.active?' active':'');
+        var row=document.createElement('div');
         var conn = p.status==='connected';
+        var st = deviceStatus[p.address];
+        var state = (st&&st.cls==='err') ? 'err' : (conn ? 'ready' : 'off');
+        var dotcls = state==='err'?'err':(state==='ready'?'on':'warn');
+        row.className='drow niimrow st-'+state+(p.active?' active':'');
+        row.dataset.addr=p.address; row.dataset.conn=conn?'1':'';
         var hasLog = deviceLog(p.address).length>0;
         var acts = (conn? iconBtn('test','test','Print test label')+iconBtn('disconnect','disconnect','Disconnect')
                         : iconBtn('reconnect','reconnect','Reconnect','pri'))+
                    iconBtn('log','log','Connection log', hasLog?'on':'')+
                    iconBtn('forget','forget','Forget','warn');
         var sub = esc(p.name)+' · '+p.status+(p.label_mm?(' · '+p.label_mm[0]+'×'+p.label_mm[1]+' mm'):'');
-        row.innerHTML='<i class="dot '+(conn?'on':'')+'"></i>'+ifaceIcon('bluetooth')+
+        row.innerHTML='<div class="drowmain"><i class="dot '+dotcls+'"></i>'+ifaceIcon('bluetooth')+
           '<div class="dinfo"><div class="dname">'+esc(p.model_label||p.model)+'</div>'+
           '<div class="dsub" title="'+sub+'">'+sub+'</div></div>'+
-          '<div class="dacts">'+acts+'</div>';
+          '<div class="dacts">'+acts+'</div></div>'+
+          '<p class="drowstatus'+(st&&st.cls?' '+st.cls:'')+'">'+esc(st?st.msg:'')+'</p>';
         row.querySelectorAll('[data-act]').forEach(function(bb){
           bb.addEventListener('click',function(){ if(bb.dataset.act==='log') openLog(p); else niimAction(bb.dataset.act, p, bb); });
         });
@@ -2292,19 +2344,20 @@ input[type=number]{font-variant-numeric:tabular-nums}
     function niimAction(act, p, bb){
       if(busy) return;
       if(act==='test'){
-        busy=true; bb.disabled=true; nnote('Printing test label…');
-        jpost('/devices/testpage',{kind:'label-printer',id:p.address}).then(function(r){ nnote(r.ok?'Test label sent':(r.error||'Test failed'), r.ok?'':'err'); })
-          .catch(function(){ nnote('Test failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
+        busy=true; bb.disabled=true; setDeviceStatus(p.address,'Printing test label…');
+        jpost('/devices/testpage',{kind:'label-printer',id:p.address}).then(function(r){ setDeviceStatus(p.address, r.ok?'Test label sent':(r.error||'Test failed'), r.ok?'ok':'err'); })
+          .catch(function(){ setDeviceStatus(p.address,'Test failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
         return;
       }
       if(act==='forget' && !bb.classList.contains('armed')){ bb.classList.add('armed'); bb.title='Click again to remove';
         setTimeout(function(){ bb.classList.remove('armed'); bb.title='Forget'; },3000); return; }
-      busy=true; nnote(act+'…'); bb.disabled=true;
+      busy=true; setDeviceStatus(p.address, act+'…'); bb.disabled=true;
       var url = act==='reconnect'?'/niimbot/reconnect':(act==='disconnect'?'/niimbot/disconnect':'/niimbot/forget');
       jpost(url,{address:p.address}).then(function(r){
-        if(r.ok){ nnote(''); renderNiim(r); } else nnote(r.error||'Failed','err');
+        if(r.ok){ if(act==='forget') delete deviceStatus[p.address]; else setDeviceStatus(p.address,''); renderNiim(r); }
+        else setDeviceStatus(p.address, r.error||'Failed','err');
         loadInv(false);
-      }).catch(function(){ nnote('Request failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
+      }).catch(function(){ setDeviceStatus(p.address,'Request failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
     }
     function renderCands(cands){
       candList.innerHTML='';
@@ -2312,8 +2365,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
       cands=(cands||[]).filter(function(c){return !known[c.address];});
       if(!cands.length){ candList.innerHTML='<p class="hint">No new printers found.</p>'; return; }
       cands.forEach(function(c){
-        var row=document.createElement('div'); row.className='drow';
-        row.innerHTML='<i class="dot"></i>'+ifaceIcon('bluetooth')+'<div class="dinfo"><div class="dname">'+esc(c.name)+'</div>'+
+        var row=document.createElement('div'); row.className='drow st-off';
+        row.innerHTML='<i class="dot warn"></i>'+ifaceIcon('bluetooth')+'<div class="dinfo"><div class="dname">'+esc(c.name)+'</div>'+
           '<div class="dsub">'+esc(c.address)+' · '+(c.rssi||'')+' dBm</div></div>'+
           '<div class="dacts"><button type="button" class="mini ic pri" data-connect="1" data-tip="Connect" title="Connect" aria-label="Connect">'+DICON.connect+'</button></div>';
         row.querySelector('[data-connect]').addEventListener('click',function(bev){
@@ -2326,10 +2379,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
       });
     }
     document.getElementById('niimScan').addEventListener('click',function(){
-      if(busy) return; busy=true; var b=this; b.disabled=true; b.classList.add('spin'); nnote('Scanning for Bluetooth printers…');
+      if(busy) return; busy=true; var b=this; b.disabled=true; b.classList.add('pulse'); nnote('Scanning for Bluetooth printers…');
       jpost('/niimbot/scan',{}).then(function(r){
         if(r.ok){ nnote(''); renderCands(r.candidates); } else nnote(r.error||'Scan failed','err');
-      }).catch(function(){ nnote('Scan failed','err'); }).finally(function(){ busy=false; b.disabled=false; b.classList.remove('spin'); });
+      }).catch(function(){ nnote('Scan failed','err'); }).finally(function(){ busy=false; b.disabled=false; b.classList.remove('pulse'); });
     });
 
     // ---- Print/Scan selectors (fed from inventory + niimbot state) ----------
