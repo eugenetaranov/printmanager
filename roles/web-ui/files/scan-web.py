@@ -1255,8 +1255,9 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .modal-card{width:100%;max-width:460px;margin:auto}
 .modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
 .modal-head strong{font-size:15px;font-weight:640;letter-spacing:-.01em}
-.mclose{border:none;background:none;cursor:pointer;color:var(--muted);font-size:22px;line-height:1;padding:0 4px;border-radius:6px}
-.mclose:hover{color:var(--text)}
+.mclose{display:grid;place-items:center;width:30px;height:30px;padding:0;border:none;border-radius:50%;background:none;color:var(--muted);cursor:pointer;transition:background .15s,color .15s}
+.mclose svg{width:14px;height:14px;display:block}
+.mclose:hover{background:var(--accent-weak);color:var(--text)}
 .mclose:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sheetlist{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
 .srow{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px}
@@ -1630,7 +1631,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         <button type="button" class="iconbtn sm" id="devRefresh" data-tip="Refresh" title="Refresh" aria-label="Refresh">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
         </button>
-        <button type="button" class="mclose" id="devModalClose" aria-label="Close">×</button>
+        <button type="button" class="mclose" id="devModalClose" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button>
       </span>
     </div>
     <p class="deverr" id="devNote"></p>
@@ -1666,7 +1667,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
   <div class="modal-card card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="modal-head">
       <strong id="modalTitle">Label sheets</strong>
-      <button type="button" class="mclose" id="modalClose" aria-label="Close">×</button>
+      <button type="button" class="mclose" id="modalClose" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button>
     </div>
 
     <div id="listView">
