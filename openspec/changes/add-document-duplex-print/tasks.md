@@ -4,10 +4,10 @@ Reuses existing primitives in `roles/web-ui/files/scan-web.py` (`_submit_lp`, `_
 
 ## 1. Document surface + single-sided printing
 
-- [ ] 1.1 Add a `document_enabled` config flag (default on) to `roles/web-ui/defaults/main.yaml` + `scan-web-config.yaml.j2`; wire it into scan-web.py config
-- [ ] 1.2 Add a **Document** tab to the UI: PDF file input, queue `<select>` (reuse the queue list + `_printer_name()`), a single/double-sided toggle, Print button
-- [ ] 1.3 Add `POST /document/print`: accept the uploaded PDF, validate it's a readable PDF within page-count + size caps, stream to a tempfile
-- [ ] 1.4 Single-sided path: submit via `_submit_lp` to the chosen queue; return the queue + job id; confirmation reports the queue
+- [x] 1.1 Add a `document_enabled` config flag (default on) to `roles/web-ui/defaults/main.yaml` + `scan-web-config.yaml.j2`; wire it into scan-web.py config
+- [x] 1.2 Add a **Document** tab to the UI: PDF file input, queue `<select>` (reuse the queue list + `_printer_name()`), a single/double-sided toggle, Print button
+- [x] 1.3 Add `POST /document/print`: accept the uploaded PDF, validate it's a readable PDF within page-count + size caps, stream to a tempfile
+- [x] 1.4 Single-sided path: submit via `_submit_lp` to the chosen queue; return the queue + job id; confirmation reports the queue
 
 ## 2. Duplex capability detection
 

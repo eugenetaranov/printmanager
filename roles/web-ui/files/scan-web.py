@@ -72,6 +72,7 @@ PRINT_ENABLED = _cfg_bool("print_enabled", "SCAN_WEB_PRINT_ENABLED", "true")
 PRINT_QUEUE = _cfg("print_queue", "SCAN_WEB_PRINT_QUEUE", "DCP1511")
 
 DEVICES_ENABLED = _cfg_bool("devices_enabled", "SCAN_WEB_DEVICES_ENABLED", "true")
+DOCUMENT_ENABLED = _cfg_bool("document_enabled", "SCAN_WEB_DOCUMENT_ENABLED", "true")
 
 # The Niimbot module reads its store dir from SCAN_WEB_DATA; keep it in sync with
 # the resolved config so both agree when config comes from the YAML file.
@@ -592,6 +593,48 @@ def _submit_lp(pdf_path, queue=None):
     return m.group(1) if m else ""
 
 
+def _doc_target_queue(obj):
+    """Resolve + validate the target CUPS queue for a document print."""
+    req_q = (obj.get("queue") or "").strip()
+    if req_q and req_q != PRINT_QUEUE:
+        if req_q not in set(print_queues()):
+            raise RuntimeError("Unknown printer: %s" % req_q)
+        return req_q
+    return PRINT_QUEUE
+
+
+def _read_doc_pdf(obj, tmp):
+    """Decode + validate the uploaded PDF into tmp/doc.pdf; return (path, pages)."""
+    data = base64.b64decode(obj.get("dataB64") or "")
+    if not data or data[:4] != b"%PDF":
+        raise RuntimeError("Please choose a PDF file")
+    if len(data) > 60 * 1024 * 1024:
+        raise RuntimeError("PDF too large (max 60 MB)")
+    pdf = os.path.join(tmp, "doc.pdf")
+    with open(pdf, "wb") as f:
+        f.write(data)
+    pages = _pdf_page_count(pdf)
+    if pages < 1:
+        raise RuntimeError("Could not read the PDF")
+    if pages > 200:
+        raise RuntimeError("PDF has too many pages (max 200)")
+    return pdf, pages
+
+
+def do_document(obj):
+    """Print an uploaded PDF to a chosen A4 CUPS queue (single-sided)."""
+    if not DOCUMENT_ENABLED:
+        raise RuntimeError("Document printing is disabled")
+    queue = _doc_target_queue(obj)
+    tmp = tempfile.mkdtemp(prefix="doc-")
+    try:
+        pdf, pages = _read_doc_pdf(obj, tmp)
+        job = _submit_lp(pdf, queue)
+        return {"queue": queue, "job": job, "pages": pages}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def mode_options(default):
     return "".join('<option value="%s"%s>%s</option>'
                    % (html.escape(v), " selected" if v == default else "", html.escape(lbl))
@@ -734,9 +777,25 @@ def _cups_seed():
 
 def print_queues():
     """The real CUPS queue names, used to validate a print request's target
-    queue (so we never pass an arbitrary -d). Reuses the CUPS enumeration."""
-    return [r["id"] for r in cups_devices()
-            if r.get("kind") == "printer" and r.get("id")]
+    queue (so we never pass an arbitrary -d). Uses the cached CUPS rows."""
+    return [r["id"] for r in _cups_seed()]
+
+
+def queue_list():
+    """Queues for the document/print pickers — friendly name + default flag,
+    from the cached CUPS rows (fast)."""
+    return [{"queue": r["id"], "name": r["name"], "default": r["id"] == PRINT_QUEUE}
+            for r in _cups_seed()]
+
+
+def _pdf_page_count(pdf_path):
+    """Page count via poppler's pdfinfo; 0 if unreadable."""
+    try:
+        p = subprocess.run(["pdfinfo", pdf_path], capture_output=True, text=True, timeout=15)
+        m = re.search(r"^Pages:\s+(\d+)", p.stdout or "", re.M)
+        return int(m.group(1)) if m else 0
+    except Exception:
+        return 0
 
 
 def _scanner_key(desc):
@@ -1021,7 +1080,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
-        if path in ("/", "/index.html", "/scan", "/print"):
+        if path in ("/", "/index.html", "/scan", "/print", "/document"):
             self._send(200, render_page(path))
         elif path == "/recent":
             self._json(200, {"scans": list_scans()})
@@ -1035,6 +1094,8 @@ class Handler(BaseHTTPRequestHandler):
                                  "printers": [], "active": None, "adapter": False})
         elif path == "/templates":
             self._json(200, {"templates": LABEL_TEMPLATES})
+        elif path == "/print/queues":
+            self._json(200, {"queues": queue_list(), "default": PRINT_QUEUE})
         elif path.startswith("/file/"):
             self._serve_pdf(urllib.parse.unquote(path[len("/file/"):]))
         elif path.startswith("/thumb/"):
@@ -1106,6 +1167,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"ok": False, "error": "The printer did not respond in time."})
             except Exception as e:
                 return self._json(200, {"ok": False, "error": str(e)})
+        if path == "/document/print":
+            obj = self._json_body()
+            try:
+                return self._json(200, dict(do_document(obj), ok=True))
+            except subprocess.TimeoutExpired:
+                return self._json(200, {"ok": False, "error": "The printer did not respond in time."})
+            except Exception as e:
+                return self._json(200, {"ok": False, "error": str(e)})
         if path != "/scan":
             return self._send(404, "Not found", "text/plain")
         f = self._form()
@@ -1127,12 +1196,17 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def render_page(path="/"):
-    tab = "print" if (path == "/print" and PRINT_ENABLED) else "scan"
+    tab = ("print" if (path == "/print" and PRINT_ENABLED)
+           else "document" if (path == "/document" and DOCUMENT_ENABLED)
+           else "scan")
     return (PAGE
             .replace("__SCAN_ACTIVE__", " active" if tab == "scan" else "")
             .replace("__PRINT_ACTIVE__", " active" if tab == "print" else "")
+            .replace("__DOC_ACTIVE__", " active" if tab == "document" else "")
             .replace("__SCAN_SEL__", "true" if tab == "scan" else "false")
             .replace("__PRINT_SEL__", "true" if tab == "print" else "false")
+            .replace("__DOC_SEL__", "true" if tab == "document" else "false")
+            .replace("__DOC_HIDDEN__", "" if DOCUMENT_ENABLED else " hidden")
             .replace("__TITLE__", html.escape(TITLE))
             .replace("__SHARE__", html.escape(SHARE))
             .replace("__MODE_OPTS__", mode_options(DEF_MODE))
@@ -1480,6 +1554,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
   <nav class="tabs" role="tablist" aria-label="Tools">
     <button class="tab-btn" id="tabScanBtn" data-tab="scan" role="tab" aria-selected="__SCAN_SEL__" aria-controls="tab-scan">Scan</button>
     <button class="tab-btn" id="tabPrintBtn" data-tab="print" role="tab" aria-selected="__PRINT_SEL__" aria-controls="tab-print"__PRINT_HIDDEN__>Labels</button>
+    <button class="tab-btn" id="tabDocBtn" data-tab="document" role="tab" aria-selected="__DOC_SEL__" aria-controls="tab-document"__DOC_HIDDEN__>Print</button>
   </nav>
 
   <section class="tab-panel__SCAN_ACTIVE__" id="tab-scan" role="tabpanel" aria-labelledby="tabScanBtn">
@@ -1635,6 +1710,23 @@ input[type=number]{font-variant-numeric:tabular-nums}
       <p class="note" id="pnote" aria-live="polite"></p>
     </div>
   </section>
+
+  <!-- Document / duplex printing -->
+  <section class="tab-panel__DOC_ACTIVE__" id="tab-document" role="tabpanel" aria-labelledby="tabDocBtn"__DOC_HIDDEN__>
+    <div class="card">
+      <div class="controls tplrow">
+        <label class="field"><span class="lbl">Printer</span>
+          <select id="docQueue"><option>Loading…</option></select></label>
+      </div>
+      <label class="field"><span class="lbl">PDF document</span>
+        <input class="filein" id="docFile" type="file" accept="application/pdf"></label>
+      <div class="chip" id="docChip" hidden><span id="docName"></span><button type="button" id="docClear" aria-label="Remove file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button></div>
+
+      <hr class="pdiv">
+      <button class="scan" id="docPrint" type="button" disabled>Print</button>
+      <p class="note" id="docNote" aria-live="polite"></p>
+    </div>
+  </section>
 </div>
 
 <!-- Devices modal (opened from the header gear) -->
@@ -1772,7 +1864,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
   var tabBtns=Array.prototype.slice.call(document.querySelectorAll('.tab-btn'));
   function tabHidden(name){ var b=document.querySelector('.tab-btn[data-tab="'+name+'"]'); return !b || b.hidden; }
   function pathTab(){ var p=location.pathname.replace(/\/+$/,'');
-    return (p==='/print' && !tabHidden('print')) ? 'print' : 'scan'; }
+    if(p==='/print' && !tabHidden('print')) return 'print';
+    if(p==='/document' && !tabHidden('document')) return 'document';
+    return 'scan'; }
   function selectTab(name, push){
     tabBtns.forEach(function(x){ x.setAttribute('aria-selected', x.dataset.tab===name?'true':'false'); });
     Array.prototype.forEach.call(document.querySelectorAll('.tab-panel'),function(p){
@@ -2291,6 +2385,42 @@ input[type=number]{font-variant-numeric:tabular-nums}
     // grid was rendered for it — don't override it here, or the sheet would swap.
     renderSheet(); updateUI();
   }
+
+  // --- Document / duplex printing tab --------------------------------------
+  (function(){
+    var printBtn=document.getElementById('docPrint');
+    if(!printBtn) return;   // document tab disabled
+    var qsel=document.getElementById('docQueue'), file=document.getElementById('docFile');
+    var chip=document.getElementById('docChip'), nameEl=document.getElementById('docName'), clear=document.getElementById('docClear');
+    var note=document.getElementById('docNote');
+    var docData=null, dbusy=false;
+    function jp(url, body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json();}); }
+    function loadQueues(){
+      fetch('/print/queues').then(function(r){return r.json();}).then(function(d){
+        var qs=(d&&d.queues)||[]; var def=d&&d.default||'';
+        if(!qs.length){ qsel.innerHTML='<option value="">No printer available</option>'; return; }
+        qsel.innerHTML=qs.map(function(q){ return '<option value="'+esc(q.queue)+'"'+(q.queue===def?' selected':'')+'>'+esc(q.name)+(q.queue!==q.name?(' ('+esc(q.queue)+')'):'')+'</option>'; }).join('');
+      }).catch(function(){ qsel.innerHTML='<option value="">No printer available</option>'; });
+    }
+    function update(){ printBtn.disabled = dbusy || !docData; }
+    file.addEventListener('change',function(){
+      var f=file.files&&file.files[0]; docData=null; chip.hidden=true; note.textContent='';
+      if(!f) return update();
+      var rd=new FileReader(); rd.onload=function(){ var s=rd.result||''; docData=(s.split(',')[1]||'');
+        nameEl.textContent=f.name||'document.pdf'; chip.hidden=false; update(); }; rd.readAsDataURL(f);
+    });
+    clear.addEventListener('click',function(){ docData=null; file.value=''; chip.hidden=true; note.className='note'; note.textContent=''; update(); });
+    printBtn.addEventListener('click',function(){
+      if(printBtn.disabled) return; dbusy=true; update();
+      var old=printBtn.textContent; printBtn.textContent='Printing…'; note.className='note'; note.textContent='';
+      jp('/document/print',{queue:qsel.value, dataB64:docData}).then(function(r){
+        if(r.ok){ note.className='note ok'; note.textContent='Sent '+r.pages+(r.pages===1?' page':' pages')+' to '+r.queue+'.'; }
+        else { note.className='note err'; note.textContent=r.error||'Print failed.'; }
+      }).catch(function(){ note.className='note err'; note.textContent='Could not reach the print service.'; })
+        .finally(function(){ dbusy=false; printBtn.textContent=old; update(); });
+    });
+    loadQueues();
+  })();
 
   // --- Devices manager (gear modal) + Print/Scan device selectors ----------
   (function(){

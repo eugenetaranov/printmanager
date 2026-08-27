@@ -48,6 +48,12 @@ scan_web_default_res: 300
 scan_web_print_enabled: true
 scan_web_print_queue: DCP1511
 
+# --- Document printing (the "Print" tab) -------------------------------------
+# A separate tab to print a PDF document to an A4 CUPS queue, single- or
+# double-sided. Auto-duplex printers print in one job; a simplex printer (like
+# the DCP-1511) gets a guided flip-the-stack flow. Set false to hide the tab.
+scan_web_document_enabled: true
+
 # --- Devices tab: inventory + Niimbot BLE label printers ---------------------
 # A third tab that inventories all attached print/scan hardware (CUPS queues,
 # SANE scanners, raw USB) with live status + forget, and connects Niimbot D110/
