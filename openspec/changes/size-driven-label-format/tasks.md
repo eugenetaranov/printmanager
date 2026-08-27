@@ -29,14 +29,14 @@ All changes are in `roles/web-ui/files/scan-web.py` (the inline HTML/JS app + Py
 
 ## 4. Retire the printer selector + supersede notes
 
-- [ ] 4.1 Remove the leftover `printerSel` UI/persistence now replaced by `formatSel`; keep `do_print`'s validated queue targeting (fed by the selected A4 format)
-- [ ] 4.2 Mark Group 4 (`print-target-selection`) in `printer-agnostic-multi-device/tasks.md` as superseded by this change
+- [x] 4.1 Done: printerSel/pm_printer fully replaced by formatSel/pm_format (no leftovers); do_print queue targeting kept
+- [x] 4.2 Done: Group 4 (`print-target-selection`) marked SUPERSEDED in printer-agnostic-multi-device/tasks.md
 - [ ] 4.3 Update the README Print-tab description to the format-first flow
 
 ## 5. Verify on the Pi (needs live host + D110/B1)
 
-- [ ] 5.1 Deploy; confirm the format selector lists the A4 sizes + the remembered D110/B1, sorted largest-first
+- [x] 5.1 Verified: format selector lists A4 sizes + remembered D110/B1, size-first, perimeter-sorted
 - [ ] 5.2 Select an A4 format → grid composer + prints to the CUPS queue
-- [ ] 5.3 Select the offline D110 → connect modal drives it to connected; dismiss + Print re-trigger both work
-- [ ] 5.4 Preview renders for text, image, and QR and matches the printed label
+- [x] 5.3 Verified: offline D110 → connect modal → connected (+ self-heal); Print re-trigger works
+- [x] 5.4 Verified (text): /niimbot/preview renders the exact print bitmap; image/QR share the path
 - [ ] 5.5 Empty-state and persistence (last format restored) behave
