@@ -1424,7 +1424,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
    a Bluetooth badge whose rings pulse outward while the BLE link is negotiated.
    State is carried by a class on the card (connecting / ok / err) and told
    through the same accent/danger the device dots use. */
-.connect-card{max-width:312px;text-align:center;padding:28px 24px 20px}
+.connect-card{position:relative;max-width:312px;text-align:center;padding:28px 24px 20px}
+.connx{position:absolute;top:12px;right:12px}
 .conn-badge{position:relative;width:60px;height:60px;margin:0 auto 18px;display:grid;place-items:center;border-radius:50%;background:var(--accent-weak);color:var(--accent);transition:background .25s,color .25s}
 .conn-bt{width:24px;height:24px;position:relative;z-index:1}
 .conn-ring{position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--accent);opacity:0}
@@ -1639,6 +1640,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
 <!-- Devices modal (opened from the header gear) -->
 <div class="modal" id="connModal" hidden>
   <div class="modal-card card connect-card connecting" id="connCard" role="dialog" aria-modal="true" aria-labelledby="connName">
+    <button type="button" class="mclose connx" id="connClose" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button>
     <div class="conn-badge" aria-hidden="true">
       <span class="conn-ring"></span><span class="conn-ring"></span><span class="conn-ring"></span>
       <svg class="conn-bt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/></svg>
@@ -2641,6 +2643,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
       }).catch(function(){ setConnState('err','Couldn’t connect. Is the printer on and in range?'); connRetry.hidden=false; });
     }
     connDismiss.addEventListener('click', closeConn);
+    document.getElementById('connClose').addEventListener('click', closeConn);
+    connModal.addEventListener('click', function(e){ if(e.target===connModal) closeConn(); });
+    document.addEventListener('keydown', function(e){ if(e.key==='Escape' && !connModal.hidden) closeConn(); });
     connRetry.addEventListener('click', function(){ if(connTarget) ensureConnected(connTarget); });
 
     // ---- Niimbot label composer (in the Print tab) --------------------------
