@@ -26,11 +26,11 @@ Design constraint (see design.md §2): **tack renders templates single-pass and 
 
 ## 4. web-ui: Print-tab printer selector
 
-- [ ] 4.1 Add a server route that lists CUPS queues via `lpstat` with friendly names from `_printer_name()`; include which is the configured default
-- [ ] 4.2 Add a `<select>` to the Print tab populated from that route; default to the configured default and remember the choice in the browser (like the nudge offsets)
-- [ ] 4.3 Change `do_print` to accept the chosen `queue` and `lp -d <queue>`; `PRINT_QUEUE` becomes the fallback default; confirmation reports the queue used
-- [ ] 4.4 If more than one scanner is configured, add the analogous (minimal) scanner picker to the Scan tab; otherwise omit it
-- [ ] 4.5 Update `scan-web-config.yaml.j2` so print/scan defaults come from the lists (default queue, default scanner + its mode/res)
+- [x] 4.1 Server route `/print/queues` lists CUPS queues via `cups_devices()`/`lpstat` with friendly names from `_printer_name()` + a `default` flag — verified: returns `{queue:DCP1511, name:"Brother DCP-1510", default:true}`
+- [x] 4.2 `<select id="printQueue">` on the Print tab, populated from that route, remembers the choice in `localStorage`, and hides when there is only one queue (single queue needs no choice)
+- [x] 4.3 `do_print` accepts the chosen `queue`, validates it against the real queues (rejects unknown — verified) and `lp -d <queue>`; `PRINT_QUEUE` is the fallback; confirmation reports the queue used
+- [ ] 4.4 If more than one scanner is configured, add the analogous (minimal) scanner picker to the Scan tab; otherwise omit it  _(deferred — depends on Group 3 `scanners:` config)_
+- [x] 4.5 Default queue comes from config (`scan_web_print_queue` = the selector's pre-selected default); no config template change needed for the print side. Scanner default deferred with Group 3.
 
 ## 5. Docs
 

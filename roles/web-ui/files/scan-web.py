@@ -405,6 +405,14 @@ def run_scan(mode, resolution, name=""):
 def do_print(obj):
     if not PRINT_ENABLED:
         raise RuntimeError("Printing is disabled")
+    # Target queue: the one picked in the Print tab (validated against the real
+    # CUPS queues so we never pass an arbitrary -d), else the configured default.
+    queue = PRINT_QUEUE
+    req_q = (obj.get("queue") or "").strip()
+    if req_q and req_q != PRINT_QUEUE:
+        if req_q not in {q["queue"] for q in print_queues()}:
+            raise RuntimeError("Unknown printer: %s" % req_q)
+        queue = req_q
     tpl = TEMPLATES_BY_ID.get(obj.get("template"))
     if not tpl:
         raise RuntimeError("Unknown label sheet")
@@ -466,8 +474,8 @@ def do_print(obj):
         pdf = os.path.join(tmp, "labels.pdf")
         with _print_lock:
             build_label_pdf(tpl, cell_content, cal, scale, pdf)
-            job = _submit_lp(pdf)
-        return {"queue": PRINT_QUEUE, "job": job, "count": len(cell_content)}
+            job = _submit_lp(pdf, queue)
+        return {"queue": queue, "job": job, "count": len(cell_content)}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -590,8 +598,8 @@ def _draw_text(c, text, bx, by, bw, bh, pad, scale):
             c.drawCentredString(cx, cy + ((n - 1) / 2.0 - i) * leading - 0.35 * size, ln)
 
 
-def _submit_lp(pdf_path):
-    cmd = ["lp", "-d", PRINT_QUEUE, "-o", "media=A4", "-o", "fit-to-page=false", pdf_path]
+def _submit_lp(pdf_path, queue=None):
+    cmd = ["lp", "-d", queue or PRINT_QUEUE, "-o", "media=A4", "-o", "fit-to-page=false", pdf_path]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if proc.returncode != 0:
         msg = (proc.stderr or proc.stdout or "lp failed").strip()
@@ -711,6 +719,17 @@ def cups_devices():
                      "name": _printer_name(name, u), "status": status,
                      "forgettable": True, "detail": u[:60]})
     return rows
+
+
+def print_queues():
+    """CUPS queues for the Print-tab selector: [{queue, name, default}], with a
+    friendly brand+model name. Reuses the Devices-tab CUPS enumeration."""
+    out = []
+    for r in cups_devices():
+        if r.get("kind") == "printer" and r.get("id"):
+            out.append({"queue": r["id"], "name": r["name"],
+                        "default": r["id"] == PRINT_QUEUE})
+    return out
 
 
 def _scanner_key(desc):
@@ -983,6 +1002,9 @@ class Handler(BaseHTTPRequestHandler):
                                  "printers": [], "active": None, "adapter": False})
         elif path == "/templates":
             self._json(200, {"templates": LABEL_TEMPLATES})
+        elif path == "/print/queues":
+            self._json(200, {"queues": print_queues() if PRINT_ENABLED else [],
+                             "default": PRINT_QUEUE})
         elif path.startswith("/file/"):
             self._serve_pdf(urllib.parse.unquote(path[len("/file/"):]))
         elif path.startswith("/thumb/"):
@@ -1454,6 +1476,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
       <!-- A4 / CUPS sheet composer -->
       <div id="a4Composer">
+        <div class="controls" id="pqRow" hidden>
+          <label class="field"><span class="lbl">Printer</span>
+            <select id="printQueue"></select></label>
+        </div>
         <div class="controls tplrow">
           <label class="field"><span class="lbl">Label sheet</span>
             <select id="tpl">__PRINT_TEMPLATE_OPTS__</select></label>
@@ -1963,6 +1989,29 @@ input[type=number]{font-variant-numeric:tabular-nums}
       renderSheet(); updateUI();
     });
 
+    // Printer selector: list CUPS queues, remember the choice, hide when there's
+    // only one (nothing to pick). The chosen queue rides along in the print body.
+    var printQueueSel=document.getElementById('printQueue'), pqRow=document.getElementById('pqRow');
+    function loadPrintQueues(){
+      if(!printQueueSel) return;
+      fetch('/print/queues').then(function(r){return r.json();}).then(function(d){
+        var qs=(d&&d.queues)||[]; if(!qs.length){ pqRow.hidden=true; return; }
+        var saved=''; try{ saved=localStorage.getItem('pm_queue')||''; }catch(e){}
+        if(saved && !qs.some(function(q){return q.queue===saved;})) saved='';   // stale
+        printQueueSel.innerHTML='';
+        qs.forEach(function(q){
+          var o=document.createElement('option'); o.value=q.queue;
+          o.textContent=q.name+(q.queue!==q.name?(' ('+q.queue+')'):'');
+          if(q.queue===saved || (!saved && q.default)) o.selected=true;
+          printQueueSel.appendChild(o);
+        });
+        pqRow.hidden = qs.length<2;
+      }).catch(function(){ pqRow.hidden=true; });
+    }
+    if(printQueueSel) printQueueSel.addEventListener('change',function(){
+      try{ localStorage.setItem('pm_queue',printQueueSel.value); }catch(e){} });
+    loadPrintQueues();
+
     printBtn.addEventListener('click',function(){
       if(printBtn.disabled) return;
       var keys=Object.keys(cellContent); if(!keys.length) return;
@@ -1975,6 +2024,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
                  : {mode:'text', text:cc.text};
       });
       var body={template:curTpl().id, calX:0, calY:0, fontScale:0.9, cells:cells};
+      if(printQueueSel && printQueueSel.value) body.queue=printQueueSel.value;
       var ctrl=new AbortController(), to=setTimeout(function(){ ctrl.abort(); }, 60000);
       fetch('/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctrl.signal})
         .then(function(r){return r.json();})
