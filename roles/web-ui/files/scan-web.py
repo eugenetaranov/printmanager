@@ -1683,16 +1683,18 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .pgrange-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .pgrange-val{font:600 13px var(--mono);color:var(--text)}
 .pgrange-tot{color:var(--faint);font-weight:500}
-.dualrange{position:relative;height:26px}
-/* rail inset by half a thumb (9px) so the fill aligns with the thumb centers */
+/* Fully JS-positioned dual-range: rail, fill, and both handles share one
+   coordinate system (px offsets in the container), so they can't drift apart
+   the way native <input type=range> thumb geometry did across browsers. */
+.dualrange{position:relative;height:26px;touch-action:none;-webkit-user-select:none;user-select:none}
 .dr-rail{position:absolute;top:11px;left:9px;right:9px;height:4px;border-radius:2px;background:var(--border)}
-.dr-fill{position:absolute;top:0;bottom:0;border-radius:2px;background:var(--accent)}
-.dr-thumb{position:absolute;top:0;left:0;width:100%;height:26px;margin:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none}
-.dr-thumb::-webkit-slider-runnable-track{background:none;border:none}
-.dr-thumb::-moz-range-track{background:none;border:none}
-.dr-thumb::-webkit-slider-thumb{-webkit-appearance:none;box-sizing:border-box;pointer-events:auto;width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.28);cursor:grab}
-.dr-thumb::-moz-range-thumb{box-sizing:border-box;pointer-events:auto;width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.28);cursor:grab}
-.dr-thumb:focus-visible::-webkit-slider-thumb{outline:2px solid var(--accent);outline-offset:2px}
+.dr-fill{position:absolute;top:11px;height:4px;border-radius:2px;background:var(--accent)}
+.dr-h{position:absolute;top:4px;width:18px;height:18px;box-sizing:border-box;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.28);cursor:grab;touch-action:none;transition:box-shadow .12s ease,transform .12s ease}
+.dr-h::before{content:"";position:absolute;inset:-10px}   /* enlarge the touch/click target beyond the 18px dot */
+.dr-h:hover{box-shadow:0 1px 3px rgba(0,0,0,.28),0 0 0 6px var(--accent-weak)}
+.dr-h:active{cursor:grabbing;transform:scale(1.12);box-shadow:0 2px 6px rgba(0,0,0,.3),0 0 0 6px var(--accent-weak)}
+@media (prefers-reduced-motion:reduce){.dr-h{transition:none}.dr-h:active{transform:none}}
+.dr-h:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #niimSize{min-height:16px}   /* reserve the line so setting the size text doesn't shift layout */
 .adv{margin:6px 0 16px}
 .adv summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding:8px 0;list-style:none}
@@ -2011,9 +2013,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
           <span class="pgrange-val"><span id="docPgFrom">1</span>–<span id="docPgTo">1</span> <span class="pgrange-tot">of <span id="docPgTotal">1</span></span></span>
         </div>
         <div class="dualrange" id="docSlider">
-          <div class="dr-rail"><div class="dr-fill" id="docFill"></div></div>
-          <input type="range" class="dr-thumb" id="docFrom" min="1" max="1" value="1" aria-label="First page">
-          <input type="range" class="dr-thumb" id="docTo" min="1" max="1" value="1" aria-label="Last page">
+          <div class="dr-rail"></div>
+          <div class="dr-fill" id="docFill"></div>
+          <div class="dr-h" id="docFrom" tabindex="0" role="slider" aria-label="First page"></div>
+          <div class="dr-h" id="docTo" tabindex="0" role="slider" aria-label="Last page"></div>
         </div>
       </div>
 
@@ -2718,20 +2721,55 @@ input[type=number]{font-variant-numeric:tabular-nums}
       }).catch(function(){ qsel.innerHTML='<option value="">No printer available</option>'; qrow.hidden=true; });
     }
     duplex.addEventListener('click',function(){ var on=duplex.getAttribute('aria-checked')!=='true'; duplex.setAttribute('aria-checked', on?'true':'false'); sides = on?'two':'one'; });
-    // Dual-handle page-range slider (two overlaid range inputs + a fill).
-    function renderRange(){
-      var a=parseInt(fromSl.value,10)||1, b=parseInt(toSl.value,10)||1;
-      var lo=Math.min(a,b), hi=Math.max(a,b), span=(pageCount>1)?(pageCount-1):1;
-      fillEl.style.left=((lo-1)/span*100)+'%'; fillEl.style.width=((hi-lo)/span*100)+'%';
+    // Dual-handle page-range slider. Handles + fill are positioned in px by JS
+    // from a single coordinate system, so they can't drift apart the way native
+    // <input type=range> thumb geometry did (it disagreed across browsers).
+    var slider=document.getElementById('docSlider'), valFrom=1, valTo=1;
+    function trackW(){ return Math.max(0, slider.clientWidth-18); } // center travel (9px inset per end)
+    function frac(v){ return (pageCount>1)?((v-1)/(pageCount-1)):0; }
+    function layout(){
+      var w=trackW(), lo=Math.min(valFrom,valTo), hi=Math.max(valFrom,valTo);
+      fromSl.style.left=(frac(valFrom)*w)+'px';   // handle left edge; its center sits +9px in
+      toSl.style.left=(frac(valTo)*w)+'px';
+      var cLo=9+frac(lo)*w, cHi=9+frac(hi)*w;
+      fillEl.style.left=cLo+'px'; fillEl.style.width=Math.max(0,cHi-cLo)+'px';
       pgFromEl.textContent=lo; pgToEl.textContent=hi;
+      fromSl.setAttribute('aria-valuenow',valFrom); toSl.setAttribute('aria-valuenow',valTo);
     }
-    fromSl.addEventListener('input',renderRange); toSl.addEventListener('input',renderRange);
+    function valAt(clientX){
+      var r=slider.getBoundingClientRect(), w=trackW();
+      var f=(w>0)?((clientX-r.left-9)/w):0; f=Math.max(0,Math.min(1,f));
+      return Math.round(f*(pageCount-1))+1;
+    }
+    function bindHandle(h, which){
+      h.addEventListener('pointerdown',function(e){
+        e.preventDefault(); h.focus(); h.setPointerCapture(e.pointerId);
+        function move(ev){ var v=valAt(ev.clientX); if(which==='from')valFrom=v; else valTo=v; layout(); }
+        function up(){ h.releasePointerCapture(e.pointerId); h.removeEventListener('pointermove',move); h.removeEventListener('pointerup',up); }
+        h.addEventListener('pointermove',move); h.addEventListener('pointerup',up);
+      });
+      h.addEventListener('keydown',function(e){
+        var cur=(which==='from')?valFrom:valTo, nv=cur;
+        if(e.key==='ArrowLeft'||e.key==='ArrowDown') nv=cur-1;
+        else if(e.key==='ArrowRight'||e.key==='ArrowUp') nv=cur+1;
+        else if(e.key==='Home') nv=1;
+        else if(e.key==='End') nv=pageCount;
+        else return;
+        e.preventDefault(); nv=Math.max(1,Math.min(pageCount,nv));
+        if(which==='from')valFrom=nv; else valTo=nv; layout();
+      });
+    }
+    bindHandle(fromSl,'from'); bindHandle(toSl,'to');
+    window.addEventListener('resize',function(){ if(!rangeBox.hidden) layout(); });
     function setupRange(pages){
       pageCount=pages;
-      if(pages>1){ fromSl.min=toSl.min=1; fromSl.max=toSl.max=pages; fromSl.value=1; toSl.value=pages; pgTotEl.textContent=pages; rangeBox.hidden=false; renderRange(); }
+      if(pages>1){ valFrom=1; valTo=pages;
+        fromSl.setAttribute('aria-valuemin',1); fromSl.setAttribute('aria-valuemax',pages);
+        toSl.setAttribute('aria-valuemin',1); toSl.setAttribute('aria-valuemax',pages);
+        pgTotEl.textContent=pages; rangeBox.hidden=false; layout(); }
       else rangeBox.hidden=true;
     }
-    function currentRange(){ var a=parseInt(fromSl.value,10)||1, b=parseInt(toSl.value,10)||1; return {from:Math.min(a,b), to:Math.max(a,b)}; }
+    function currentRange(){ return {from:Math.min(valFrom,valTo), to:Math.max(valFrom,valTo)}; }
     function update(){ printBtn.disabled = dbusy || !docData || !flip.hidden; }
     function loadFile(f, nm){
       docData=null; srcToken=null; docName=nm||(f&&f.name)||'document'; chip.hidden=true; idle.hidden=false; rangeBox.hidden=true; note.textContent=''; update();
