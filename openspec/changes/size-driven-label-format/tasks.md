@@ -10,14 +10,15 @@ All changes are in `roles/web-ui/files/scan-web.py` (the inline HTML/JS app + Py
 - [x] 1.4 Extend `applyPrinter` → `applyFormat(f)`: `a4` shows grid + activates the template + sets the print queue target; `thermal` shows the label composer + `/niimbot/select` + seeds size inputs
 - [x] 1.5 Persist the last format (`pm_format`), replacing `pm_printer`/`pm_tpl`; preselect on load
 - [x] 1.6 Empty state: when `formatOptions()` is empty, show a "connect a printer" hint instead of a blank selector
+- [ ] 1.7 Move thermal roll-size editing to the Devices Niimbot card (removed the misplaced width/length inputs from the print composer; size now read-only there). _(follow-up — sizes are already remembered per printer)_
 
 ## 2. On-demand connect modal
 
-- [ ] 2.1 Build the connect modal (reuse the Devices-tab connect/status/log rendering): opens when a selected thermal format's Niimbot is disconnected; kicks off `/niimbot/connect` (or `/reconnect`) to the known address and polls `/niimbot/state`
-- [ ] 2.2 Live status: connecting → connected (auto-close, enable Print) / failed (retry + "scan for it" fallback)
-- [ ] 2.3 Non-blocking: a dismiss path that keeps the composer usable
-- [ ] 2.4 Print-time re-trigger: the Print button opens the same modal when the selected thermal printer is still offline, instead of failing
-- [ ] 2.5 Ensure A4 (CUPS) formats never open the modal (always ready)
+- [x] 2.1 Build the connect modal (reuse the Devices-tab connect/status/log rendering): opens when a selected thermal format's Niimbot is disconnected; kicks off `/niimbot/connect` (or `/reconnect`) to the known address and polls `/niimbot/state`
+- [x] 2.2 Live status: connecting → connected (auto-close, enable Print) / failed (retry + "scan for it" fallback)
+- [x] 2.3 Non-blocking: a dismiss path that keeps the composer usable
+- [x] 2.4 Print-time re-trigger: the Print button opens the same modal when the selected thermal printer is still offline, instead of failing
+- [x] 2.5 Ensure A4 (CUPS) formats never open the modal (always ready)
 
 ## 3. Label preview (text / image / QR)
 

@@ -1526,14 +1526,11 @@ input[type=number]{font-variant-numeric:tabular-nums}
         <button class="linkbtn subtle" id="clearSheetBtn" type="button" hidden>Clear sheet</button>
       </div>
 
-      <!-- Niimbot label composer (shown when a Niimbot printer is selected) -->
+      <!-- Niimbot label composer (shown when a Niimbot format is selected). The
+           label size is a physical property of the format/roll, not editable
+           here — it's shown read-only and changed in the Devices manager. -->
       <div id="labelComposer" hidden>
-        <div class="controls">
-          <label class="field"><span class="lbl">Label width <span class="opt">mm</span></span>
-            <input class="txt" id="niimW" type="number" min="5" max="120" step="1"></label>
-          <label class="field"><span class="lbl">Label length <span class="opt">mm</span></span>
-            <input class="txt" id="niimH" type="number" min="5" max="300" step="1"></label>
-        </div>
+        <p class="hint" id="niimSize"></p>
 
         <div class="seg" role="tablist" aria-label="Label content">
           <button type="button" class="seg-btn" id="nsegText" role="tab" aria-selected="true">Text</button>
@@ -1561,6 +1558,17 @@ input[type=number]{font-variant-numeric:tabular-nums}
 </div>
 
 <!-- Devices modal (opened from the header gear) -->
+<div class="modal" id="connModal" hidden>
+  <div class="modal-card card" role="dialog" aria-modal="true" aria-labelledby="connTitle">
+    <div class="modal-head"><h2 id="connTitle">Connect printer</h2></div>
+    <p class="note" id="connStatus">Connecting…</p>
+    <div class="buildacts">
+      <button class="scan" id="connRetry" type="button" hidden>Retry</button>
+      <button class="btn2" id="connDismiss" type="button">Compose anyway</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="devicesModal" hidden>
   <div class="modal-card card wide" role="dialog" aria-modal="true" aria-labelledby="devModalTitle">
     <div class="modal-head">
@@ -2207,7 +2215,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
     var noPrinters=document.getElementById('noPrinters');
     var scannerSel=document.getElementById('scannerSel'), scannerSelRow=document.getElementById('scannerSelRow');
     var a4C=document.getElementById('a4Composer'), labelC=document.getElementById('labelComposer');
-    var nW=document.getElementById('niimW'), nH=document.getElementById('niimH');
+    var niimSize=document.getElementById('niimSize');
+    var connModal=document.getElementById('connModal'), connTitle=document.getElementById('connTitle'),
+        connStatus=document.getElementById('connStatus'), connRetry=document.getElementById('connRetry'),
+        connDismiss=document.getElementById('connDismiss'), connTarget=null;
     var nText=document.getElementById('nText'), nFile=document.getElementById('nFile'), nPv=document.getElementById('nPv');
     var nTextLbl=document.getElementById('nTextLbl'), niimBtn=document.getElementById('niimPrint');
     var nsegText=document.getElementById('nsegText'), nsegImg=document.getElementById('nsegImg'), nsegQr=document.getElementById('nsegQr');
@@ -2484,7 +2495,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
       a4C.hidden = isNiim; labelC.hidden = !isNiim;
       pmQueue = isNiim ? '' : (o.queue||'');
       if(isNiim){
-        if(changed){ jpost('/niimbot/select',{address:o.address}); if(o.label_mm){ nW.value=o.label_mm[0]; nH.value=o.label_mm[1]; } }
+        if(changed){ jpost('/niimbot/select',{address:o.address}); }
+        niimSize.textContent = 'Label '+o.w+'×'+o.h+' mm — change the roll size in Devices';
         updateNiimBtn();
       } else {
         if(changed && tplSel.value!==o.tplId){ tplSel.value=o.tplId; sel=new Set(); cellContent={}; }
@@ -2493,8 +2505,28 @@ input[type=number]{font-variant-numeric:tabular-nums}
     }
     refreshFormats = syncSelectors;   // let the outer Manage flow rebuild the list
     formatSel.addEventListener('change',function(){
-      var o=formatOptions().filter(function(x){return x.v===formatSel.value;})[0]; if(o) applyFormat(o);
+      var o=formatOptions().filter(function(x){return x.v===formatSel.value;})[0];
+      if(o){ applyFormat(o); if(o.kind==='thermal' && !o.connected) ensureConnected(o); }
     });
+
+    // Connect an offline thermal printer on demand. The /niimbot/reconnect call
+    // blocks server-side until the link is up (or errors), so the modal shows
+    // "Connecting…" until it resolves. Non-blocking: "Compose anyway" dismisses.
+    function openConn(fmt){ connTarget=fmt; connTitle.textContent='Connect '+(fmt.label||'printer');
+      connStatus.className='note'; connStatus.textContent='Connecting to '+(fmt.label||fmt.address)+'…';
+      connRetry.hidden=true; connModal.hidden=false; }
+    function closeConn(){ connModal.hidden=true; connTarget=null; }
+    function ensureConnected(fmt, then){
+      if(fmt.connected){ then&&then(); return; }
+      openConn(fmt);
+      jpost('/niimbot/reconnect',{address:fmt.address}).then(function(r){
+        if(r && r.ok){ fmt.connected=true; loadNiim();
+          if(connTarget===fmt) closeConn(); if(then) then(); }
+        else { connStatus.className='note err'; connStatus.textContent=(r&&r.error)||'Could not connect.'; connRetry.hidden=false; }
+      }).catch(function(){ connStatus.className='note err'; connStatus.textContent='Could not connect.'; connRetry.hidden=false; });
+    }
+    connDismiss.addEventListener('click', closeConn);
+    connRetry.addEventListener('click', function(){ if(connTarget) ensureConnected(connTarget); });
 
     // ---- Niimbot label composer (in the Print tab) --------------------------
     function setKind(k){ kind=k;
@@ -2515,12 +2547,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
       if(!f) return updateNiimBtn();
       var rd=new FileReader(); rd.onload=function(){ var s=rd.result||''; imgB64=(s.split(',')[1]||''); nPv.src=s; nPv.hidden=false; updateNiimBtn(); }; rd.readAsDataURL(f);
     });
-    function saveSize(){ if(curPrinter && curPrinter.type==='niim') jpost('/niimbot/labelsize',{address:curPrinter.address,w:parseFloat(nW.value),h:parseFloat(nH.value)}); }
-    nW.addEventListener('change',saveSize); nH.addEventListener('change',saveSize);
     function hasContent(){ return kind==='image'? !!imgB64 : !!nText.value.trim(); }
     function updateNiimBtn(){ niimBtn.disabled = busy || !(curPrinter && curPrinter.type==='niim') || !hasContent(); }
-    niimBtn.addEventListener('click',function(){
-      if(busy||niimBtn.disabled) return; busy=true; niimBtn.disabled=true;
+    function doNiimPrint(){
+      busy=true; niimBtn.disabled=true;
       var old=niimBtn.textContent; niimBtn.textContent='Printing…'; setStatus('busy','Printing');
       pnote.className='note'; pnote.textContent='';
       var body={kind:kind,address:curPrinter.address};
@@ -2530,6 +2560,12 @@ input[type=number]{font-variant-numeric:tabular-nums}
         else { setStatus('error','Failed'); pnote.className='note err'; pnote.textContent=r.error||'Print failed.'; }
       }).catch(function(){ setStatus('error','Failed'); pnote.className='note err'; pnote.textContent='Print failed.'; })
         .finally(function(){ busy=false; niimBtn.textContent=old; updateNiimBtn(); });
+    }
+    niimBtn.addEventListener('click',function(){
+      if(busy||niimBtn.disabled) return;
+      // Connect on demand, then print — a selected-but-offline printer just works.
+      if(curPrinter && curPrinter.type==='niim' && !curPrinter.connected){ ensureConnected(curPrinter, doNiimPrint); return; }
+      doNiimPrint();
     });
 
     // Populate selectors on load (no modal needed).
