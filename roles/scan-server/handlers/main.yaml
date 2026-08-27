@@ -1,0 +1,7 @@
+# Restart AirSane so it re-enumerates SANE devices (e.g. after the airscan
+# backend is disabled) and re-advertises the correct single scanner.
+- name: Restart airsaned
+  systemd:
+    name: airsaned
+    state: restarted
+    daemon_reload: true

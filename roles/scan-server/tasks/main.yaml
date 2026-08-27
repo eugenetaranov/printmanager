@@ -96,6 +96,24 @@
     - { src: "host-dll.conf.j2", dest: "/etc/sane.d/dll.conf" }
     - { src: "host-net.conf.j2", dest: "/etc/sane.d/net.conf" }
 
+# The sane-airscan package drops /etc/sane.d/dll.d/airscan (enabling the airscan
+# backend), which discovers AirSane's own eSCL advertisement and causes the
+# scanner to be advertised twice over Bonjour. Disable it.
+- name: Ensure the SANE dll.d directory exists
+  file:
+    path: /etc/sane.d/dll.d
+    state: directory
+    mode: "0755"
+  when: airsane_enabled
+
+- name: Disable the sane-airscan backend (avoids an eSCL self-advertise loop with AirSane)
+  template:
+    src: dll-airscan-disabled.j2
+    dest: /etc/sane.d/dll.d/airscan
+    mode: "0644"
+  when: airsane_enabled
+  notify: Restart airsaned
+
 - name: Enable the chroot saned socket
   systemd:
     name: brscan-saned.socket

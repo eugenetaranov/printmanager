@@ -1,0 +1,9 @@
+# Managed by Tack — roles/scan-server. Overrides the sane-airscan package's
+# dll.d snippet to DISABLE the airscan backend.
+#
+# Why: this host runs AirSane as the eSCL *server*. If sane-airscan is enabled,
+# it discovers AirSane's own eSCL advertisement on the network and re-exports it
+# as a SANE device, so AirSane then advertises the scanner a SECOND time — the
+# scanner shows up twice over Bonjour. The real scanner is reached via the `net`
+# backend (the chroot brscan bridge), so airscan is redundant here.
+#airscan
