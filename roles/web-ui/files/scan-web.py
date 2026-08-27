@@ -1519,9 +1519,11 @@ input[type=number]{font-variant-numeric:tabular-nums}
            hardware for — A4 sheet templates + one entry per remembered Niimbot,
            by label size. Picking one selects the layout AND the device, and
            switches the composer below. Hidden only when there are no printers. -->
-      <div class="controls" id="formatSelRow" hidden>
+      <!-- Visible from first paint (with a placeholder) so the row reserves its
+           space and the page doesn't jump when the real formats load in. -->
+      <div class="controls" id="formatSelRow">
         <label class="field"><span class="lbl">Label format</span>
-          <select id="formatSel"></select></label>
+          <select id="formatSel"><option>Loading…</option></select></label>
       </div>
       <p class="note" id="noPrinters" hidden>No printers yet. Connect one from the Devices manager (gear icon).</p>
 
