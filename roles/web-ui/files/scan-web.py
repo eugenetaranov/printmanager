@@ -1684,13 +1684,14 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .pgrange-val{font:600 13px var(--mono);color:var(--text)}
 .pgrange-tot{color:var(--faint);font-weight:500}
 .dualrange{position:relative;height:26px}
-.dr-rail{position:absolute;top:11px;left:2px;right:2px;height:4px;border-radius:2px;background:var(--border)}
+/* rail inset by half a thumb (9px) so the fill aligns with the thumb centers */
+.dr-rail{position:absolute;top:11px;left:9px;right:9px;height:4px;border-radius:2px;background:var(--border)}
 .dr-fill{position:absolute;top:0;bottom:0;border-radius:2px;background:var(--accent)}
 .dr-thumb{position:absolute;top:0;left:0;width:100%;height:26px;margin:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none}
 .dr-thumb::-webkit-slider-runnable-track{background:none;border:none}
 .dr-thumb::-moz-range-track{background:none;border:none}
-.dr-thumb::-webkit-slider-thumb{-webkit-appearance:none;pointer-events:auto;width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.28);cursor:grab}
-.dr-thumb::-moz-range-thumb{pointer-events:auto;width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.28);cursor:grab}
+.dr-thumb::-webkit-slider-thumb{-webkit-appearance:none;box-sizing:border-box;pointer-events:auto;width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.28);cursor:grab}
+.dr-thumb::-moz-range-thumb{box-sizing:border-box;pointer-events:auto;width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.28);cursor:grab}
 .dr-thumb:focus-visible::-webkit-slider-thumb{outline:2px solid var(--accent);outline-offset:2px}
 #niimSize{min-height:16px}   /* reserve the line so setting the size text doesn't shift layout */
 .adv{margin:6px 0 16px}
