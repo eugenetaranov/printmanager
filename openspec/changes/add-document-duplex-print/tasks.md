@@ -11,18 +11,18 @@ Reuses existing primitives in `roles/web-ui/files/scan-web.py` (`_submit_lp`, `_
 
 ## 2. Duplex capability detection
 
-- [ ] 2.1 Add a helper that queries a queue's duplex capability via `lpoptions -p <q> -l` (PPD `Duplex` option, or IPP `sides` with real choices); return auto/none/unknown
-- [ ] 2.2 Cache the result per queue (at print time); default to "none/guided" on unknown
-- [ ] 2.3 Auto-duplex path: when the queue supports it and double-sided is requested, submit one job with `-o sides=two-sided-long-edge`; no flip step
+- [x] 2.1 Add a helper that queries a queue's duplex capability via `lpoptions -p <q> -l` (PPD `Duplex` option, or IPP `sides` with real choices); return auto/none/unknown
+- [x] 2.2 Cache the result per queue (at print time); default to "none/guided" on unknown
+- [x] 2.3 Auto-duplex path: when the queue supports it and double-sided is requested, submit one job with `-o sides=two-sided-long-edge`; no flip step
 
 ## 3. Guided manual duplex (simplex printers)
 
-- [ ] 3.1 Even-count pad: append one blank A4 page (reportlab) when the page count is odd, positioned so the blank is the back of the last sheet
-- [ ] 3.2 Split into odd/even halves with poppler (`pdfseparate` → `pdfunite`), with the half's page order controlled by a per-printer constant (`duplex_even_order`, `duplex_flip_edge`)
-- [ ] 3.3 Two-phase job store: `token → {tempdir, created}` in-memory map; `POST /document/print` prints the first half and returns `{token, step:"flip", instruction}` without deleting the tempdir
-- [ ] 3.4 `POST /document/continue?token=…`: submit the second half from the stored tempdir, then clean up; `POST /document/cancel` discards
-- [ ] 3.5 TTL reaper for tokens older than ~30 min (browser-close/refresh/restart orphans)
-- [ ] 3.6 UI flip step: after the first half, show the printer-specific flip-and-reload instruction (generated from the same constant) + Continue/Cancel; then report completion
+- [x] 3.1 Even-count pad: append one blank A4 page (reportlab) when the page count is odd, positioned so the blank is the back of the last sheet
+- [x] 3.2 Split into odd/even halves with poppler (`pdfseparate` → `pdfunite`), with the half's page order controlled by a per-printer constant (`duplex_even_order`, `duplex_flip_edge`)
+- [x] 3.3 Two-phase job store: `token → {tempdir, created}` in-memory map; `POST /document/print` prints the first half and returns `{token, step:"flip", instruction}` without deleting the tempdir
+- [x] 3.4 `POST /document/continue?token=…`: submit the second half from the stored tempdir, then clean up; `POST /document/cancel` discards
+- [x] 3.5 TTL reaper for tokens older than ~30 min (browser-close/refresh/restart orphans)
+- [x] 3.6 UI flip step: after the first half, show the printer-specific flip-and-reload instruction (generated from the same constant) + Continue/Cancel; then report completion
 
 ## 4. Calibrate the flip/order constant (needs the real printer + user)
 

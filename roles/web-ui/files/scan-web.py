@@ -73,6 +73,8 @@ PRINT_QUEUE = _cfg("print_queue", "SCAN_WEB_PRINT_QUEUE", "DCP1511")
 
 DEVICES_ENABLED = _cfg_bool("devices_enabled", "SCAN_WEB_DEVICES_ENABLED", "true")
 DOCUMENT_ENABLED = _cfg_bool("document_enabled", "SCAN_WEB_DOCUMENT_ENABLED", "true")
+DUPLEX_FLIP_EDGE = _cfg("duplex_flip_edge", "SCAN_WEB_DUPLEX_FLIP_EDGE", "long")
+DUPLEX_EVEN_REVERSE = _cfg_bool("duplex_even_reverse", "SCAN_WEB_DUPLEX_EVEN_REVERSE", "true")
 
 # The Niimbot module reads its store dir from SCAN_WEB_DATA; keep it in sync with
 # the resolved config so both agree when config comes from the YAML file.
@@ -582,8 +584,12 @@ def _draw_text(c, text, bx, by, bw, bh, pad, scale):
             c.drawCentredString(cx, cy + ((n - 1) / 2.0 - i) * leading - 0.35 * size, ln)
 
 
-def _submit_lp(pdf_path, queue=None):
-    cmd = ["lp", "-d", queue or PRINT_QUEUE, "-o", "media=A4", "-o", "fit-to-page=false", pdf_path]
+def _submit_lp(pdf_path, queue=None, duplex=False):
+    cmd = ["lp", "-d", queue or PRINT_QUEUE, "-o", "media=A4", "-o", "fit-to-page=false"]
+    if duplex:
+        cmd += ["-o", "sides=two-sided-long-edge" if DUPLEX_FLIP_EDGE == "long"
+                else "sides=two-sided-short-edge"]
+    cmd.append(pdf_path)
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if proc.returncode != 0:
         msg = (proc.stderr or proc.stdout or "lp failed").strip()
@@ -603,36 +609,193 @@ def _doc_target_queue(obj):
     return PRINT_QUEUE
 
 
-def _read_doc_pdf(obj, tmp):
-    """Decode + validate the uploaded PDF into tmp/doc.pdf; return (path, pages)."""
+def _text_to_pdf(text, out):
+    """Render plain text to a simple monospace A4 PDF (wrapped, multi-page)."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    W, H = A4
+    margin, fs, lh = 42, 10, 13
+    maxchars = max(20, int((W - 2 * margin) / (fs * 0.6)))
+    c = canvas.Canvas(out, pagesize=A4)
+    c.setFont("Courier", fs)
+    y = H - margin
+    for raw in (text.replace("\t", "    ").splitlines() or [""]):
+        for ch in ([raw[i:i + maxchars] for i in range(0, len(raw), maxchars)] or [""]):
+            if y < margin:
+                c.showPage(); c.setFont("Courier", fs); y = H - margin
+            c.drawString(margin, y, ch)
+            y -= lh
+    c.showPage(); c.save()
+
+
+def _to_pdf(obj, tmp):
+    """Turn the uploaded file (PDF / image / text) into a PDF at tmp/doc.pdf and
+    return (path, pages). Office docs need LibreOffice (not installed) — the user
+    is asked to export to PDF instead."""
     data = base64.b64decode(obj.get("dataB64") or "")
-    if not data or data[:4] != b"%PDF":
-        raise RuntimeError("Please choose a PDF file")
+    if not data:
+        raise RuntimeError("Please choose a file")
     if len(data) > 60 * 1024 * 1024:
-        raise RuntimeError("PDF too large (max 60 MB)")
+        raise RuntimeError("File too large (max 60 MB)")
+    name = (obj.get("filename") or "").lower()
     pdf = os.path.join(tmp, "doc.pdf")
-    with open(pdf, "wb") as f:
-        f.write(data)
+    is_img = (data[:8] == b"\x89PNG\r\n\x1a\n" or data[:3] == b"\xff\xd8\xff"
+              or data[:6] in (b"GIF87a", b"GIF89a") or data[:2] == b"BM"
+              or (data[:4] == b"RIFF" and data[8:12] == b"WEBP"))
+    if data[:4] == b"%PDF":
+        with open(pdf, "wb") as f:
+            f.write(data)
+    elif is_img:
+        src = os.path.join(tmp, "img")
+        with open(src, "wb") as f:
+            f.write(data)
+        subprocess.run(["img2pdf", src, "-o", pdf], check=True, timeout=30)
+    elif data[:4] == b"PK\x03\x04" or name.endswith((".doc", ".docx", ".odt", ".rtf",
+                                                      ".ppt", ".pptx", ".xls", ".xlsx")):
+        raise RuntimeError("Office documents aren't supported here — export to PDF and print that.")
+    else:
+        try:
+            text = data.decode("utf-8", "replace")
+        except Exception:
+            raise RuntimeError("Unsupported file — use a PDF, an image, or a text file.")
+        _text_to_pdf(text, pdf)
     pages = _pdf_page_count(pdf)
     if pages < 1:
-        raise RuntimeError("Could not read the PDF")
+        raise RuntimeError("Could not read the file")
     if pages > 200:
-        raise RuntimeError("PDF has too many pages (max 200)")
+        raise RuntimeError("Document has too many pages (max 200)")
     return pdf, pages
 
 
+# --- Duplex ------------------------------------------------------------------
+_dup_cap_cache = {}
+
+
+def _queue_duplex(queue):
+    """'auto' if the queue supports automatic duplex, else 'none'. Cached."""
+    if queue in _dup_cap_cache:
+        return _dup_cap_cache[queue]
+    cap = "none"
+    try:
+        p = subprocess.run(["lpoptions", "-p", queue, "-l"],
+                           capture_output=True, text=True, timeout=15)
+        for line in (p.stdout or "").splitlines():
+            head, _, rest = line.partition(":")
+            if head.split("/", 1)[0].strip().lower() in ("duplex", "sides"):
+                choices = rest.replace("*", "").split()
+                if any(c.lower() in ("duplexnotumble", "duplextumble",
+                                     "two-sided-long-edge", "two-sided-short-edge")
+                       for c in choices):
+                    cap = "auto"
+                break
+    except Exception:
+        cap = "none"
+    _dup_cap_cache[queue] = cap
+    return cap
+
+
+def _pad_even(pdf, tmp, pages):
+    """Append one blank A4 page when the count is odd (the blank is the back of
+    the last sheet), so odd/even halves align."""
+    if pages % 2 == 0:
+        return pdf, pages
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    blank = os.path.join(tmp, "blank.pdf")
+    c = canvas.Canvas(blank, pagesize=A4); c.showPage(); c.save()
+    out = os.path.join(tmp, "padded.pdf")
+    subprocess.run(["pdfunite", pdf, blank, out], check=True, timeout=30)
+    return out, pages + 1
+
+
+def _split_halves(pdf, tmp, pages, even_reverse):
+    """Split into odd (front) and even (back) half PDFs via poppler."""
+    subprocess.run(["pdfseparate", pdf, os.path.join(tmp, "pg-%d.pdf")], check=True, timeout=30)
+    pg = lambda i: os.path.join(tmp, "pg-%d.pdf" % i)
+    odd = [pg(i) for i in range(1, pages + 1, 2)]
+    even = [pg(i) for i in range(2, pages + 1, 2)]
+    if even_reverse:
+        even.reverse()
+    odd_pdf, even_pdf = os.path.join(tmp, "odd.pdf"), os.path.join(tmp, "even.pdf")
+    subprocess.run(["pdfunite"] + odd + [odd_pdf], check=True, timeout=30)
+    subprocess.run(["pdfunite"] + even + [even_pdf], check=True, timeout=30)
+    return odd_pdf, even_pdf
+
+
+def _flip_instruction():
+    edge = "long edge" if DUPLEX_FLIP_EDGE == "long" else "short edge"
+    return ("Take the printed pages from the output tray, flip the whole stack over "
+            "along the %s, and put it back in the paper tray — then Continue." % edge)
+
+
+_duplex_jobs = {}
+_duplex_lock = threading.Lock()
+
+
+def _new_token():
+    return base64.urlsafe_b64encode(os.urandom(9)).decode().rstrip("=")
+
+
+def _sweep_duplex():
+    now = time.monotonic()
+    with _duplex_lock:
+        for t in [t for t, j in _duplex_jobs.items() if now - j["ts"] > 1800]:
+            shutil.rmtree(_duplex_jobs.pop(t)["dir"], ignore_errors=True)
+
+
 def do_document(obj):
-    """Print an uploaded PDF to a chosen A4 CUPS queue (single-sided)."""
+    """Print an uploaded file (PDF/image/text) to a chosen A4 CUPS queue. Single-
+    sided, or double-sided: one job on an auto-duplex queue, else a guided
+    two-phase manual flip."""
     if not DOCUMENT_ENABLED:
         raise RuntimeError("Document printing is disabled")
     queue = _doc_target_queue(obj)
+    two = (obj.get("sides") == "two")
     tmp = tempfile.mkdtemp(prefix="doc-")
+    keep = False
     try:
-        pdf, pages = _read_doc_pdf(obj, tmp)
-        job = _submit_lp(pdf, queue)
-        return {"queue": queue, "job": job, "pages": pages}
+        pdf, pages = _to_pdf(obj, tmp)
+        if not two:
+            return {"queue": queue, "job": _submit_lp(pdf, queue), "pages": pages, "done": True}
+        if _queue_duplex(queue) == "auto":
+            return {"queue": queue, "job": _submit_lp(pdf, queue, duplex=True),
+                    "pages": pages, "done": True, "duplex": "auto"}
+        # Guided manual duplex on a simplex printer: print the front half now,
+        # keep the back half for after the user flips the stack.
+        pdf, pages = _pad_even(pdf, tmp, pages)
+        odd_pdf, even_pdf = _split_halves(pdf, tmp, pages, DUPLEX_EVEN_REVERSE)
+        _submit_lp(odd_pdf, queue)
+        _sweep_duplex()
+        token = _new_token()
+        with _duplex_lock:
+            _duplex_jobs[token] = {"dir": tmp, "even": even_pdf, "queue": queue, "ts": time.monotonic()}
+        keep = True
+        return {"queue": queue, "pages": pages, "step": "flip", "token": token,
+                "instruction": _flip_instruction()}
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        if not keep:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+def do_document_continue(obj):
+    """Print the back (even) half after the user flipped the stack."""
+    _sweep_duplex()
+    with _duplex_lock:
+        job = _duplex_jobs.pop((obj.get("token") or ""), None)
+    if not job:
+        raise RuntimeError("This print expired — start over.")
+    try:
+        return {"queue": job["queue"], "job": _submit_lp(job["even"], job["queue"]), "done": True}
+    finally:
+        shutil.rmtree(job["dir"], ignore_errors=True)
+
+
+def do_document_cancel(obj):
+    with _duplex_lock:
+        job = _duplex_jobs.pop((obj.get("token") or ""), None)
+    if job:
+        shutil.rmtree(job["dir"], ignore_errors=True)
+    return {"ok": True}
 
 
 def mode_options(default):
@@ -1167,10 +1330,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"ok": False, "error": "The printer did not respond in time."})
             except Exception as e:
                 return self._json(200, {"ok": False, "error": str(e)})
-        if path == "/document/print":
+        if path in ("/document/print", "/document/continue", "/document/cancel"):
             obj = self._json_body()
+            fn = {"/document/print": do_document, "/document/continue": do_document_continue,
+                  "/document/cancel": do_document_cancel}[path]
             try:
-                return self._json(200, dict(do_document(obj), ok=True))
+                return self._json(200, dict(fn(obj), ok=True))
             except subprocess.TimeoutExpired:
                 return self._json(200, {"ok": False, "error": "The printer did not respond in time."})
             except Exception as e:
@@ -1419,6 +1584,8 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .lblprev-frame{display:inline-block;margin-top:6px;padding:7px;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow)}
 .lblprev-frame img{display:block;max-height:150px;max-width:100%;image-rendering:pixelated;border-radius:2px}
 .filepdf{width:88px;height:88px;display:grid;place-items:center;font:600 13px var(--mono);color:var(--muted);background:var(--surface)}
+.flipbox{margin-top:14px;padding:14px 16px;border:1px solid var(--accent);background:var(--accent-weak);border-radius:12px}
+.flipmsg{margin:0 0 12px;font:500 13.5px/1.5 var(--sans);color:var(--text)}
 #niimSize{min-height:16px}   /* reserve the line so setting the size text doesn't shift layout */
 .adv{margin:6px 0 16px}
 .adv summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding:8px 0;list-style:none}
@@ -1714,13 +1881,27 @@ input[type=number]{font-variant-numeric:tabular-nums}
   <!-- Document / duplex printing -->
   <section class="tab-panel__DOC_ACTIVE__" id="tab-document" role="tabpanel" aria-labelledby="tabDocBtn"__DOC_HIDDEN__>
     <div class="card">
-      <div class="controls tplrow">
+      <div class="controls tplrow" id="docQueueRow" hidden>
         <label class="field"><span class="lbl">Printer</span>
           <select id="docQueue"><option>Loading…</option></select></label>
       </div>
-      <label class="field"><span class="lbl">PDF document</span>
-        <input class="filein" id="docFile" type="file" accept="application/pdf"></label>
+      <label class="field"><span class="lbl">Document <span class="opt">PDF, image, or text</span></span>
+        <input class="filein" id="docFile" type="file" accept="application/pdf,image/*,text/plain,.txt"></label>
       <div class="chip" id="docChip" hidden><span id="docName"></span><button type="button" id="docClear" aria-label="Remove file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button></div>
+      <div class="hint">Tip: paste an image with ⌘V / Ctrl+V</div>
+
+      <div class="seg" role="tablist" aria-label="Sides" id="docSides">
+        <button type="button" class="seg-btn" id="docSideOne" role="tab" aria-selected="true">Single-sided</button>
+        <button type="button" class="seg-btn" id="docSideTwo" role="tab" aria-selected="false">Double-sided</button>
+      </div>
+
+      <div id="docFlip" class="flipbox" hidden>
+        <p id="docFlipMsg" class="flipmsg"></p>
+        <div class="buildacts">
+          <button class="scan" id="docContinue" type="button">Continue</button>
+          <button class="btn2" id="docFlipCancel" type="button">Cancel</button>
+        </div>
+      </div>
 
       <hr class="pdiv">
       <button class="scan" id="docPrint" type="button" disabled>Print</button>
@@ -2390,35 +2571,61 @@ input[type=number]{font-variant-numeric:tabular-nums}
   (function(){
     var printBtn=document.getElementById('docPrint');
     if(!printBtn) return;   // document tab disabled
-    var qsel=document.getElementById('docQueue'), file=document.getElementById('docFile');
-    var chip=document.getElementById('docChip'), nameEl=document.getElementById('docName'), clear=document.getElementById('docClear');
-    var note=document.getElementById('docNote');
-    var docData=null, dbusy=false;
+    var qsel=document.getElementById('docQueue'), qrow=document.getElementById('docQueueRow');
+    var file=document.getElementById('docFile'), chip=document.getElementById('docChip');
+    var nameEl=document.getElementById('docName'), clear=document.getElementById('docClear'), note=document.getElementById('docNote');
+    var sideOne=document.getElementById('docSideOne'), sideTwo=document.getElementById('docSideTwo');
+    var flip=document.getElementById('docFlip'), flipMsg=document.getElementById('docFlipMsg');
+    var contBtn=document.getElementById('docContinue'), flipCancel=document.getElementById('docFlipCancel');
+    var docData=null, docName='', sides='one', token=null, dbusy=false;
     function jp(url, body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json();}); }
     function loadQueues(){
       fetch('/print/queues').then(function(r){return r.json();}).then(function(d){
-        var qs=(d&&d.queues)||[]; var def=d&&d.default||'';
-        if(!qs.length){ qsel.innerHTML='<option value="">No printer available</option>'; return; }
+        var qs=(d&&d.queues)||[]; var def=(d&&d.default)||'';
+        if(!qs.length){ qsel.innerHTML='<option value="">No printer available</option>'; qrow.hidden=true; return; }
         qsel.innerHTML=qs.map(function(q){ return '<option value="'+esc(q.queue)+'"'+(q.queue===def?' selected':'')+'>'+esc(q.name)+(q.queue!==q.name?(' ('+esc(q.queue)+')'):'')+'</option>'; }).join('');
-      }).catch(function(){ qsel.innerHTML='<option value="">No printer available</option>'; });
+        qrow.hidden = qs.length<2;   // hide the picker when there's only one printer
+      }).catch(function(){ qsel.innerHTML='<option value="">No printer available</option>'; qrow.hidden=true; });
     }
-    function update(){ printBtn.disabled = dbusy || !docData; }
-    file.addEventListener('change',function(){
-      var f=file.files&&file.files[0]; docData=null; chip.hidden=true; note.textContent='';
+    function setSides(s){ sides=s; sideOne.setAttribute('aria-selected', s==='one'?'true':'false'); sideTwo.setAttribute('aria-selected', s==='two'?'true':'false'); }
+    sideOne.addEventListener('click',function(){ setSides('one'); });
+    sideTwo.addEventListener('click',function(){ setSides('two'); });
+    function update(){ printBtn.disabled = dbusy || !docData || !flip.hidden; }
+    function loadFile(f, nm){
+      docData=null; docName=nm||(f&&f.name)||'document'; chip.hidden=true; note.textContent='';
       if(!f) return update();
       var rd=new FileReader(); rd.onload=function(){ var s=rd.result||''; docData=(s.split(',')[1]||'');
-        nameEl.textContent=f.name||'document.pdf'; chip.hidden=false; update(); }; rd.readAsDataURL(f);
+        nameEl.textContent=docName; chip.hidden=false; update(); }; rd.readAsDataURL(f);
+    }
+    file.addEventListener('change',function(){ loadFile(file.files&&file.files[0]); });
+    clear.addEventListener('click',function(){ docData=null; docName=''; file.value=''; chip.hidden=true; note.className='note'; note.textContent=''; update(); });
+    // Paste an image while the Print (document) tab is active.
+    document.addEventListener('paste',function(e){
+      var t=document.getElementById('tab-document'); if(!t||!t.classList.contains('active')) return;
+      var items=(e.clipboardData&&e.clipboardData.items)||[];
+      for(var i=0;i<items.length;i++){ if(items[i].type && items[i].type.indexOf('image/')===0){ var b=items[i].getAsFile(); if(b){ e.preventDefault(); loadFile(b,'pasted-image.png'); note.className='note ok'; note.textContent='Pasted image ready to print.'; } return; } }
     });
-    clear.addEventListener('click',function(){ docData=null; file.value=''; chip.hidden=true; note.className='note'; note.textContent=''; update(); });
+    function showFlip(msg){ flipMsg.textContent=msg; flip.hidden=false; printBtn.hidden=true; note.className='note'; note.textContent=''; }
+    function hideFlip(){ flip.hidden=true; printBtn.hidden=false; token=null; update(); }
     printBtn.addEventListener('click',function(){
       if(printBtn.disabled) return; dbusy=true; update();
       var old=printBtn.textContent; printBtn.textContent='Printing…'; note.className='note'; note.textContent='';
-      jp('/document/print',{queue:qsel.value, dataB64:docData}).then(function(r){
-        if(r.ok){ note.className='note ok'; note.textContent='Sent '+r.pages+(r.pages===1?' page':' pages')+' to '+r.queue+'.'; }
+      jp('/document/print',{queue:qsel.value, dataB64:docData, sides:sides, filename:docName}).then(function(r){
+        if(r.ok && r.step==='flip'){ token=r.token; showFlip(r.instruction); }
+        else if(r.ok){ note.className='note ok'; note.textContent='Sent '+r.pages+(r.pages===1?' page':' pages')+' to '+r.queue+(r.duplex==='auto'?' (double-sided)':'')+'.'; }
         else { note.className='note err'; note.textContent=r.error||'Print failed.'; }
       }).catch(function(){ note.className='note err'; note.textContent='Could not reach the print service.'; })
         .finally(function(){ dbusy=false; printBtn.textContent=old; update(); });
     });
+    contBtn.addEventListener('click',function(){
+      if(!token) return; contBtn.disabled=true; contBtn.textContent='Printing…';
+      jp('/document/continue',{token:token}).then(function(r){
+        hideFlip();
+        note.className = r.ok?'note ok':'note err'; note.textContent = r.ok?'Done — printed both sides.':(r.error||'Print failed.');
+      }).catch(function(){ hideFlip(); note.className='note err'; note.textContent='Could not reach the print service.'; })
+        .finally(function(){ contBtn.disabled=false; contBtn.textContent='Continue'; });
+    });
+    flipCancel.addEventListener('click',function(){ if(token) jp('/document/cancel',{token:token}); hideFlip(); });
     loadQueues();
   })();
 
