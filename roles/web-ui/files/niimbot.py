@@ -192,12 +192,20 @@ class Transport:
             raise last or RuntimeError("connect failed")
 
         # Explicitly negotiate the ATT MTU (BlueZ private helper) so mtu_size
-        # returns the real value instead of warning + defaulting to 23.
-        try:
-            if hasattr(self.client, "_acquire_mtu"):
-                await self.client._acquire_mtu()
-        except Exception:
-            pass
+        # returns the real value instead of defaulting to 23. On bleak's BlueZ
+        # backend the helper lives on client._backend, not on BleakClient itself
+        # (older bleak exposed it on the client) — try both. Without this the
+        # link stays at MTU 23, forcing 20-byte writes; the D110's small buffer
+        # then overruns mid-print and drops the connection.
+        for owner in (getattr(self.client, "_backend", None), self.client):
+            acquire = getattr(owner, "_acquire_mtu", None)
+            if acquire is None:
+                continue
+            try:
+                await acquire()
+                break
+            except Exception:
+                pass
         mtu = 23
         try:
             mtu = self.client.mtu_size or 23
