@@ -750,6 +750,49 @@ def _sweep_duplex():
             shutil.rmtree(_duplex_jobs.pop(t)["dir"], ignore_errors=True)
 
 
+# Uploaded-document cache: /document/info converts + counts pages once and stores
+# the PDF under a token, so the page-range picker has a count and /document/print
+# reuses it without re-uploading.
+_doc_src = {}
+_doc_src_lock = threading.Lock()
+
+
+def _sweep_doc_src():
+    now = time.monotonic()
+    with _doc_src_lock:
+        for t in [t for t, j in _doc_src.items() if now - j["ts"] > 1800]:
+            shutil.rmtree(_doc_src.pop(t)["dir"], ignore_errors=True)
+
+
+def do_document_info(obj):
+    """Convert the uploaded file to PDF, count its pages, and cache it under a
+    token for the page-range picker + a re-upload-free print."""
+    if not DOCUMENT_ENABLED:
+        raise RuntimeError("Document printing is disabled")
+    _sweep_doc_src()
+    tmp = tempfile.mkdtemp(prefix="docsrc-")
+    try:
+        pdf, pages = _to_pdf(obj, tmp)
+    except Exception:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    token = _new_token()
+    with _doc_src_lock:
+        _doc_src[token] = {"dir": tmp, "pdf": pdf, "pages": pages, "ts": time.monotonic()}
+    return {"pages": pages, "token": token}
+
+
+def _extract_range(pdf, tmp, frm, to):
+    """Extract pages frm..to (inclusive) into a new PDF (poppler names outputs by
+    original page number)."""
+    subprocess.run(["pdfseparate", "-f", str(frm), "-l", str(to), pdf,
+                    os.path.join(tmp, "r-%d.pdf")], check=True, timeout=30)
+    parts = [os.path.join(tmp, "r-%d.pdf" % i) for i in range(frm, to + 1)]
+    out = os.path.join(tmp, "range.pdf")
+    subprocess.run(["pdfunite"] + parts + [out], check=True, timeout=30)
+    return out
+
+
 def do_document(obj):
     """Print an uploaded file (PDF/image/text) to a chosen A4 CUPS queue. Single-
     sided, or double-sided: one job on an auto-duplex queue, else a guided
@@ -761,7 +804,27 @@ def do_document(obj):
     tmp = tempfile.mkdtemp(prefix="doc-")
     keep = False
     try:
-        pdf, pages = _to_pdf(obj, tmp)
+        # Source: a cached upload (from /document/info) or an inline file.
+        src_token = obj.get("src_token")
+        if src_token:
+            with _doc_src_lock:
+                src = _doc_src.get(src_token)
+            if not src:
+                raise RuntimeError("This upload expired — choose the file again.")
+            pdf, pages = src["pdf"], src["pages"]
+        else:
+            pdf, pages = _to_pdf(obj, tmp)
+        # Optional page range (1-based, inclusive).
+        try:
+            frm, to = int(obj.get("from") or 1), int(obj.get("to") or pages)
+        except (TypeError, ValueError):
+            frm, to = 1, pages
+        frm, to = max(1, min(frm, pages)), max(1, min(to, pages))
+        if to < frm:
+            frm, to = to, frm
+        if (frm, to) != (1, pages):
+            pdf = _extract_range(pdf, tmp, frm, to)
+            pages = to - frm + 1
         if not two:
             return {"queue": queue, "job": _submit_lp(pdf, queue), "pages": pages, "done": True}
         if _queue_duplex(queue) == "auto":
@@ -1339,10 +1402,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"ok": False, "error": "The printer did not respond in time."})
             except Exception as e:
                 return self._json(200, {"ok": False, "error": str(e)})
-        if path in ("/document/print", "/document/continue", "/document/cancel"):
+        if path in ("/document/info", "/document/print", "/document/continue", "/document/cancel"):
             obj = self._json_body()
-            fn = {"/document/print": do_document, "/document/continue": do_document_continue,
-                  "/document/cancel": do_document_cancel}[path]
+            fn = {"/document/info": do_document_info, "/document/print": do_document,
+                  "/document/continue": do_document_continue, "/document/cancel": do_document_cancel}[path]
             try:
                 return self._json(200, dict(fn(obj), ok=True))
             except subprocess.TimeoutExpired:
@@ -1615,6 +1678,20 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .switch-row[aria-checked="true"] .switch{background:var(--accent)}
 .switch .knob{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.28);transition:transform .18s}
 .switch-row[aria-checked="true"] .switch .knob{transform:translateX(18px)}
+/* Page-range dual-handle slider */
+.pgrange{margin-top:18px}
+.pgrange-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.pgrange-val{font:600 13px var(--mono);color:var(--text)}
+.pgrange-tot{color:var(--faint);font-weight:500}
+.dualrange{position:relative;height:26px}
+.dr-rail{position:absolute;top:11px;left:2px;right:2px;height:4px;border-radius:2px;background:var(--border)}
+.dr-fill{position:absolute;top:0;bottom:0;border-radius:2px;background:var(--accent)}
+.dr-thumb{position:absolute;top:0;left:0;width:100%;height:26px;margin:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none}
+.dr-thumb::-webkit-slider-runnable-track{background:none;border:none}
+.dr-thumb::-moz-range-track{background:none;border:none}
+.dr-thumb::-webkit-slider-thumb{-webkit-appearance:none;pointer-events:auto;width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.28);cursor:grab}
+.dr-thumb::-moz-range-thumb{pointer-events:auto;width:18px;height:18px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.28);cursor:grab}
+.dr-thumb:focus-visible::-webkit-slider-thumb{outline:2px solid var(--accent);outline-offset:2px}
 #niimSize{min-height:16px}   /* reserve the line so setting the size text doesn't shift layout */
 .adv{margin:6px 0 16px}
 .adv summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding:8px 0;list-style:none}
@@ -1924,6 +2001,18 @@ input[type=number]{font-variant-numeric:tabular-nums}
         <div class="dz-file" id="docChip" hidden>
           <span class="dz-name" id="docName"></span>
           <button type="button" class="pvx dz-x" id="docClear" aria-label="Remove file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button>
+        </div>
+      </div>
+
+      <div class="pgrange" id="docRange" hidden>
+        <div class="pgrange-head">
+          <span class="switch-label">Pages to print</span>
+          <span class="pgrange-val"><span id="docPgFrom">1</span>–<span id="docPgTo">1</span> <span class="pgrange-tot">of <span id="docPgTotal">1</span></span></span>
+        </div>
+        <div class="dualrange" id="docSlider">
+          <div class="dr-rail"><div class="dr-fill" id="docFill"></div></div>
+          <input type="range" class="dr-thumb" id="docFrom" min="1" max="1" value="1" aria-label="First page">
+          <input type="range" class="dr-thumb" id="docTo" min="1" max="1" value="1" aria-label="Last page">
         </div>
       </div>
 
@@ -2613,9 +2702,11 @@ input[type=number]{font-variant-numeric:tabular-nums}
     var drop=document.getElementById('docDrop'), idle=document.getElementById('docIdle');
     var nameEl=document.getElementById('docName'), clear=document.getElementById('docClear'), note=document.getElementById('docNote');
     var duplex=document.getElementById('docDuplex');
+    var rangeBox=document.getElementById('docRange'), fromSl=document.getElementById('docFrom'), toSl=document.getElementById('docTo');
+    var fillEl=document.getElementById('docFill'), pgFromEl=document.getElementById('docPgFrom'), pgToEl=document.getElementById('docPgTo'), pgTotEl=document.getElementById('docPgTotal');
     var flip=document.getElementById('docFlip'), flipMsg=document.getElementById('docFlipMsg');
     var contBtn=document.getElementById('docContinue'), flipCancel=document.getElementById('docFlipCancel');
-    var docData=null, docName='', sides='one', token=null, dbusy=false;
+    var docData=null, docName='', sides='one', token=null, srcToken=null, pageCount=1, dbusy=false;
     function jp(url, body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json();}); }
     function loadQueues(){
       fetch('/print/queues').then(function(r){return r.json();}).then(function(d){
@@ -2626,12 +2717,32 @@ input[type=number]{font-variant-numeric:tabular-nums}
       }).catch(function(){ qsel.innerHTML='<option value="">No printer available</option>'; qrow.hidden=true; });
     }
     duplex.addEventListener('click',function(){ var on=duplex.getAttribute('aria-checked')!=='true'; duplex.setAttribute('aria-checked', on?'true':'false'); sides = on?'two':'one'; });
+    // Dual-handle page-range slider (two overlaid range inputs + a fill).
+    function renderRange(){
+      var a=parseInt(fromSl.value,10)||1, b=parseInt(toSl.value,10)||1;
+      var lo=Math.min(a,b), hi=Math.max(a,b), span=(pageCount>1)?(pageCount-1):1;
+      fillEl.style.left=((lo-1)/span*100)+'%'; fillEl.style.width=((hi-lo)/span*100)+'%';
+      pgFromEl.textContent=lo; pgToEl.textContent=hi;
+    }
+    fromSl.addEventListener('input',renderRange); toSl.addEventListener('input',renderRange);
+    function setupRange(pages){
+      pageCount=pages;
+      if(pages>1){ fromSl.min=toSl.min=1; fromSl.max=toSl.max=pages; fromSl.value=1; toSl.value=pages; pgTotEl.textContent=pages; rangeBox.hidden=false; renderRange(); }
+      else rangeBox.hidden=true;
+    }
+    function currentRange(){ var a=parseInt(fromSl.value,10)||1, b=parseInt(toSl.value,10)||1; return {from:Math.min(a,b), to:Math.max(a,b)}; }
     function update(){ printBtn.disabled = dbusy || !docData || !flip.hidden; }
     function loadFile(f, nm){
-      docData=null; docName=nm||(f&&f.name)||'document'; chip.hidden=true; idle.hidden=false; note.textContent='';
-      if(!f) return update();
+      docData=null; srcToken=null; docName=nm||(f&&f.name)||'document'; chip.hidden=true; idle.hidden=false; rangeBox.hidden=true; note.textContent=''; update();
+      if(!f) return;
       var rd=new FileReader(); rd.onload=function(){ var s=rd.result||''; docData=(s.split(',')[1]||'');
-        nameEl.textContent=docName; chip.hidden=false; idle.hidden=true; update(); }; rd.readAsDataURL(f);
+        nameEl.textContent=docName; chip.hidden=false; idle.hidden=true; update();
+        // Get the page count (+ cache the converted PDF) for the range picker.
+        jp('/document/info',{dataB64:docData, filename:docName}).then(function(r){
+          if(r.ok){ srcToken=r.token; setupRange(r.pages||1); }
+          else { note.className='note err'; note.textContent=r.error||'Could not read the file.'; docData=null; chip.hidden=true; idle.hidden=false; update(); }
+        }).catch(function(){});
+      }; rd.readAsDataURL(f);
     }
     file.addEventListener('change',function(){ loadFile(file.files&&file.files[0]); });
     // Click the zone (when empty) to open the picker; drag-drop a file onto it.
@@ -2640,7 +2751,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
     drop.addEventListener('dragleave',function(){ drop.classList.remove('drag'); });
     drop.addEventListener('drop',function(e){ e.preventDefault(); drop.classList.remove('drag');
       var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) loadFile(f); });
-    clear.addEventListener('click',function(e){ e.stopPropagation(); docData=null; docName=''; file.value=''; chip.hidden=true; idle.hidden=false; note.className='note'; note.textContent=''; update(); });
+    clear.addEventListener('click',function(e){ e.stopPropagation(); docData=null; srcToken=null; docName=''; file.value=''; chip.hidden=true; idle.hidden=false; rangeBox.hidden=true; note.className='note'; note.textContent=''; update(); });
     // Paste an image or PDF while the Print (document) tab is active. Handles
     // both clipboard image data (screenshots) and copied files.
     document.addEventListener('paste',function(e){
@@ -2656,7 +2767,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
     printBtn.addEventListener('click',function(){
       if(printBtn.disabled) return; dbusy=true; update();
       var old=printBtn.textContent; printBtn.textContent='Printing…'; note.className='note'; note.textContent='';
-      jp('/document/print',{queue:qsel.value, dataB64:docData, sides:sides, filename:docName}).then(function(r){
+      var rng=currentRange();
+      var body={queue:qsel.value, sides:sides, from:rng.from, to:rng.to};
+      if(srcToken) body.src_token=srcToken; else { body.dataB64=docData; body.filename=docName; }
+      jp('/document/print',body).then(function(r){
         if(r.ok && r.step==='flip'){ token=r.token; showFlip(r.instruction); }
         else if(r.ok){ note.className='note ok'; note.textContent='Sent '+r.pages+(r.pages===1?' page':' pages')+' to '+r.queue+(r.duplex==='auto'?' (double-sided)':'')+'.'; }
         else { note.className='note err'; note.textContent=r.error||'Print failed.'; }
