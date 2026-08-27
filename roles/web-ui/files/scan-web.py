@@ -1377,6 +1377,27 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .iconbtn.alert .badge-dot{display:block}
 .deverr{margin:2px 0 12px;font:500 12px var(--mono);color:var(--danger);min-height:0}
 .modal-card.wide{max-width:520px}
+
+/* Connect-a-thermal-printer modal: quiet, centered, with one signature moment —
+   a Bluetooth badge whose rings pulse outward while the BLE link is negotiated.
+   State is carried by a class on the card (connecting / ok / err) and told
+   through the same accent/danger the device dots use. */
+.connect-card{max-width:312px;text-align:center;padding:28px 24px 20px}
+.conn-badge{position:relative;width:60px;height:60px;margin:0 auto 18px;display:grid;place-items:center;border-radius:50%;background:var(--accent-weak);color:var(--accent);transition:background .25s,color .25s}
+.conn-bt{width:24px;height:24px;position:relative;z-index:1}
+.conn-ring{position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--accent);opacity:0}
+.connect-card.connecting .conn-ring{animation:conn-ring 2.1s cubic-bezier(.2,.6,.3,1) infinite}
+.connect-card.connecting .conn-ring:nth-child(2){animation-delay:.7s}
+.connect-card.connecting .conn-ring:nth-child(3){animation-delay:1.4s}
+@keyframes conn-ring{0%{transform:scale(.66);opacity:.55}80%{opacity:0}100%{transform:scale(1.6);opacity:0}}
+.connect-card.err .conn-badge{background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger)}
+.conn-name{font:640 16px/1.25 var(--sans);letter-spacing:-.01em;color:var(--text)}
+.conn-size{margin-top:3px;font:500 12px var(--mono);color:var(--faint)}
+.conn-status{margin-top:13px;min-height:18px;font:500 13px var(--mono);color:var(--muted)}
+.connect-card.ok .conn-status{color:var(--accent)}
+.connect-card.err .conn-status{color:var(--danger)}
+.conn-acts{margin-top:8px}
+@media (prefers-reduced-motion:reduce){.connect-card.connecting .conn-ring{animation:none;opacity:.28;transform:scale(1.2)}}
 .msub{font:600 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:16px 2px 8px}
 .iconbtn.sm{width:30px;height:30px;border-radius:8px}
 .iconbtn.spin svg{animation:spin .8s linear infinite}
@@ -1559,12 +1580,17 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
 <!-- Devices modal (opened from the header gear) -->
 <div class="modal" id="connModal" hidden>
-  <div class="modal-card card" role="dialog" aria-modal="true" aria-labelledby="connTitle">
-    <div class="modal-head"><h2 id="connTitle">Connect printer</h2></div>
-    <p class="note" id="connStatus">Connecting…</p>
-    <div class="buildacts">
-      <button class="scan" id="connRetry" type="button" hidden>Retry</button>
-      <button class="btn2" id="connDismiss" type="button">Compose anyway</button>
+  <div class="modal-card card connect-card connecting" id="connCard" role="dialog" aria-modal="true" aria-labelledby="connName">
+    <div class="conn-badge" aria-hidden="true">
+      <span class="conn-ring"></span><span class="conn-ring"></span><span class="conn-ring"></span>
+      <svg class="conn-bt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/></svg>
+    </div>
+    <div class="conn-name" id="connName">Printer</div>
+    <div class="conn-size" id="connSize"></div>
+    <div class="conn-status" id="connStatus">Connecting…</div>
+    <div class="conn-acts">
+      <button class="scan" id="connRetry" type="button" hidden>Try again</button>
+      <button class="linkbtn subtle" id="connDismiss" type="button">Compose anyway</button>
     </div>
   </div>
 </div>
@@ -2216,7 +2242,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
     var scannerSel=document.getElementById('scannerSel'), scannerSelRow=document.getElementById('scannerSelRow');
     var a4C=document.getElementById('a4Composer'), labelC=document.getElementById('labelComposer');
     var niimSize=document.getElementById('niimSize');
-    var connModal=document.getElementById('connModal'), connTitle=document.getElementById('connTitle'),
+    var connModal=document.getElementById('connModal'), connCard=document.getElementById('connCard'),
+        connName=document.getElementById('connName'), connSize=document.getElementById('connSize'),
         connStatus=document.getElementById('connStatus'), connRetry=document.getElementById('connRetry'),
         connDismiss=document.getElementById('connDismiss'), connTarget=null;
     var nText=document.getElementById('nText'), nFile=document.getElementById('nFile'), nPv=document.getElementById('nPv');
@@ -2463,6 +2490,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
       (state.printers||[]).forEach(function(p){
         var mm=p.label_mm||[12,40];
         opts.push({v:'niim:'+p.address, kind:'thermal', w:mm[0], h:mm[1],
+                   name:(p.model_label||p.model),
                    label:(p.model_label||p.model)+' · '+mm[0]+'×'+mm[1]+'mm',
                    address:p.address, label_mm:mm, connected:p.status==='connected'});
       });
@@ -2512,18 +2540,19 @@ input[type=number]{font-variant-numeric:tabular-nums}
     // Connect an offline thermal printer on demand. The /niimbot/reconnect call
     // blocks server-side until the link is up (or errors), so the modal shows
     // "Connecting…" until it resolves. Non-blocking: "Compose anyway" dismisses.
-    function openConn(fmt){ connTarget=fmt; connTitle.textContent='Connect '+(fmt.label||'printer');
-      connStatus.className='note'; connStatus.textContent='Connecting to '+(fmt.label||fmt.address)+'…';
-      connRetry.hidden=true; connModal.hidden=false; }
+    function setConnState(cls, msg){ connCard.className='modal-card card connect-card '+cls; connStatus.textContent=msg; }
+    function openConn(fmt){ connTarget=fmt;
+      connName.textContent=fmt.name||'Printer'; connSize.textContent=fmt.w+'×'+fmt.h+' mm';
+      connRetry.hidden=true; setConnState('connecting','Connecting…'); connModal.hidden=false; }
     function closeConn(){ connModal.hidden=true; connTarget=null; }
     function ensureConnected(fmt, then){
       if(fmt.connected){ then&&then(); return; }
       openConn(fmt);
       jpost('/niimbot/reconnect',{address:fmt.address}).then(function(r){
-        if(r && r.ok){ fmt.connected=true; loadNiim();
-          if(connTarget===fmt) closeConn(); if(then) then(); }
-        else { connStatus.className='note err'; connStatus.textContent=(r&&r.error)||'Could not connect.'; connRetry.hidden=false; }
-      }).catch(function(){ connStatus.className='note err'; connStatus.textContent='Could not connect.'; connRetry.hidden=false; });
+        if(r && r.ok){ fmt.connected=true; loadNiim(); setConnState('ok','Connected'); if(then) then();
+          setTimeout(function(){ if(connTarget===fmt) closeConn(); }, 550); }
+        else { setConnState('err',(r&&r.error)||'Couldn’t connect. Is the printer on and in range?'); connRetry.hidden=false; }
+      }).catch(function(){ setConnState('err','Couldn’t connect. Is the printer on and in range?'); connRetry.hidden=false; });
     }
     connDismiss.addEventListener('click', closeConn);
     connRetry.addEventListener('click', function(){ if(connTarget) ensureConnected(connTarget); });
