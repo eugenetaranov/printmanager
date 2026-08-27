@@ -22,10 +22,10 @@ All changes are in `roles/web-ui/files/scan-web.py` (the inline HTML/JS app + Py
 
 ## 3. Label preview (text / image / QR)
 
-- [ ] 3.1 Add `POST /preview {kind, payload, w_mm, h_mm, model?}` → `render_label` → PNG (Pillow), returned as base64; cap payload size; do not hold the print lock
-- [ ] 3.2 Show the preview in the thermal composer; debounce re-renders on content edits
-- [ ] 3.3 Render the preview in the background while the connect modal is open, so it's ready on connect
-- [ ] 3.4 Leave A4 with its existing cell-placement view (no grid preview in scope)
+- [x] 3.1 Add `POST /preview {kind, payload, w_mm, h_mm, model?}` → `render_label` → PNG (Pillow), returned as base64; cap payload size; do not hold the print lock
+- [x] 3.2 Show the preview in the thermal composer; debounce re-renders on content edits
+- [x] 3.3 Render the preview in the background while the connect modal is open, so it's ready on connect
+- [x] 3.4 Leave A4 with its existing cell-placement view (no grid preview in scope)
 
 ## 4. Retire the printer selector + supersede notes
 
