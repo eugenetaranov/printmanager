@@ -14,11 +14,11 @@ designed to run the same on **Raspberry Pi OS (Debian)** and **Ubuntu**.
 | Area | What you get |
 | --- | --- |
 | **LAN printing** | CUPS shared over **AirPrint** (mDNS/IPP) — Apple/iOS/mobile print with no driver. **Config-driven**: declare one or more printers in a `printers:` list, each **driverless** (IPP Everywhere) or a named driver (the USB Brother DCP-1511 ships as a `brlaser` example). |
-| **Scanning** | Brother's real `brscan4` driver run under **i386 emulation** (pixel-perfect), published as **eSCL/AirScan** (native macOS Image Capture / iOS) and reachable as a SANE network host. |
+| **Scanning** | **Selectable backend**: driverless **eSCL** (`sane-airscan`, zero drivers) for modern scanners, or — the shipped default — Brother's real `brscan4` under **i386 emulation** (pixel-perfect) for driver-only units like the DCP-1511, republished as **eSCL/AirScan** for native macOS Image Capture / iOS. |
 | **Searchable scans** | Every scan gets an invisible **OCR** text layer (ocrmypdf/Tesseract), configurable languages. |
 | **Scan storage** | Scans land in a cross-platform **Samba share** (`\\printmanager.local\scans`), auto-pruned after a retention window. |
 | **Label printers** | **Niimbot D110 / B1** over **Bluetooth LE** — discover, connect, one-click reconnect, and print **text / QR / image** labels sized to the roll. |
-| **Web UI** | A single stdlib-Python app on port 80: **Scan**, **Labels** (a size-first format picker → A4 sheets *or* Niimbot labels, with a live **preview**), **Print** (PDF/image/text documents, single- or **double-sided** incl. guided manual duplex), and a **Devices** manager. |
+| **Web UI** | A single stdlib-Python app on port 80: **Scan**, **Labels** (a size-first format picker → A4 sheets *or* Niimbot labels, with a live **preview**), **Print** (PDF/image/text documents, a selectable **page range**, single- or **double-sided** incl. guided manual duplex), and a **Devices** manager. |
 | **Device manager** | A gear-menu inventory of *all* hardware (CUPS printers, SANE scanners, USB, Bluetooth) with traffic-light status, a **test page** per printer, forget, and a per-device connection log. |
 | **Self-healing** | A hardware watchdog reboots the box if it hangs, plus a connectivity self-heal that bounces Wi-Fi (and reboots as a last resort) if the network wedges. |
 | **Hardened base** | Default-deny `iptables` firewall (LAN-scoped service ports), Wi-Fi power-save disabled (stops the radio stalling), ICMP allowed, portable locale setup. |
@@ -44,17 +44,21 @@ base ──> watchdog ──> print-server ──> scan-share ──> scan-serve
   driver/PPD. The shipped example is the USB **Brother DCP-1511** on `brlaser`;
   add your own by appending to the list (override it from `site.yaml` `vars:`).
 - **scan-share** — the Samba `[scans]` share backed by `/srv/scans`.
-- **scan-server** — the scanning stack:
-  - Brother's proprietary **brscan4** runs in a small **i386 Debian chroot**
-    (`qemu-user-static` + `debootstrap`) because Brother ships x86 only and the
-    open-source backend can't reliably drive this unit. A **saned net bridge**
-    (`127.0.0.1:6566`) exposes the chroot scanner to the host.
-  - **AirSane** (built from source) advertises the scanner over **eSCL/AirScan**
-    (mDNS, port 8090) for native Apple/iOS/Windows scanning.
+- **scan-server** — the scanning stack, with two selectable backends
+  (`scan_brscan4_enabled` / `scan_escl_enabled`):
+  - **Driverless eSCL** (`sane-airscan`) — most modern scanners; the host SANE
+    reaches the device directly, with **no** chroot/qemu/net-bridge/AirSane.
+    Enable with `scan_escl_enabled: true` and `scan_brscan4_enabled: false`.
+  - **brscan4 under i386 emulation** (the shipped default, for driver-only units
+    like the DCP-1510/1511): Brother's proprietary **brscan4** runs in a small
+    **i386 Debian chroot** (`qemu-user-static` + `debootstrap`) because Brother
+    ships x86 only; a **saned net bridge** (`127.0.0.1:6566`) exposes the chroot
+    scanner to the host, and **AirSane** (built from source) re-advertises it over
+    **eSCL/AirScan** (mDNS, port 8090) for native Apple/iOS/Windows scanning
+    (`sane-airscan` is disabled here so the scanner isn't advertised twice).
   - `scan-to-share.sh` is the robust pipeline used by the web UI: scan → pad
-    (works around a Brother high-DPI short-read) → JPEG → `img2pdf` → OCR →
-    PDF in the share. `sane-airscan` is disabled so the scanner isn't advertised
-    twice.
+    (works around a Brother high-DPI short-read; skipped on eSCL) → JPEG →
+    `img2pdf` → OCR → PDF in the share.
 - **web-ui** — the `scan-web` app (below).
 
 ### The web UI (`scan-web`)
@@ -74,7 +78,9 @@ the role** (`SCAN_WEB_CONFIG`) and loaded at startup. Three surfaces:
     image**) over Bluetooth, with a live **preview** of the exact label;
     selecting an offline printer connects it on the spot.
 - **Print** — print a document (**PDF, image, or text** — drag/drop, choose, or
-  paste an image) to an A4 queue, single- or **double-sided**. Auto-duplex
+  paste an image) to an A4 queue. A dual-handle **page-range** slider prints just
+  part of a multi-page PDF, and jobs can be single- or **double-sided**
+  (auto-disabled for a single page). Auto-duplex
   printers print in one job; a **simplex** printer (like the DCP-1511) gets a
   guided **print-front → flip → print-back** flow. The flip behaviour (reload
   direction, page order, 180° back-rotation) is per-printer config, **calibrated
@@ -111,7 +117,7 @@ roles/
   watchdog/          # hardware watchdog + connectivity self-heal
   print-server/      # CUPS + Avahi (AirPrint); config-driven printers: (driverless or named driver)
   scan-share/        # Samba [scans] share -> /srv/scans
-  scan-server/       # brscan4 i386 chroot + saned bridge + AirSane (eSCL) + OCR
+  scan-server/       # selectable backend: driverless eSCL, or brscan4 i386 chroot + AirSane; + OCR
   web-ui/            # scan-web app (:80): Scan / Print / Devices; Niimbot via bleak
     files/           # plain-Python app: scan-web.py, niimbot.py
 ```
