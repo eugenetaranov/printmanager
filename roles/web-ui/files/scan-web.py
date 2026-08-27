@@ -1485,7 +1485,11 @@ PAGE = r"""<!doctype html>
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important} /* class display rules must not defeat the attribute */
-html{-webkit-text-size-adjust:100%}
+/* Always reserve the scrollbar gutter so the centered content doesn't shift
+   left/right when a tab's height crosses the viewport (scrollbar appears/hides).
+   Fallback for browsers without scrollbar-gutter: always show the track. */
+html{-webkit-text-size-adjust:100%;overflow-y:scroll;scrollbar-gutter:stable}
+@supports (scrollbar-gutter:stable){html{overflow-y:auto}}
 body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);
   line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 .wrap{max-width:640px;margin:0 auto;padding:clamp(22px,5vw,44px) 20px 96px}
