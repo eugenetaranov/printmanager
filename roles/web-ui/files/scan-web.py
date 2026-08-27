@@ -1523,9 +1523,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
            switches the composer below. Hidden only when there are no printers. -->
       <!-- Visible from first paint (with a placeholder) so the row reserves its
            space and the page doesn't jump when the real formats load in. -->
-      <div class="controls" id="formatSelRow">
+      <div class="controls tplrow" id="formatSelRow">
         <label class="field"><span class="lbl">Label format</span>
           <select id="formatSel"><option>Loading…</option></select></label>
+        <button type="button" class="mini manage" id="manageBtn" title="Add, edit or delete A4 label sizes">Manage sizes</button>
       </div>
       <p class="note" id="noPrinters" hidden>No printers yet. Connect one from the Devices manager (gear icon).</p>
 
@@ -1536,10 +1537,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
         <!-- The label size is chosen in the format selector above; this select is
              kept (hidden) as the source of truth for the active sheet template
              and for the Manage editor. -->
-        <div class="controls tplrow">
-          <label class="field" id="tplField" hidden><span class="lbl">Label sheet</span>
+        <div class="controls tplrow" hidden>
+          <label class="field" id="tplField"><span class="lbl">Label sheet</span>
             <select id="tpl">__PRINT_TEMPLATE_OPTS__</select></label>
-          <button type="button" class="mini manage" id="manageBtn">Manage sheets</button>
         </div>
 
         <div class="sheetHead">
