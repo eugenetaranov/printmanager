@@ -1673,6 +1673,7 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 /* Toggle switch — label + switch as one tight, clickable unit */
 .switch-row{display:inline-flex;align-items:center;gap:11px;margin-top:18px;padding:6px;border:none;background:none;cursor:pointer;border-radius:9px}
 .switch-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.switch-row:disabled{opacity:.4;cursor:not-allowed}   /* single-page doc: duplex makes no sense */
 .switch-label{font:600 14px var(--sans);letter-spacing:-.01em;color:var(--text)}
 .switch{position:relative;flex:none;width:44px;height:26px;border-radius:13px;background:var(--border);transition:background .18s}
 .switch-row[aria-checked="true"] .switch{background:var(--accent)}
@@ -2720,7 +2721,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
         qrow.hidden = qs.length<2;   // hide the picker when there's only one printer
       }).catch(function(){ qsel.innerHTML='<option value="">No printer available</option>'; qrow.hidden=true; });
     }
-    duplex.addEventListener('click',function(){ var on=duplex.getAttribute('aria-checked')!=='true'; duplex.setAttribute('aria-checked', on?'true':'false'); sides = on?'two':'one'; });
+    duplex.addEventListener('click',function(){ if(duplex.disabled) return; var on=duplex.getAttribute('aria-checked')!=='true'; duplex.setAttribute('aria-checked', on?'true':'false'); sides = on?'two':'one'; });
+    // Duplex needs at least two pages; a 1-page PDF or a single image can't be
+    // double-sided, so force the toggle off and disable it.
+    function allowDuplex(ok){ duplex.disabled=!ok; if(!ok){ duplex.setAttribute('aria-checked','false'); sides='one'; } }
     // Dual-handle page-range slider. Handles + fill are positioned in px by JS
     // from a single coordinate system, so they can't drift apart the way native
     // <input type=range> thumb geometry did (it disagreed across browsers).
@@ -2762,7 +2766,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
     bindHandle(fromSl,'from'); bindHandle(toSl,'to');
     window.addEventListener('resize',function(){ if(!rangeBox.hidden) layout(); });
     function setupRange(pages){
-      pageCount=pages;
+      pageCount=pages; allowDuplex(pages>1);
       if(pages>1){ valFrom=1; valTo=pages;
         fromSl.setAttribute('aria-valuemin',1); fromSl.setAttribute('aria-valuemax',pages);
         toSl.setAttribute('aria-valuemin',1); toSl.setAttribute('aria-valuemax',pages);
@@ -2790,7 +2794,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
     drop.addEventListener('dragleave',function(){ drop.classList.remove('drag'); });
     drop.addEventListener('drop',function(e){ e.preventDefault(); drop.classList.remove('drag');
       var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) loadFile(f); });
-    clear.addEventListener('click',function(e){ e.stopPropagation(); docData=null; srcToken=null; docName=''; file.value=''; chip.hidden=true; idle.hidden=false; rangeBox.hidden=true; note.className='note'; note.textContent=''; update(); });
+    clear.addEventListener('click',function(e){ e.stopPropagation(); docData=null; srcToken=null; docName=''; file.value=''; chip.hidden=true; idle.hidden=false; rangeBox.hidden=true; allowDuplex(true); note.className='note'; note.textContent=''; update(); });
     // Paste an image or PDF while the Print (document) tab is active. Handles
     // both clipboard image data (screenshots) and copied files.
     document.addEventListener('paste',function(e){
