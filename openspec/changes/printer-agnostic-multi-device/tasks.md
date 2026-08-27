@@ -24,7 +24,7 @@ Design constraint (see design.md §2): **tack renders templates single-pass and 
 - [ ] 3.4 Support selecting which scanner the pipeline scans from (`scanimage -d <device>`), defaulting to the first configured scanner
 - [ ] 3.5 Keep the retention cron and scan-share integration unchanged
 
-## 4. web-ui: Print-tab printer selector
+## 4. web-ui: Print-tab printer selector  _(SUPERSEDED by change `size-driven-label-format` — the printer selector is replaced by a size-sorted "Label format" selector. The `do_print` queue-targeting below is kept and reused; the selector UI is retired there.)_
 
 - [x] 4.1 Use the EXISTING unified printer selector (`printerSel`/`syncSelectors`/`printerOptions`) which already lists all printers (CUPS queues via inventory + connected Niimbots) with friendly names — no new route needed. (Correction: first added a redundant `#printQueue` dropdown + `/print/queues` route; removed both when the existing selector was found. It switches the composer via `applyPrinter` already.)
 - [x] 4.2 Un-hid the selector: `printerSelRow.hidden = !opts.length` (was `<2`) so it shows with a single printer — the user's ask ("dropdown should appear"). Selecting a printer switches A4 grid ↔ Niimbot composer (existing behavior); choice persists via `pm_printer`.
