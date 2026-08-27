@@ -128,6 +128,59 @@ def run_coro(coro, timeout=90):
     return fut.result(timeout=timeout)
 
 
+async def _bluez_clear(address, log=lambda s: None, remove=False):
+    """Best-effort self-heal for a wedged BlueZ state. After a print the Niimbot
+    link often idle-drops but BlueZ keeps the device 'Connected: yes' — a phantom
+    that stops the printer from advertising, so a later reconnect can neither
+    connect directly nor find it by scan (the exact stuck state that needed a
+    manual `bluetoothctl disconnect/remove`). We reach connect() only when the
+    manager already thinks the printer is disconnected, so any lingering BlueZ
+    connection is stale: Disconnect it (and, as a last resort, RemoveDevice to
+    drop the cache and force fresh discovery). All calls are best-effort; the
+    system-bus policy grants the scan-web user org.bluez Device1/Adapter1 access.
+    """
+    try:
+        from dbus_fast.aio import MessageBus
+        from dbus_fast import BusType
+    except Exception as e:
+        log("dbus-fast unavailable, skipping BlueZ clear: %r" % e)
+        return
+    bus = None
+    try:
+        bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+        root = bus.get_proxy_object("org.bluez", "/", await bus.introspect("org.bluez", "/"))
+        mgr = root.get_interface("org.freedesktop.DBus.ObjectManager")
+        objs = await mgr.call_get_managed_objects()
+        want = address.upper()
+        for path, ifaces in objs.items():
+            dev = ifaces.get("org.bluez.Device1")
+            if not dev or "Address" not in dev or dev["Address"].value.upper() != want:
+                continue
+            devobj = bus.get_proxy_object("org.bluez", path, await bus.introspect("org.bluez", path))
+            try:
+                await devobj.get_interface("org.bluez.Device1").call_disconnect()
+                log("cleared stale BlueZ connection for %s" % address)
+            except Exception as e:
+                log("BlueZ disconnect skipped: %r" % e)
+            if remove:
+                apath = path.rsplit("/", 1)[0]
+                try:
+                    aobj = bus.get_proxy_object("org.bluez", apath, await bus.introspect("org.bluez", apath))
+                    await aobj.get_interface("org.bluez.Adapter1").call_remove_device(path)
+                    log("removed cached BlueZ device %s" % address)
+                except Exception as e:
+                    log("BlueZ remove skipped: %r" % e)
+            break
+    except Exception as e:
+        log("BlueZ clear error: %r" % e)
+    finally:
+        if bus is not None:
+            try:
+                bus.disconnect()
+            except Exception:
+                pass
+
+
 # --- BLE transport (bleak) ---------------------------------------------------
 class Transport:
     def __init__(self, log=lambda s: None):
@@ -163,6 +216,11 @@ class Transport:
 
         self._up = False
         last = None
+
+        # Self-heal: clear any stale/phantom BlueZ connection before we try. The
+        # manager only reaches here when it thinks the printer is disconnected, so
+        # a lingering "Connected: yes" is stale and would block both paths below.
+        await _bluez_clear(address, self.log)
 
         # Connect target: start with the bare address. That's the fast path and,
         # importantly, it reattaches when BlueZ still holds the device — e.g. a
@@ -200,6 +258,14 @@ class Transport:
                     except Exception as se:
                         self.log("scan error: %r" % se)
                         dev = None
+                    if dev is None:
+                        # Last resort: fully drop the cached device (clears a wedged
+                        # BlueZ state) and scan once more before giving up.
+                        await _bluez_clear(address, self.log, remove=True)
+                        try:
+                            dev = await BleakScanner.find_device_by_address(address, timeout=8.0)
+                        except Exception:
+                            dev = None
                     if dev is None:
                         raise RuntimeError("Printer not found — make sure it's on and "
                                            "not connected to another device (e.g. the phone app)")
