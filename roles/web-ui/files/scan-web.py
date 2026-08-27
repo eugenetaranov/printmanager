@@ -1362,10 +1362,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
    bottom (grows the box only when there is a message). */
 .niimrow{flex-direction:column;align-items:stretch;gap:8px}
 .drowmain{display:flex;align-items:center;gap:11px;min-height:34px}
-.drowstatus{margin:0;font:500 11.5px var(--mono);color:var(--muted);word-break:break-word}
-.drowstatus.ok{color:var(--accent)}
-.drowstatus.err{color:var(--danger)}
-.drowstatus:empty{display:none}
+.dstat.ok{color:var(--accent)}
+.dstat.err{color:var(--danger)}
 .iconbtn.pulse{animation:btnpulse 1s ease-in-out infinite}
 @keyframes btnpulse{0%,100%{opacity:1}50%{opacity:.35}}
 .blelog{margin:0;max-height:180px;overflow:auto;background:var(--bg);border:1px solid var(--border);
@@ -2277,15 +2275,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
     // Per-device status shown inside that device's card (bottom line).
     function setDeviceStatus(addr, msg, cls){
       if(msg) deviceStatus[addr]={msg:msg,cls:cls||''}; else delete deviceStatus[addr];
-      var row=niimList.querySelector('.niimrow[data-addr="'+addr+'"]');
-      if(row){
-        var el=row.querySelector('.drowstatus'); if(el){ el.className='drowstatus'+(cls?' '+cls:''); el.textContent=msg||''; }
-        // Recolor the box: error -> red, else green(connected)/amber(disconnected).
-        var conn = row.dataset.conn==='1';
-        var state = cls==='err' ? 'err' : (conn ? 'ready' : 'off');
-        row.classList.remove('st-ready','st-off','st-err'); row.classList.add('st-'+state);
-        var dot=row.querySelector('.dot'); if(dot) dot.className='dot '+(state==='err'?'err':(state==='ready'?'on':'warn'));
-      }
+      renderNiim();   // re-render so the inline status word + card state update
     }
 
     // ---- per-device connection log (lines are tagged '[address] ...') --------
@@ -2413,12 +2403,17 @@ input[type=number]{font-variant-numeric:tabular-nums}
                         : iconBtn('reconnect','reconnect','Reconnect','pri'))+
                    iconBtn('log','log','Connection log', hasLog?'on':'')+
                    iconBtn('forget','forget','Forget','warn');
-        var sub = esc(p.name)+' · '+p.status+(p.label_mm?(' · '+p.label_mm[0]+'×'+p.label_mm[1]+' mm'):'');
+        // Status word lives inline on line 2 (no separate status row): a
+        // transient action state (Connecting… / Connection failed / …) when one
+        // is set, otherwise the connection status. Sentence-cased for consistency.
+        var stTxt = st ? st.msg : (conn?'Connected':'Disconnected');
+        var sizePart = p.label_mm?(' · '+p.label_mm[0]+'×'+p.label_mm[1]+' mm'):'';
+        var subTitle = p.name+' · '+stTxt+sizePart;
+        var subHtml = esc(p.name)+' · <span class="dstat'+(st&&st.cls?' '+st.cls:'')+'">'+esc(stTxt)+'</span>'+esc(sizePart);
         row.innerHTML='<div class="drowmain"><i class="dot '+dotcls+'"></i>'+ifaceIcon('bluetooth')+
           '<div class="dinfo"><div class="dname">'+esc(p.model_label||p.model)+'</div>'+
-          '<div class="dsub" title="'+sub+'">'+sub+'</div></div>'+
-          '<div class="dacts">'+acts+'</div></div>'+
-          '<p class="drowstatus'+(st&&st.cls?' '+st.cls:'')+'">'+esc(st?st.msg:'')+'</p>';
+          '<div class="dsub" title="'+esc(subTitle)+'">'+subHtml+'</div></div>'+
+          '<div class="dacts">'+acts+'</div></div>';
         row.querySelectorAll('[data-act]').forEach(function(bb){
           bb.addEventListener('click',function(){ if(bb.dataset.act==='log') openLog(p); else niimAction(bb.dataset.act, p, bb); });
         });
@@ -2434,18 +2429,19 @@ input[type=number]{font-variant-numeric:tabular-nums}
     function niimAction(act, p, bb){
       if(busy) return;
       if(act==='test'){
-        busy=true; bb.disabled=true; setDeviceStatus(p.address,'Printing test label…');
-        jpost('/devices/testpage',{kind:'label-printer',id:p.address}).then(function(r){ setDeviceStatus(p.address, r.ok?'Test label sent':(r.error||'Test failed'), r.ok?'ok':'err'); })
+        busy=true; bb.disabled=true; setDeviceStatus(p.address,'Printing…');
+        jpost('/devices/testpage',{kind:'label-printer',id:p.address}).then(function(r){ setDeviceStatus(p.address, r.ok?'Test sent':(r.error||'Test failed'), r.ok?'ok':'err'); })
           .catch(function(){ setDeviceStatus(p.address,'Test failed','err'); }).finally(function(){ busy=false; bb.disabled=false; });
         return;
       }
       if(act==='forget' && !bb.classList.contains('armed')){ bb.classList.add('armed'); bb.title='Click again to remove';
         setTimeout(function(){ bb.classList.remove('armed'); bb.title='Forget'; },3000); return; }
-      busy=true; setDeviceStatus(p.address, act+'…'); bb.disabled=true;
+      var busyMsg = act==='reconnect'?'Connecting…':(act==='disconnect'?'Disconnecting…':'Removing…');
+      busy=true; setDeviceStatus(p.address, busyMsg); bb.disabled=true;
       var url = act==='reconnect'?'/niimbot/reconnect':(act==='disconnect'?'/niimbot/disconnect':'/niimbot/forget');
       jpost(url,{address:p.address}).then(function(r){
         if(r.ok){ if(act==='forget') delete deviceStatus[p.address]; else setDeviceStatus(p.address,''); renderNiim(r); }
-        else setDeviceStatus(p.address, r.error||'Failed','err');
+        else setDeviceStatus(p.address, act==='reconnect'?'Connection failed':(r.error||'Failed'),'err');
         loadInv(false);
       }).catch(function(){
         // The request can die on flaky wifi while the server actually completes
