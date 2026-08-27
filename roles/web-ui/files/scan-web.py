@@ -1586,6 +1586,25 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .filepdf{width:88px;height:88px;display:grid;place-items:center;font:600 13px var(--mono);color:var(--muted);background:var(--surface)}
 .flipbox{margin-top:14px;padding:14px 16px;border:1px solid var(--accent);background:var(--accent-weak);border-radius:12px}
 .flipmsg{margin:0 0 12px;font:500 13.5px/1.5 var(--sans);color:var(--text)}
+/* Document drop zone */
+.dropzone{position:relative;border:1.5px dashed var(--border);border-radius:13px;padding:24px 18px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.dropzone:hover,.dropzone.drag{border-color:var(--accent);background:var(--accent-weak)}
+.dropinput{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.dz-icon{color:var(--faint)}
+.dropzone:hover .dz-icon,.dropzone.drag .dz-icon{color:var(--accent)}
+.dz-main{margin-top:8px;font:600 14px var(--sans);letter-spacing:-.01em;color:var(--text)}
+.dz-link{color:var(--accent)}
+.dz-sub{margin-top:5px;font:500 11.5px var(--mono);color:var(--faint)}
+.dz-file{display:flex;align-items:center;justify-content:center;gap:10px}
+.dz-name{font:600 13.5px var(--mono);color:var(--text);word-break:break-all}
+.dz-x{position:static}
+/* Toggle switch */
+.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px}
+.switch{position:relative;flex:none;width:44px;height:26px;padding:0;border:none;border-radius:13px;background:var(--border);cursor:pointer;transition:background .18s}
+.switch[aria-checked="true"]{background:var(--accent)}
+.switch .knob{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.28);transition:transform .18s}
+.switch[aria-checked="true"] .knob{transform:translateX(18px)}
+.switch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #niimSize{min-height:16px}   /* reserve the line so setting the size text doesn't shift layout */
 .adv{margin:6px 0 16px}
 .adv summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding:8px 0;list-style:none}
@@ -1885,14 +1904,22 @@ input[type=number]{font-variant-numeric:tabular-nums}
         <label class="field"><span class="lbl">Printer</span>
           <select id="docQueue"><option>Loading…</option></select></label>
       </div>
-      <label class="field"><span class="lbl">Document <span class="opt">PDF, image, or text</span></span>
-        <input class="filein" id="docFile" type="file" accept="application/pdf,image/*,text/plain,.txt"></label>
-      <div class="chip" id="docChip" hidden><span id="docName"></span><button type="button" id="docClear" aria-label="Remove file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button></div>
-      <div class="hint">Tip: paste an image with ⌘V / Ctrl+V</div>
+      <div class="dropzone" id="docDrop">
+        <input class="dropinput" id="docFile" type="file" accept="application/pdf,image/*,text/plain,.txt">
+        <div class="dz-idle" id="docIdle">
+          <svg class="dz-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M8 8l4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+          <div class="dz-main">Drop a file, or <span class="dz-link">choose one</span></div>
+          <div class="dz-sub">PDF, image, or text · or paste with ⌘V / Ctrl+V</div>
+        </div>
+        <div class="dz-file" id="docChip" hidden>
+          <span class="dz-name" id="docName"></span>
+          <button type="button" class="pvx dz-x" id="docClear" aria-label="Remove file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button>
+        </div>
+      </div>
 
-      <div class="seg" role="tablist" aria-label="Sides" id="docSides">
-        <button type="button" class="seg-btn" id="docSideOne" role="tab" aria-selected="true">Single-sided</button>
-        <button type="button" class="seg-btn" id="docSideTwo" role="tab" aria-selected="false">Double-sided</button>
+      <div class="toggle-row">
+        <span class="lbl">Double-sided</span>
+        <button type="button" class="switch" id="docDuplex" role="switch" aria-checked="false" aria-label="Double-sided"><span class="knob"></span></button>
       </div>
 
       <div id="docFlip" class="flipbox" hidden>
@@ -2573,8 +2600,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
     if(!printBtn) return;   // document tab disabled
     var qsel=document.getElementById('docQueue'), qrow=document.getElementById('docQueueRow');
     var file=document.getElementById('docFile'), chip=document.getElementById('docChip');
+    var drop=document.getElementById('docDrop'), idle=document.getElementById('docIdle');
     var nameEl=document.getElementById('docName'), clear=document.getElementById('docClear'), note=document.getElementById('docNote');
-    var sideOne=document.getElementById('docSideOne'), sideTwo=document.getElementById('docSideTwo');
+    var duplex=document.getElementById('docDuplex');
     var flip=document.getElementById('docFlip'), flipMsg=document.getElementById('docFlipMsg');
     var contBtn=document.getElementById('docContinue'), flipCancel=document.getElementById('docFlipCancel');
     var docData=null, docName='', sides='one', token=null, dbusy=false;
@@ -2587,18 +2615,22 @@ input[type=number]{font-variant-numeric:tabular-nums}
         qrow.hidden = qs.length<2;   // hide the picker when there's only one printer
       }).catch(function(){ qsel.innerHTML='<option value="">No printer available</option>'; qrow.hidden=true; });
     }
-    function setSides(s){ sides=s; sideOne.setAttribute('aria-selected', s==='one'?'true':'false'); sideTwo.setAttribute('aria-selected', s==='two'?'true':'false'); }
-    sideOne.addEventListener('click',function(){ setSides('one'); });
-    sideTwo.addEventListener('click',function(){ setSides('two'); });
+    duplex.addEventListener('click',function(){ var on=duplex.getAttribute('aria-checked')!=='true'; duplex.setAttribute('aria-checked', on?'true':'false'); sides = on?'two':'one'; });
     function update(){ printBtn.disabled = dbusy || !docData || !flip.hidden; }
     function loadFile(f, nm){
-      docData=null; docName=nm||(f&&f.name)||'document'; chip.hidden=true; note.textContent='';
+      docData=null; docName=nm||(f&&f.name)||'document'; chip.hidden=true; idle.hidden=false; note.textContent='';
       if(!f) return update();
       var rd=new FileReader(); rd.onload=function(){ var s=rd.result||''; docData=(s.split(',')[1]||'');
-        nameEl.textContent=docName; chip.hidden=false; update(); }; rd.readAsDataURL(f);
+        nameEl.textContent=docName; chip.hidden=false; idle.hidden=true; update(); }; rd.readAsDataURL(f);
     }
     file.addEventListener('change',function(){ loadFile(file.files&&file.files[0]); });
-    clear.addEventListener('click',function(){ docData=null; docName=''; file.value=''; chip.hidden=true; note.className='note'; note.textContent=''; update(); });
+    // Click the zone (when empty) to open the picker; drag-drop a file onto it.
+    drop.addEventListener('click',function(){ if(chip.hidden) file.click(); });
+    drop.addEventListener('dragover',function(e){ e.preventDefault(); drop.classList.add('drag'); });
+    drop.addEventListener('dragleave',function(){ drop.classList.remove('drag'); });
+    drop.addEventListener('drop',function(e){ e.preventDefault(); drop.classList.remove('drag');
+      var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) loadFile(f); });
+    clear.addEventListener('click',function(e){ e.stopPropagation(); docData=null; docName=''; file.value=''; chip.hidden=true; idle.hidden=false; note.className='note'; note.textContent=''; update(); });
     // Paste an image while the Print (document) tab is active.
     document.addEventListener('paste',function(e){
       var t=document.getElementById('tab-document'); if(!t||!t.classList.contains('active')) return;
