@@ -1340,6 +1340,8 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .lblprev{margin-top:16px}
 .lblprev-frame{display:inline-block;margin-top:6px;padding:7px;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow)}
 .lblprev-frame img{display:block;max-height:150px;max-width:100%;image-rendering:pixelated;border-radius:2px}
+.filepdf{width:88px;height:88px;display:grid;place-items:center;font:600 13px var(--mono);color:var(--muted);background:var(--surface)}
+#niimSize{min-height:16px}   /* reserve the line so setting the size text doesn't shift layout */
 .adv{margin:6px 0 16px}
 .adv summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding:8px 0;list-style:none}
 .adv summary::-webkit-details-marker{display:none}
@@ -1563,8 +1565,11 @@ input[type=number]{font-variant-numeric:tabular-nums}
         <div id="filePane" hidden>
           <label class="field"><span class="lbl">Image or PDF</span>
             <input class="filein" id="pfile" type="file" accept="image/*,application/pdf"></label>
-          <div class="chip" id="fileChip" hidden><span id="fileName"></span><button type="button" id="fileClear" aria-label="Remove file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button></div>
-          <img class="filepv" id="filePv" hidden alt="">
+          <div class="npvwrap" id="filePvWrap" hidden>
+            <img class="filepv" id="filePv" alt="">
+            <div class="filepv filepdf" id="filePdf" hidden>PDF</div>
+            <button type="button" class="pvx" id="fileClear" aria-label="Remove file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button>
+          </div>
           <div class="hint">Tip: paste an image with ⌘V / Ctrl+V</div>
         </div>
         <div id="qrPane" hidden>
@@ -1891,8 +1896,8 @@ input[type=number]{font-variant-numeric:tabular-nums}
   var ptext=document.getElementById('ptext');
   var segText=document.getElementById('segText'), segFile=document.getElementById('segFile'), segQr=document.getElementById('segQr');
   var textPane=document.getElementById('textPane'), filePane=document.getElementById('filePane'), qrPane=document.getElementById('qrPane'), pqr=document.getElementById('pqr');
-  var pfile=document.getElementById('pfile'), fileChip=document.getElementById('fileChip');
-  var fileNameEl=document.getElementById('fileName'), fileClear=document.getElementById('fileClear'), filePv=document.getElementById('filePv');
+  var pfile=document.getElementById('pfile'), fileClear=document.getElementById('fileClear');
+  var filePv=document.getElementById('filePv'), filePvWrap=document.getElementById('filePvWrap'), filePdf=document.getElementById('filePdf');
   var sel=new Set(), cellContent={}, pmode='text', fileData=null, fileNm='', filePvUrl=null, fileAspect=1, printing=false;
   // Set by the format selector (in the nested selectors IIFE): the CUPS queue an
   // A4 print goes to ('' for a thermal format). refreshFormats() lets the (outer)
@@ -2020,11 +2025,12 @@ input[type=number]{font-variant-numeric:tabular-nums}
       var reader=new FileReader();
       reader.onload=function(){
         var res=reader.result; fileData=res.slice(res.indexOf(',')+1);
-        fileNameEl.textContent=fileNm; fileChip.hidden=false;
-        if(/^image\//.test(file.type)){
-          filePv.src=res; filePv.hidden=false;
+        var isImg=/^image\//.test(file.type);
+        filePv.hidden=!isImg; filePdf.hidden=isImg; filePvWrap.hidden=false;
+        if(isImg){
+          filePv.src=res;
           makeThumb(res,function(th,asp){ filePvUrl=th; fileAspect=asp||1; renderSheet(); });
-        } else { filePv.hidden=true; filePvUrl=null; }  // PDF: no in-cell preview
+        } else { filePvUrl=null; }  // PDF: no in-cell preview, show the PDF placeholder
         setMode('file'); updateUI();
       };
       reader.readAsDataURL(file);
@@ -2035,8 +2041,9 @@ input[type=number]{font-variant-numeric:tabular-nums}
       else {
         setMode('file');
         fileData=content.dataB64; fileNm=content.filename||'image'; fileAspect=content.aspect||1; filePvUrl=content.thumbUrl||null;
-        fileNameEl.textContent=fileNm; fileChip.hidden=false;
-        if(filePvUrl){ filePv.src=filePvUrl; filePv.hidden=false; } else { filePv.hidden=true; }
+        filePvWrap.hidden=false;
+        if(filePvUrl){ filePv.src=filePvUrl; filePv.hidden=false; filePdf.hidden=true; }
+        else { filePv.hidden=true; filePdf.hidden=false; }
       }
     }
     pfile.addEventListener('change',function(){ var f=pfile.files[0]; if(f) loadFileForPrint(f); });
@@ -2058,7 +2065,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         }
       }
     });
-    fileClear.addEventListener('click',function(){ fileData=null; fileNm=''; filePvUrl=null; fileAspect=1; pfile.value=''; fileChip.hidden=true; filePv.hidden=true; renderSheet(); updateUI(); });
+    fileClear.addEventListener('click',function(){ fileData=null; fileNm=''; filePvUrl=null; fileAspect=1; pfile.value=''; filePvWrap.hidden=true; renderSheet(); updateUI(); });
 
     // Build actions: stamp the current content into selected cells, or erase them.
     addBtn.addEventListener('click',function(){
