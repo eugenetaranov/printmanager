@@ -1304,10 +1304,11 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chip button{border:none;background:none;color:inherit;cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
 .filepv{display:block;max-width:120px;max-height:120px;margin-top:12px;border-radius:6px;border:1px solid var(--border)}
-.npvwrap{position:relative;display:inline-block}
-.npvwrap .filepv{margin-top:12px}
-.pvx{position:absolute;top:6px;right:6px;width:24px;height:24px;padding:0;border:none;border-radius:50%;background:rgba(20,20,16,.62);color:#fff;font:600 16px/1 var(--sans);cursor:pointer;display:grid;place-items:center;transition:background .15s}
-.pvx:hover{background:var(--danger)}
+.npvwrap{position:relative;display:inline-block;margin-top:12px}
+.npvwrap .filepv{margin-top:0}
+.pvx{position:absolute;top:6px;right:6px;width:22px;height:22px;padding:0;border:none;border-radius:50%;background:var(--danger);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.25);transition:filter .15s}
+.pvx svg{width:11px;height:11px;display:block}
+.pvx:hover{filter:brightness(1.08)}
 .adv{margin:6px 0 16px}
 .adv summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding:8px 0;list-style:none}
 .adv summary::-webkit-details-marker{display:none}
@@ -1572,7 +1573,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
             <input class="filein" id="nFile" type="file" accept="image/*"></label>
           <div class="npvwrap" id="nPvWrap" hidden>
             <img class="filepv" id="nPv" alt="">
-            <button type="button" class="pvx" id="nImgClear" aria-label="Remove image">×</button>
+            <button type="button" class="pvx" id="nImgClear" aria-label="Remove image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button>
           </div>
           <div class="hint">Tip: paste an image with ⌘V / Ctrl+V</div>
         </div>
