@@ -149,7 +149,7 @@ class Transport:
                 cb(pkt)
 
     async def connect(self, address):
-        from bleak import BleakClient
+        from bleak import BleakClient, BleakScanner
 
         def _disc(_c):
             # Ignore drops during the connect handshake — the retry loop owns
@@ -161,12 +161,30 @@ class Transport:
             if self.on_disconnect:
                 self.on_disconnect()
 
-        # Niimbots frequently drop the first BlueZ connect mid-handshake; retry a
-        # few times before giving up (a later attempt usually sticks).
         self._up = False
         last = None
+
+        # Discover the device before connecting. BlueZ refuses to connect by bare
+        # address ("device not found") unless it has seen the advertisement
+        # recently, so a cold reconnect-by-address fails even when the printer is
+        # powered on. find_device_by_address runs a scan and returns as soon as it
+        # sees the printer; connecting to that BLEDevice is the reliable path. If
+        # it isn't seen at all, it's off or already connected to another device
+        # (e.g. the phone app), so say so instead of a cryptic "not found".
+        self.log("scanning for %s…" % address)
+        try:
+            target = await BleakScanner.find_device_by_address(address, timeout=10.0)
+        except Exception as e:
+            self.log("scan error: %r" % e)
+            target = None
+        if target is None:
+            raise RuntimeError("Printer not found — make sure it's on and not "
+                               "connected to another device (e.g. the phone app)")
+
+        # Niimbots frequently drop the first BlueZ connect mid-handshake; retry a
+        # few times before giving up (a later attempt usually sticks).
         for attempt in range(3):
-            client = BleakClient(address, disconnected_callback=_disc, timeout=12)
+            client = BleakClient(target, disconnected_callback=_disc, timeout=12)
             try:
                 await client.connect()
                 if not client.is_connected:
