@@ -1598,13 +1598,14 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .dz-file{display:flex;align-items:center;justify-content:center;gap:10px}
 .dz-name{font:600 13.5px var(--mono);color:var(--text);word-break:break-all}
 .dz-x{position:static}
-/* Toggle switch */
-.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px}
-.switch{position:relative;flex:none;width:44px;height:26px;padding:0;border:none;border-radius:13px;background:var(--border);cursor:pointer;transition:background .18s}
-.switch[aria-checked="true"]{background:var(--accent)}
+/* Toggle switch — label + switch as one tight, clickable unit */
+.switch-row{display:inline-flex;align-items:center;gap:11px;margin-top:18px;padding:6px;border:none;background:none;cursor:pointer;border-radius:9px}
+.switch-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.switch-label{font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.switch{position:relative;flex:none;width:44px;height:26px;border-radius:13px;background:var(--border);transition:background .18s}
+.switch-row[aria-checked="true"] .switch{background:var(--accent)}
 .switch .knob{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.28);transition:transform .18s}
-.switch[aria-checked="true"] .knob{transform:translateX(18px)}
-.switch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.switch-row[aria-checked="true"] .switch .knob{transform:translateX(18px)}
 #niimSize{min-height:16px}   /* reserve the line so setting the size text doesn't shift layout */
 .adv{margin:6px 0 16px}
 .adv summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding:8px 0;list-style:none}
@@ -1909,7 +1910,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         <div class="dz-idle" id="docIdle">
           <svg class="dz-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M8 8l4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
           <div class="dz-main">Drop a file, or <span class="dz-link">choose one</span></div>
-          <div class="dz-sub">PDF, image, or text · or paste with ⌘V / Ctrl+V</div>
+          <div class="dz-sub">PDF, image, or text — drag, choose, or paste an image</div>
         </div>
         <div class="dz-file" id="docChip" hidden>
           <span class="dz-name" id="docName"></span>
@@ -1917,10 +1918,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
         </div>
       </div>
 
-      <div class="toggle-row">
-        <span class="lbl">Double-sided</span>
-        <button type="button" class="switch" id="docDuplex" role="switch" aria-checked="false" aria-label="Double-sided"><span class="knob"></span></button>
-      </div>
+      <button type="button" class="switch-row" id="docDuplex" role="switch" aria-checked="false">
+        <span class="switch-label">Double-sided</span>
+        <span class="switch"><span class="knob"></span></span>
+      </button>
 
       <div id="docFlip" class="flipbox" hidden>
         <p id="docFlipMsg" class="flipmsg"></p>
@@ -2631,11 +2632,15 @@ input[type=number]{font-variant-numeric:tabular-nums}
     drop.addEventListener('drop',function(e){ e.preventDefault(); drop.classList.remove('drag');
       var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) loadFile(f); });
     clear.addEventListener('click',function(e){ e.stopPropagation(); docData=null; docName=''; file.value=''; chip.hidden=true; idle.hidden=false; note.className='note'; note.textContent=''; update(); });
-    // Paste an image while the Print (document) tab is active.
+    // Paste an image or PDF while the Print (document) tab is active. Handles
+    // both clipboard image data (screenshots) and copied files.
     document.addEventListener('paste',function(e){
       var t=document.getElementById('tab-document'); if(!t||!t.classList.contains('active')) return;
-      var items=(e.clipboardData&&e.clipboardData.items)||[];
-      for(var i=0;i<items.length;i++){ if(items[i].type && items[i].type.indexOf('image/')===0){ var b=items[i].getAsFile(); if(b){ e.preventDefault(); loadFile(b,'pasted-image.png'); note.className='note ok'; note.textContent='Pasted image ready to print.'; } return; } }
+      var cd=e.clipboardData; if(!cd) return;
+      var ok=function(ty){ return /^image\//.test(ty||'') || ty==='application/pdf'; };
+      var f=(cd.files && cd.files.length && ok(cd.files[0].type)) ? cd.files[0] : null;
+      if(!f){ var items=cd.items||[]; for(var i=0;i<items.length;i++){ if(items[i].kind==='file' && ok(items[i].type)){ f=items[i].getAsFile(); break; } } }
+      if(f){ e.preventDefault(); loadFile(f, f.name||'pasted-image.png'); note.className='note ok'; note.textContent='Pasted — ready to print.'; }
     });
     function showFlip(msg){ flipMsg.textContent=msg; flip.hidden=false; printBtn.hidden=true; note.className='note'; note.textContent=''; }
     function hideFlip(){ flip.hidden=true; printBtn.hidden=false; token=null; update(); }
