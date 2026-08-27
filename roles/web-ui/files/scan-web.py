@@ -1328,7 +1328,9 @@ svg.sheet{width:100%;max-width:330px;height:auto;border-radius:6px;touch-action:
 .chip{display:inline-flex;align-items:center;gap:8px;margin-top:10px;padding:6px 8px 6px 12px;
   background:var(--accent-weak);border-radius:8px;font:500 12px var(--mono);color:var(--accent);max-width:100%}
 .chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chip button{border:none;background:none;color:inherit;cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
+.chip button{flex:none;width:18px;height:18px;padding:0;border:none;border-radius:50%;background:var(--danger);color:#fff;cursor:pointer;display:grid;place-items:center;transition:filter .15s}
+.chip button svg{width:9px;height:9px;display:block}
+.chip button:hover{filter:brightness(1.08)}
 .filepv{display:block;max-width:120px;max-height:120px;margin-top:12px;border-radius:6px;border:1px solid var(--border)}
 .npvwrap{position:relative;display:inline-block;margin-top:12px}
 .npvwrap .filepv{margin-top:0}
@@ -1523,8 +1525,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
       </div>
       <p class="note" id="noPrinters" hidden>No printers yet. Connect one from the Devices manager (gear icon).</p>
 
-      <!-- A4 / CUPS sheet composer -->
-      <div id="a4Composer">
+      <!-- A4 / CUPS sheet composer. Hidden by default; the correct composer is
+           revealed synchronously from the saved format on load (no flash), then
+           confirmed once device state resolves. -->
+      <div id="a4Composer" hidden>
         <!-- The label size is chosen in the format selector above; this select is
              kept (hidden) as the source of truth for the active sheet template
              and for the Manage editor. -->
@@ -1557,7 +1561,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         <div id="filePane" hidden>
           <label class="field"><span class="lbl">Image or PDF</span>
             <input class="filein" id="pfile" type="file" accept="image/*,application/pdf"></label>
-          <div class="chip" id="fileChip" hidden><span id="fileName"></span><button type="button" id="fileClear" aria-label="Remove file">×</button></div>
+          <div class="chip" id="fileChip" hidden><span id="fileName"></span><button type="button" id="fileClear" aria-label="Remove file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg></button></div>
           <img class="filepv" id="filePv" hidden alt="">
           <div class="hint">Tip: paste an image with ⌘V / Ctrl+V</div>
         </div>
@@ -1723,6 +1727,12 @@ input[type=number]{font-variant-numeric:tabular-nums}
 
 <script>
 (function(){
+  // Reveal the composer matching the saved format synchronously, before the
+  // async device state loads, so the page doesn't flash the A4 composer first.
+  try{ var _pf=localStorage.getItem('pm_format')||'';
+    var _a4=document.getElementById('a4Composer'), _lc=document.getElementById('labelComposer');
+    if(_a4&&_lc){ var _th=_pf.indexOf('niim:')===0; _a4.hidden=_th; _lc.hidden=!_th; }
+  }catch(e){}
   var form=document.getElementById('form'), btn=document.getElementById('scanBtn');
   var status=document.getElementById('status'), statusText=document.getElementById('statusText');
   var note=document.getElementById('note'), tbody=document.getElementById('tbody');
