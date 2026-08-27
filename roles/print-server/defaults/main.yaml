@@ -1,23 +1,47 @@
-# Packages for network printing: CUPS, the open-source brlaser driver (covers
-# the Brother DCP-1510/1511 family), and Avahi for mDNS/AirPrint advertisement.
+# Base packages for network printing: CUPS itself, Avahi for mDNS/AirPrint
+# advertisement, and the driverless/IPP helpers (used by `driver: driverless`
+# printers). Per-printer VENDOR drivers are NOT here — they live in
+# `print_driver_packages` below so adding a printer of another brand is a
+# one-line edit, not a change to this shared list.
 print_packages:
   - cups
-  - printer-driver-brlaser
   - avahi-daemon
   - avahi-utils
+  - cups-ipp-utils        # ipptool/ippfind, for driverless (IPP Everywhere)
 
-# CUPS queue identity.
-printer_queue_name: DCP1511
-printer_description: Brother DCP-1511
-printer_location: Home LAN
+# Vendor driver packages to install for the printers declared below. A
+# `driver: driverless` printer needs nothing here. For a named driver, add its
+# apt package (Debian/Ubuntu name it `printer-driver-<driver>`): brlaser for the
+# Brother DCP-1510/1511 family, `printer-driver-gutenprint` for many others, etc.
+print_driver_packages:
+  - printer-driver-brlaser
 
-# brlaser PPD/model used when creating the queue. Discover valid values on the
-# host with: lpinfo -m | grep -i brlaser
-# The DCP-1511 uses the DCP-1510-series brlaser PPD.
-printer_ppd: "drv:///brlaser.drv/br1510.ppd"
+# --- Printers -----------------------------------------------------------------
+# The host's printers, one CUPS queue per entry. To add a printer of your own,
+# append an entry here (or override this whole list from site.yaml `vars:`).
+# Fields:
+#   name         CUPS queue name (letters/digits/_-, no spaces)
+#   description  printer-info string (shown to clients)
+#   location     printer-location string
+#   driver       "driverless" (IPP Everywhere / driverless-USB, no PPD or vendor
+#                package) OR a driver name whose package is in
+#                print_driver_packages above (e.g. brlaser)
+#   ppd          the PPD/model URI for a named driver; omit for driverless.
+#                Discover valid values on the host with `lpinfo -m` (e.g.
+#                `lpinfo -m | grep -i brlaser`). The DCP-1511 uses the
+#                DCP-1510-series brlaser PPD.
+#   match        optional URI substring to bind a specific USB device (e.g.
+#                "usb://Brother"); omit to bind the first detected usb:// device
+#   default      true to make this the CUPS system default + the Print tab's
+#                initial selection (exactly one entry should set this)
+printers:
+  - name: DCP1511
+    description: Brother DCP-1511
+    location: Home LAN
+    driver: brlaser
+    ppd: "drv:///brlaser.drv/br1510.ppd"
+    match: "usb://Brother"
+    default: true
 
 # Port CUPS listens on (IPP).
 cups_listen_port: 631
-
-# Set the queue as the system default when created.
-printer_set_default: true

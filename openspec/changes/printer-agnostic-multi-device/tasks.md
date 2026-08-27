@@ -4,17 +4,17 @@ Design constraint (see design.md §2): **tack renders templates single-pass and 
 
 ## 1. Config schema + example lists
 
-- [ ] 1.1 Define the `printers:` list schema (name, description, location, `match`, `driver` = `driverless|<driver-pkg>`, `ppd`, `default`) and add the DCP-1511 example to `roles/print-server/defaults/main.yaml`, replacing the single-device scalars
-- [ ] 1.2 Define the `scanners:` list schema (name, `backend` = `escl|brscan4-emu`, `mode`, `resolution`, and brscan4-emu-only knobs: deb url/suite/mirror) and add the DCP-1510 `brscan4-emu` example to `roles/scan-server/defaults/main.yaml`
-- [ ] 1.3 Add a documented `host_vars/printmanager.yaml` (or equivalent) showing the reference box as config; confirm a bare checkout still resolves to the example lists
-- [ ] 1.4 Add derived helpers the roles need: list of driver packages to install, and a boolean "any scanner uses brscan4-emu" for gating
+- [x] 1.1 Define the `printers:` list schema (name, description, location, `match`, `driver` = `driverless|<driver-pkg>`, `ppd`, `default`) and add the DCP-1511 example to `roles/print-server/defaults/main.yaml`, replacing the single-device scalars
+- [ ] 1.2 Define the `scanners:` list schema (name, `backend` = `escl|brscan4-emu`, `mode`, `resolution`, and brscan4-emu-only knobs: deb url/suite/mirror) and add the DCP-1510 `brscan4-emu` example to `roles/scan-server/defaults/main.yaml`  _(deferred to Group 3 so scan defaults+tasks move together)_
+- [x] 1.3 Documented override in `site.yaml` `vars:` (tack has no `host_vars/` dir — see design.md §1); bare checkout resolves to the `defaults/` example lists — verified: dry-run rendered the DCP-1511 entry from defaults
+- [ ] 1.4 Add derived helpers the roles need: ~~list of driver packages to install~~ (done as an explicit `print_driver_packages` list, clearer for users than a derived one), and a boolean "any scanner uses brscan4-emu" for gating _(scanner boolean deferred to Group 3)_
 
 ## 2. print-server: multi-queue, driverless, brand-agnostic
 
-- [ ] 2.1 Rewrite `setup-printer-queue.sh.j2` → `setup-printers.sh.j2` that `range`s over `.printers`: per entry, detect the URI (match substring or first `usb://`), and `lpadmin` with the entry's PPD, or driverless (`-m everywhere`/`driverless:` URI, no PPD) when `driver: driverless`; keep the "leave existing queue untouched when device absent, exit 0" behavior
-- [ ] 2.2 Update `tasks/main.yaml` to install only the driver packages actually referenced (derived in 1.4) plus CUPS/Avahi, and to run `setup-printers.sh` once (no task loop over printers)
-- [ ] 2.3 Mark the configured `default: true` printer as the CUPS system default; ensure `printer-is-shared=true` per queue
-- [ ] 2.4 Confirm the IPP/mDNS firewall rules remain the fixed small set (ports don't multiply per device)
+- [x] 2.1 Rewrite `setup-printer-queue.sh.j2` → `setup-printers.sh.j2` that `range`s over `.printers`: per entry, detect the URI (match substring or first `usb://`), and `lpadmin` with the entry's PPD, or driverless (`-m everywhere`, no PPD) when `driver: driverless`; keeps the "leave existing queue untouched when device absent, exit 0" behavior
+- [x] 2.2 Update `tasks/main.yaml` to install only the driver packages actually referenced (`print_driver_packages`, `when:` non-empty) plus CUPS/Avahi/driverless helpers, and to run `setup-printers.sh` once (no task loop over printers)
+- [x] 2.3 Mark the configured `default: true` printer as the CUPS system default; `printer-is-shared=true` per queue
+- [x] 2.4 Confirmed via dry-run: the IPP/mDNS firewall rules remain the fixed small set (ports don't multiply per device)
 
 ## 3. scan-server: pluggable backend (escl default, brscan4-emu gated)
 

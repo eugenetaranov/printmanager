@@ -19,6 +19,19 @@ roles:
     tags: [watchdog]
   - role: print-server
     tags: [print]
+    # This host's printers default to the shipped example (Brother DCP-1511) in
+    # roles/print-server/defaults/main.yaml. To run your own hardware, override
+    # the list here — one entry per CUPS queue. Uncomment and edit:
+    # vars:
+    #   print_driver_packages: [printer-driver-brlaser]   # drop for driverless-only
+    #   printers:
+    #     - name: Office
+    #       description: My Printer
+    #       location: Home LAN
+    #       driver: driverless          # or a driver in print_driver_packages
+    #       # ppd: "drv:///brlaser.drv/br1510.ppd"   # only for a named driver
+    #       # match: "usb://Brother"     # bind a specific USB device; omit ⇒ first usb://
+    #       default: true
   - role: scan-share
     tags: [scan, share]
   - role: scan-server

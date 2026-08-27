@@ -22,8 +22,8 @@ A hard constraint from the provisioning tool (**tack**): templates render in a *
 
 ## Decisions
 
-### 1. Config lives in `host_vars/<host>.yaml` as `printers:` / `scanners:` lists
-Each host declares its hardware; roles read the lists. Shipped example encodes today's box:
+### 1. Config lives in role `defaults/main.yaml` as `printers:` / `scanners:` lists, overridden via `site.yaml` `vars:`
+Tack has no Ansible-style `host_vars/` directory — host/group vars come from an `inventory.yaml` (`hosts.<name>.vars`) or `vars:` blocks. This repo keeps a self-contained `site.yaml` (host inlined, no inventory file) with all config in role defaults, so: the **example lists live in each role's `defaults/main.yaml`** (a bare checkout provisions the reference box), and a user overrides them in a **`vars:` block in `site.yaml`** (play- or role-level). An `inventory.yaml` remains a drop-in option for multi-host setups but is not required. (Original plan said `host_vars/`; corrected to tack's model during apply.) Shipped example encodes today's box:
 ```yaml
 printers:
   - name: DCP1511            # CUPS queue name

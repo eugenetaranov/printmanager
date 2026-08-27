@@ -1,14 +1,24 @@
-# Network print server: CUPS + brlaser driver for the USB Brother DCP-1511,
-# shared to the LAN and advertised over Avahi/mDNS (AirPrint).
+# Network print server: CUPS shared to the LAN and advertised over Avahi/mDNS
+# (AirPrint). Provisions one queue per entry in `printers:` — each either
+# driverless (IPP Everywhere) or a named driver/PPD — so adding a printer of any
+# brand is a config edit, not a role edit.
 #
 # Overridable variables: see defaults/main.yaml. Depends on `base` for the
 # firewall baseline.
 
-- name: Install CUPS, brlaser driver, and Avahi
+- name: Install CUPS, Avahi, and driverless helpers
   apt:
     name: "{{ print_packages }}"
     state: present
     update_cache: true
+
+# Vendor drivers for the configured printers (none needed for driverless-only
+# hosts). Skipped when the list is empty.
+- name: Install printer driver packages
+  apt:
+    name: "{{ print_driver_packages }}"
+    state: present
+  when: print_driver_packages
 
 - name: Configure CUPS to listen on the LAN and share printers
   template:
@@ -26,24 +36,21 @@
     - cups
     - avahi-daemon
 
+# The printer list is baked into this script at render time (one queue-setup
+# call per entry), so we run it ONCE rather than looping the task over printers —
+# a tack task loop would deliver templated per-printer values unrendered.
 - name: Install the printer-queue setup helper
   template:
-    src: setup-printer-queue.sh.j2
-    dest: /usr/local/sbin/setup-printer-queue.sh
+    src: setup-printers.sh.j2
+    dest: /usr/local/sbin/setup-printers.sh
     mode: "0755"
 
-# Creates/updates the queue when the Brother is connected; a safe no-op when it
-# is not (see the helper script). Re-run the play after plugging in to finalize.
-# Env is passed inline to avoid depending on the `environment:` keyword.
-- name: Create the shared CUPS queue for the DCP-1511
+# Creates/updates each configured queue when its printer is connected; a safe
+# no-op for any printer that is not (see the helper script). Re-run the play
+# after plugging one in to finalize its queue.
+- name: Create the shared CUPS queues
   command:
-    cmd: >
-      env QUEUE='{{ printer_queue_name }}'
-      PPD='{{ printer_ppd }}'
-      DESC='{{ printer_description }}'
-      LOCATION='{{ printer_location }}'
-      SET_DEFAULT='{{ printer_set_default }}'
-      /usr/local/sbin/setup-printer-queue.sh
+    cmd: /usr/local/sbin/setup-printers.sh
 
 # Two direct tasks rather than a loop: tack renders templates in a single pass,
 # so a loop item like "{{ cups_listen_port }}/tcp" would reach iptables unrendered.

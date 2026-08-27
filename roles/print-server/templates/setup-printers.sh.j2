@@ -1,0 +1,44 @@
+#!/bin/sh
+# Managed by Tack — roles/print-server. Idempotently (re)create a CUPS queue for
+# each configured printer. The printer list is expanded at TEMPLATE-render time
+# (one `setup_one` call per entry below), so nothing depends on tack task loops.
+#
+# For each entry: resolve the device URI (a per-printer `match` substring via
+# `lpinfo -v`, else the first usb:// device), then create the queue with its
+# driver/PPD — or driverless (IPP Everywhere, no vendor PPD). When a printer is
+# not connected, its queue is left untouched and we continue, so provisioning
+# still passes with the hardware absent (re-run after plugging in to finalize).
+set -eu
+
+setup_one() {
+  QUEUE="$1"; MATCH="$2"; DRIVER="$3"; PPD="$4"; DESC="$5"; LOCATION="$6"; IS_DEFAULT="$7"
+
+  if [ -n "$MATCH" ]; then
+    uri="$(lpinfo -v 2>/dev/null | awk -v m="$MATCH" 'index($0, m){print $2; exit}')"
+  else
+    uri="$(lpinfo -v 2>/dev/null | awk '/usb:\/\// {print $2; exit}')"
+  fi
+
+  if [ -z "$uri" ]; then
+    echo "No USB device for queue '$QUEUE' (match='${MATCH:-any usb://}'); leaving it unchanged."
+    return 0
+  fi
+
+  echo "Detected $uri; configuring queue '$QUEUE' (driver=$DRIVER)."
+  if [ "$DRIVER" = "driverless" ]; then
+    lpadmin -p "$QUEUE" -E -v "$uri" -m everywhere \
+      -o printer-is-shared=true -D "$DESC" -L "$LOCATION"
+  else
+    lpadmin -p "$QUEUE" -E -v "$uri" -m "$PPD" \
+      -o printer-is-shared=true -D "$DESC" -L "$LOCATION"
+  fi
+
+  cupsenable "$QUEUE"
+  cupsaccept "$QUEUE"
+  if [ "$IS_DEFAULT" = "true" ]; then
+    lpadmin -d "$QUEUE"
+  fi
+}
+{{ range .printers }}
+setup_one '{{ .name }}' '{{ if .match }}{{ .match }}{{ end }}' '{{ .driver }}' '{{ if .ppd }}{{ .ppd }}{{ end }}' '{{ .description }}' '{{ .location }}' '{{ if .default }}true{{ else }}false{{ end }}'
+{{- end }}
