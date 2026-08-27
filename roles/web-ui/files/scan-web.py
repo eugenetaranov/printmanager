@@ -1526,7 +1526,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
       <div class="controls tplrow" id="formatSelRow">
         <label class="field"><span class="lbl">Label format</span>
           <select id="formatSel"><option>Loading…</option></select></label>
-        <button type="button" class="mini manage" id="manageBtn" title="Add, edit or delete A4 label sizes">Manage sizes</button>
+        <button type="button" class="mini manage" id="manageBtn" title="Add, edit or delete A4 label sizes">Manage labels</button>
       </div>
       <p class="note" id="noPrinters" hidden>No printers yet. Connect one from the Devices manager (gear icon).</p>
 
