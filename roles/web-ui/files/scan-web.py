@@ -726,8 +726,8 @@ def _refresh_cups_cache():
 
 def _cups_seed():
     """Cached CUPS printer rows for the page seed / format list: returns instantly
-    and refreshes in the background when cold or stale (~15s)."""
-    if _cups_cache["ts"] == 0.0 or (time.monotonic() - _cups_cache["ts"]) > 15:
+    and refreshes in the background when cold or stale (~60s)."""
+    if _cups_cache["ts"] == 0.0 or (time.monotonic() - _cups_cache["ts"]) > 60:
         threading.Thread(target=_refresh_cups_cache, daemon=True).start()
     return _cups_cache["rows"]
 
