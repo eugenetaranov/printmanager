@@ -55,13 +55,16 @@ scan_web_print_queue: DCP1511
 scan_web_document_enabled: true
 
 # Guided manual-duplex behavior for a simplex printer (no auto-duplex hardware).
-# Per-printer physical properties — calibrate once with a numbered test print
-# (see README) and adjust. Provisional defaults for the DCP-1511:
-#   flip_edge     which edge to flip the printed stack: "long" or "short"
-#   even_reverse  print the even (back) pages in reverse order so the stack
-#                 collates correctly after the flip
-scan_web_duplex_flip_edge: long
+# Per-printer physical properties — calibrated once with a numbered test print.
+#   reload        how to put the printed stack back in the tray:
+#                 "asis" (no flip) | "flip-long" (book flip) | "flip-short"
+#   even_reverse  print the even (back) pages in reverse order
+#   even_rotate   rotate the back half 180° (fixes backs printing upside-down)
+# Values below are CALIBRATED for the Brother DCP-1511 (prints the up side of the
+# input tray, face-down output): reload as-is, even reversed, back half rotated.
+scan_web_duplex_reload: asis
 scan_web_duplex_even_reverse: true
+scan_web_duplex_even_rotate: true
 
 # --- Devices tab: inventory + Niimbot BLE label printers ---------------------
 # A third tab that inventories all attached print/scan hardware (CUPS queues,

@@ -26,12 +26,12 @@ Reuses existing primitives in `roles/web-ui/files/scan-web.py` (`_submit_lp`, `_
 
 ## 4. Calibrate the flip/order constant (needs the real printer + user)
 
-- [ ] 4.1 Build a numbered test PDF (pages "1/2/3/4" with a corner orientation marker) and run it through the guided flow with a provisional constant
-- [ ] 4.2 With the user physically flipping as instructed, print the second half and inspect the collated result; adjust `duplex_even_order` / `duplex_flip_edge` (and odds-first vs evens-first) until pages land 1–4 in order and upright
-- [ ] 4.3 Record the winning values as the DCP-1511 defaults in `roles/web-ui/defaults/main.yaml`; keep them per-queue overridable
+- [x] 4.1 Build a numbered test PDF (pages "1/2/3/4" with a corner orientation marker) and run it through the guided flow with a provisional constant
+- [x] 4.2 With the user physically flipping as instructed, print the second half and inspect the collated result; adjust `duplex_even_order` / `duplex_flip_edge` (and odds-first vs evens-first) until pages land 1–4 in order and upright
+- [x] 4.3 Record the winning values as the DCP-1511 defaults in `roles/web-ui/defaults/main.yaml`; keep them per-queue overridable
 
 ## 5. Docs + verify
 
 - [ ] 5.1 Document the Document tab and duplex behavior in `README.md`; note the per-queue duplex override
-- [ ] 5.2 Deploy to the Pi; verify single-sided, auto-duplex (if any capable queue exists), and the full guided manual-duplex flow end-to-end
-- [ ] 5.3 Verify graceful behavior: disabled tab, invalid/oversized upload, and an abandoned two-phase job (reaper removes it, no stray second half)
+- [x] 5.2 Deploy to the Pi; verify single-sided, auto-duplex (if any capable queue exists), and the full guided manual-duplex flow end-to-end
+- [x] 5.3 Verify graceful behavior: disabled tab, invalid/oversized upload, and an abandoned two-phase job (reaper removes it, no stray second half)

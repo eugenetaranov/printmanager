@@ -73,8 +73,9 @@ PRINT_QUEUE = _cfg("print_queue", "SCAN_WEB_PRINT_QUEUE", "DCP1511")
 
 DEVICES_ENABLED = _cfg_bool("devices_enabled", "SCAN_WEB_DEVICES_ENABLED", "true")
 DOCUMENT_ENABLED = _cfg_bool("document_enabled", "SCAN_WEB_DOCUMENT_ENABLED", "true")
-DUPLEX_FLIP_EDGE = _cfg("duplex_flip_edge", "SCAN_WEB_DUPLEX_FLIP_EDGE", "long")
+DUPLEX_RELOAD = _cfg("duplex_reload", "SCAN_WEB_DUPLEX_RELOAD", "asis")  # asis|flip-long|flip-short
 DUPLEX_EVEN_REVERSE = _cfg_bool("duplex_even_reverse", "SCAN_WEB_DUPLEX_EVEN_REVERSE", "true")
+DUPLEX_EVEN_ROTATE = _cfg_bool("duplex_even_rotate", "SCAN_WEB_DUPLEX_EVEN_ROTATE", "true")
 
 # The Niimbot module reads its store dir from SCAN_WEB_DATA; keep it in sync with
 # the resolved config so both agree when config comes from the YAML file.
@@ -584,11 +585,12 @@ def _draw_text(c, text, bx, by, bw, bh, pad, scale):
             c.drawCentredString(cx, cy + ((n - 1) / 2.0 - i) * leading - 0.35 * size, ln)
 
 
-def _submit_lp(pdf_path, queue=None, duplex=False):
+def _submit_lp(pdf_path, queue=None, duplex=False, rotate180=False):
     cmd = ["lp", "-d", queue or PRINT_QUEUE, "-o", "media=A4", "-o", "fit-to-page=false"]
     if duplex:
-        cmd += ["-o", "sides=two-sided-long-edge" if DUPLEX_FLIP_EDGE == "long"
-                else "sides=two-sided-short-edge"]
+        cmd += ["-o", "sides=two-sided-long-edge"]
+    if rotate180:                       # reverse-portrait: flips the page 180°
+        cmd += ["-o", "orientation-requested=6"]
     cmd.append(pdf_path)
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if proc.returncode != 0:
@@ -723,9 +725,14 @@ def _split_halves(pdf, tmp, pages, even_reverse):
 
 
 def _flip_instruction():
-    edge = "long edge" if DUPLEX_FLIP_EDGE == "long" else "short edge"
-    return ("Take the printed pages from the output tray, flip the whole stack over "
-            "along the %s, and put it back in the paper tray — then Continue." % edge)
+    if DUPLEX_RELOAD == "flip-long":
+        how = "flip the whole stack over along the long edge (like a book), then"
+    elif DUPLEX_RELOAD == "flip-short":
+        how = "flip the whole stack over along the short edge (top-to-bottom), then"
+    else:  # asis
+        how = "without flipping or turning it,"
+    return ("Take the printed pages from the output tray and, %s put them back in the "
+            "paper tray the same way up — then Continue." % how)
 
 
 _duplex_jobs = {}
@@ -785,7 +792,9 @@ def do_document_continue(obj):
     if not job:
         raise RuntimeError("This print expired — start over.")
     try:
-        return {"queue": job["queue"], "job": _submit_lp(job["even"], job["queue"]), "done": True}
+        return {"queue": job["queue"],
+                "job": _submit_lp(job["even"], job["queue"], rotate180=DUPLEX_EVEN_ROTATE),
+                "done": True}
     finally:
         shutil.rmtree(job["dir"], ignore_errors=True)
 
