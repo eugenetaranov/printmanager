@@ -167,6 +167,16 @@ export function SheetComposer({
               </g>
             )
           })}
+          {/* Selection outlines drawn last so a neighbouring cell's stroke can't overpaint
+              the shared right/bottom edges (SVG paints in document order). */}
+          {Array.from({ length: n }, (_, i) => {
+            if (!sel.has(i)) return null
+            const { x, y } = cellXY(i)
+            return (
+              <rect key={`sel-${i}`} x={x} y={y} width={g.cell_w} height={g.cell_h} rx={1.5}
+                fill="none" stroke="var(--color-primary)" strokeWidth={0.7} pointerEvents="none" />
+            )
+          })}
         </svg>
       </div>
 
