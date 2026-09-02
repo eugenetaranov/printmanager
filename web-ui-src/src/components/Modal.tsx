@@ -40,7 +40,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
-        className={'modal-box ' + (wide ? 'max-w-[520px]' : 'max-w-[380px]')}
+        className={'modal-box overflow-x-hidden ' + (wide ? 'max-w-[520px]' : 'max-w-[380px]')}
       >
         {children}
       </div>
