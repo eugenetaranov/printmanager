@@ -63,22 +63,26 @@ export function ScanTab() {
   return (
     <>
       <form onSubmit={submit} className="card border border-base-300 bg-base-100 p-5 shadow-sm">
-        {(hasModes || hasRes) && (
+        {config === null ? (
+          <div className="mb-4 grid grid-cols-2 gap-3">
+            <FieldSkeleton /><FieldSkeleton />
+          </div>
+        ) : hasModes || hasRes ? (
           <div className="mb-4 grid grid-cols-2 gap-3">
             {hasModes && (
               <label className="flex flex-col gap-[6px]">
                 <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Mode</span>
-                <Select value={mode} onChange={setMode} options={config!.modes.map((m) => ({ value: m.value, label: m.label }))} />
+                <Select value={mode} onChange={setMode} options={config.modes.map((m) => ({ value: m.value, label: m.label }))} />
               </label>
             )}
             {hasRes && (
               <label className="flex flex-col gap-[6px]">
                 <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Resolution</span>
-                <Select value={resolution} onChange={setResolution} options={config!.resolutions.map((r) => ({ value: r, label: r }))} />
+                <Select value={resolution} onChange={setResolution} options={config.resolutions.map((r) => ({ value: r, label: r }))} />
               </label>
             )}
           </div>
-        )}
+        ) : null}
 
         <label className="flex flex-col gap-[6px]">
           <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
@@ -114,6 +118,15 @@ export function ScanTab() {
         onNote={(kind, content) => (kind === 'ok' ? ok(content) : kind === 'err' ? err(content) : info(content))}
       />
     </>
+  )
+}
+
+function FieldSkeleton() {
+  return (
+    <div className="flex flex-col gap-[6px]">
+      <div className="skeleton h-[13px] w-16 rounded" />
+      <div className="skeleton h-10 w-full rounded" />
+    </div>
   )
 }
 

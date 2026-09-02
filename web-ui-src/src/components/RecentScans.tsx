@@ -34,6 +34,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
 ) {
   const { push } = useActivityLog()
   const [scans, setScans] = useState<Scan[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [newest, setNewest] = useState<string>('')
   const [selected, setSelected] = useState<string[]>([])
   const [renaming, setRenaming] = useState<string>('')
@@ -50,11 +51,12 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
   const load = useCallback((n?: string) => {
     api.recent().then((s) => {
       setScans(s)
+      setLoaded(true)
       // Drop selections whose rows are gone.
       const have = new Set(s.map((x) => x.name))
       setSelected((sel) => sel.filter((name) => have.has(name)))
       if (n !== undefined) setNewest(n)
-    }).catch(() => {})
+    }).catch(() => setLoaded(true))
   }, [])
 
   useImperativeHandle(ref, () => ({ refresh: load }), [load])
@@ -204,7 +206,18 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             </tr>
           </thead>
           <tbody>
-            {scans.map((s) => {
+            {!loaded && Array.from({ length: 4 }, (_, i) => (
+              <tr key={'sk' + i} className="[&>td]:border-b [&>td]:border-base-300 [&>td]:px-[10px] [&>td]:py-2">
+                <td><div className="skeleton mx-auto h-4 w-4 rounded" /></td>
+                <td><div className="skeleton h-11 w-[34px] rounded" /></td>
+                <td><div className="skeleton h-4 w-40 rounded" /></td>
+                <td><div className="skeleton h-4 w-6 rounded" /></td>
+                <td><div className="skeleton h-4 w-12 rounded" /></td>
+                <td><div className="skeleton h-4 w-12 rounded" /></td>
+                <td><div className="skeleton ml-auto h-4 w-16 rounded" /></td>
+              </tr>
+            ))}
+            {loaded && scans.map((s) => {
               const i = selected.indexOf(s.name)
               return (
                 <tr key={s.name} className={'[&>td]:border-b [&>td]:border-base-300 [&>td]:px-[10px] [&>td]:py-2 [&>td]:align-middle ' + (s.name === newest ? '[&>td]:[animation:rowin_0.35s_ease_both]' : '')}>
@@ -288,7 +301,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
         </table>
       </div>
 
-      {scans.length === 0 && (
+      {loaded && scans.length === 0 && (
         <p className="px-[2px] py-4 text-sm text-base-content/60">No scans yet. Place a page on the glass and press Scan.</p>
       )}
 

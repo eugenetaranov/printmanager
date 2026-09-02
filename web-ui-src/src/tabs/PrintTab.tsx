@@ -184,7 +184,7 @@ export function PrintTab() {
           if (f) loadFile(f)
         }}
         className={
-          'flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-colors ' +
+          'flex min-h-[128px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-colors ' +
           (dragOver ? 'border-primary bg-primary/10' : 'border-base-300 hover:border-primary')
         }
       >

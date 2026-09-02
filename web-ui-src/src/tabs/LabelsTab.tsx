@@ -16,15 +16,17 @@ export function LabelsTab() {
   const [state, setState] = useState<NiimState | null>(null)
   const [formatV, setFormatV] = useState('')
   const [manageOpen, setManageOpen] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const [conn, setConn] = useState<{ fmt: ThermalFormat; status: 'connecting' | 'ok' | 'err'; msg: string; then?: () => void } | null>(null)
 
   const loadTemplates = () => tplApi.list().then(setTemplates).catch(() => {})
-  const loadNiim = () => nb.state().then(setState).catch(() => {})
 
   useEffect(() => {
-    loadTemplates()
-    devApi.list().then(setDevs).catch(() => {})
-    loadNiim()
+    Promise.allSettled([
+      tplApi.list().then(setTemplates),
+      devApi.list().then(setDevs),
+      nb.state().then(setState),
+    ]).then(() => setLoaded(true))
   }, [])
 
   const opts = useMemo(() => formatOptions(templates, state?.printers ?? [], devs), [templates, state, devs])
@@ -69,7 +71,20 @@ export function LabelsTab() {
 
   return (
     <div className="card border border-base-300 bg-base-100 p-5 shadow-sm">
-      {opts.length === 0 ? (
+      {!loaded ? (
+        <div>
+          <div className="mb-4 flex items-end gap-2">
+            <div className="flex flex-1 flex-col gap-[6px]">
+              <div className="skeleton h-[13px] w-24 rounded" />
+              <div className="skeleton h-10 w-full rounded" />
+            </div>
+            <div className="skeleton h-10 w-28 rounded" />
+          </div>
+          <div className="skeleton mt-3 h-8 w-48 rounded" />
+          <div className="skeleton mt-3 h-24 w-full rounded" />
+          <div className="skeleton mt-4 h-11 w-full rounded" />
+        </div>
+      ) : opts.length === 0 ? (
         <p className="font-mono text-[13px] text-base-content/60">No printers yet. Connect one from the Devices manager (gear icon).</p>
       ) : (
         <>

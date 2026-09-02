@@ -25,16 +25,19 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
   const [editSize, setEditSize] = useState('')
   const [logAddr, setLogAddr] = useState('')
   const [note, setNote] = useState<DStatus | null>(null)
+  const [loaded, setLoaded] = useState(false)
 
   const setDS = (addr: string, msg: string, cls: DStatus['cls'] = '') =>
     setDstatus((m) => ({ ...m, [addr]: { msg, cls } }))
 
   const reload = useCallback(() => {
-    devApi.list().then(setDevs).catch(() => {})
-    nb.state().then(setState).catch(() => {})
+    Promise.allSettled([
+      devApi.list().then(setDevs),
+      nb.state().then(setState),
+    ]).then(() => setLoaded(true))
   }, [])
 
-  useEffect(() => { if (open) { reload(); setCandidates([]); setNote(null) } }, [open, reload])
+  useEffect(() => { if (open) { setLoaded(false); reload(); setCandidates([]); setNote(null) } }, [open, reload])
 
   const refresh = () => {
     setBusy(true)
@@ -106,8 +109,23 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
         </div>
       </div>
 
+      {!loaded && (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="flex items-center gap-2 py-1">
+              <div className="skeleton h-[7px] w-[7px] flex-none rounded-full" />
+              <div className="min-w-0 flex-1">
+                <div className="skeleton h-[13px] w-40 rounded" />
+                <div className="skeleton mt-1 h-[11px] w-56 rounded" />
+              </div>
+              <div className="skeleton h-8 w-8 flex-none rounded" />
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Inventory */}
-      {GROUPS.map((g) => {
+      {loaded && GROUPS.map((g) => {
         const rows = devs.filter((d) => d.kind === g.kind)
         if (!rows.length) return null
         return (
@@ -128,10 +146,10 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
           </div>
         )
       })}
-      {!anyInv && <p className="text-sm text-base-content/60">No devices found.</p>}
+      {loaded && !anyInv && <p className="text-sm text-base-content/60">No devices found.</p>}
 
       {/* Niimbot printers */}
-      <div className="mt-4">
+      <div className={'mt-4 ' + (loaded ? '' : 'hidden')}>
         <div className="mb-1 flex items-center justify-between">
           <span className="font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-base-content/45">Label printers (Niimbot)</span>
           <IconBtn title="Scan for Bluetooth printers" onClick={scan} disabled={scanning}>
@@ -228,7 +246,7 @@ function IconBtn({ title, onClick, variant, disabled, children }: { title: strin
       disabled={disabled}
       data-tip={title}
       aria-label={title}
-      className={'tooltip tooltip-bottom btn btn-square btn-sm ' + (variant === 'primary' ? 'btn-primary' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
+      className={'tooltip tooltip-left btn btn-square btn-sm ' + (variant === 'primary' ? 'btn-primary' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
     >
       {children}
     </button>
