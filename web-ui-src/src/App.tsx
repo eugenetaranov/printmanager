@@ -35,7 +35,7 @@ function Shell() {
             title="Devices"
             aria-label="Manage devices"
             onClick={() => setDevicesOpen(true)}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-card transition-colors hover:text-text"
+            className="btn btn-square btn-ghost btn-sm"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
               <path d="M6 9V3h12v6" />
@@ -47,22 +47,19 @@ function Shell() {
         </div>
       </header>
 
-      <nav className="mb-6 inline-flex rounded-xl border border-border bg-surface p-1 shadow-card" role="tablist" aria-label="Tools">
+      <div role="tablist" aria-label="Tools" className="tabs tabs-box mb-6 inline-flex w-auto">
         {TABS.map((t) => (
           <button
             key={t.id}
             role="tab"
             aria-selected={tab === t.id}
             onClick={() => navigate(t.id)}
-            className={
-              'cursor-pointer rounded-[9px] px-[18px] py-2 font-sans text-[13.5px] font-[640] tracking-[-0.01em] transition-colors ' +
-              (tab === t.id ? 'bg-accent-weak text-accent' : 'text-muted hover:text-text')
-            }
+            className={'tab font-[640] ' + (tab === t.id ? 'tab-active' : '')}
           >
             {t.label}
           </button>
         ))}
-      </nav>
+      </div>
 
       {tab === 'scan' && <ScanTab />}
       {tab === 'labels' && <LabelsTab />}

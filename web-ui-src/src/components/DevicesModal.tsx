@@ -101,8 +101,8 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
       <div className="mb-4 flex items-center justify-between">
         <h3 id="devTitle" className="m-0 text-[15px] font-[640]">Devices</h3>
         <div className="flex gap-2">
-          <button type="button" onClick={refresh} disabled={busy} className="cursor-pointer rounded-md bg-bg px-3 py-1 font-mono text-[11px] font-[600] text-muted hover:text-text disabled:opacity-50">Refresh</button>
-          <button type="button" onClick={onClose} aria-label="Close" className="cursor-pointer rounded-md px-2 py-1 text-muted hover:text-text">✕</button>
+          <button type="button" onClick={refresh} disabled={busy} className="btn btn-outline btn-xs font-mono">Refresh</button>
+          <button type="button" onClick={onClose} aria-label="Close" className="btn btn-ghost btn-xs btn-square">✕</button>
         </div>
       </div>
 
@@ -121,7 +121,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                   <div className={'truncate font-mono text-[11px] ' + (d.error ? 'text-danger' : 'text-faint')}>{d.error || d.detail || d.status}</div>
                 </div>
                 {d.kind === 'printer' && d.id && (
-                  <button type="button" onClick={() => testDevice(d)} className="cursor-pointer rounded-md bg-bg px-2 py-1 font-mono text-[11px] text-muted hover:text-text">Test</button>
+                  <button type="button" onClick={() => testDevice(d)} className="btn btn-ghost btn-xs font-mono">Test</button>
                 )}
               </div>
             ))}
@@ -134,7 +134,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
       <div className="mt-4">
         <div className="mb-1 flex items-center justify-between">
           <span className="font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-faint">Label printers (Niimbot)</span>
-          <button type="button" onClick={scan} disabled={scanning} className="cursor-pointer rounded-md bg-bg px-3 py-1 font-mono text-[11px] font-[600] text-muted hover:text-text disabled:opacity-50">
+          <button type="button" onClick={scan} disabled={scanning} className="btn btn-outline btn-xs font-mono">
             {scanning ? 'Scanning…' : 'Scan for printers'}
           </button>
         </div>
@@ -176,7 +176,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                 <div className="mt-2 max-h-40 overflow-y-auto rounded-md bg-bg p-2 font-mono text-[11px] text-muted">
                   {log.length === 0 ? 'No log yet.' : log.map((l, i) => <div key={i}>{typeof l === 'string' ? l : JSON.stringify(l)}</div>)}
                   <div className="mt-1 text-right">
-                    <button type="button" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})} className="cursor-pointer text-faint hover:text-danger">clear</button>
+                    <button type="button" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})} className="btn btn-link btn-xs h-auto min-h-0 p-0 text-faint hover:text-error">clear</button>
                   </div>
                 </div>
               )}
@@ -212,10 +212,7 @@ function MiniBtn({ children, onClick, primary, active }: { children: React.React
     <button
       type="button"
       onClick={onClick}
-      className={
-        'cursor-pointer rounded-md px-2 py-1 font-mono text-[11px] font-[600] ' +
-        (primary ? 'bg-accent text-white hover:brightness-[1.06]' : active ? 'bg-accent-weak text-accent' : 'bg-bg text-muted hover:text-text')
-      }
+      className={'btn btn-xs font-mono ' + (primary ? 'btn-primary' : active ? 'btn-active' : 'btn-ghost')}
     >
       {children}
     </button>
@@ -228,9 +225,9 @@ function SizeEditor({ w, h, onSave, onCancel }: { w: number; h: number; onSave: 
   return (
     <div className="mt-2 flex items-center gap-2 rounded-md bg-bg p-2">
       <span className="font-mono text-[11px] text-faint">Roll size</span>
-      <input type="number" min={5} max={120} value={ww} onChange={(e) => setWw(e.target.value)} aria-label="Width mm" className="w-16 rounded border border-border bg-surface px-2 py-1 font-mono text-[12px]" />
+      <input type="number" min={5} max={120} value={ww} onChange={(e) => setWw(e.target.value)} aria-label="Width mm" className="input input-sm w-16 font-mono" />
       <span className="text-faint">×</span>
-      <input type="number" min={5} max={300} value={hh} onChange={(e) => setHh(e.target.value)} aria-label="Length mm" className="w-16 rounded border border-border bg-surface px-2 py-1 font-mono text-[12px]" />
+      <input type="number" min={5} max={300} value={hh} onChange={(e) => setHh(e.target.value)} aria-label="Length mm" className="input input-sm w-16 font-mono" />
       <span className="font-mono text-[11px] text-faint">mm</span>
       <MiniBtn primary onClick={() => onSave(parseFloat(ww), parseFloat(hh))}>Save</MiniBtn>
       <MiniBtn onClick={onCancel}>Cancel</MiniBtn>

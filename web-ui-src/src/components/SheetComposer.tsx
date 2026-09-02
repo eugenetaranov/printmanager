@@ -107,8 +107,8 @@ export function SheetComposer({
           {sel.size ? `${sel.size} cell${sel.size === 1 ? '' : 's'} selected` : 'Tap cells to place your label'}
         </span>
         <span className="flex gap-1">
-          <button type="button" onClick={() => setSel(new Set(Array.from({ length: n }, (_, i) => i)))} className="cursor-pointer rounded-md bg-bg px-3 py-1 font-mono text-[11px] text-muted hover:text-text">All</button>
-          <button type="button" onClick={() => setSel(new Set())} className="cursor-pointer rounded-md bg-bg px-3 py-1 font-mono text-[11px] text-muted hover:text-text">None</button>
+          <button type="button" onClick={() => setSel(new Set(Array.from({ length: n }, (_, i) => i)))} className="btn btn-ghost btn-xs font-mono">All</button>
+          <button type="button" onClick={() => setSel(new Set())} className="btn btn-ghost btn-xs font-mono">None</button>
         </span>
       </div>
 
@@ -143,13 +143,11 @@ export function SheetComposer({
       <div className="mt-3">
         {pmode === 'text' && (
           <textarea rows={2} maxLength={200} value={text} onChange={(e) => setText(e.target.value)}
-            placeholder={'e.g. 42 — or a short\nlabel on two lines'}
-            className="w-full resize-y rounded-[9px] border border-border bg-bg px-3 py-[10px] font-mono text-[13px] focus:border-accent focus:outline-none" />
+            placeholder={'e.g. 42 — or a short\nlabel on two lines'} className="textarea w-full font-mono" />
         )}
         {pmode === 'qr' && (
           <textarea rows={2} maxLength={512} value={qr} onChange={(e) => setQr(e.target.value)}
-            placeholder="e.g. https://example.com or any text"
-            className="w-full resize-y rounded-[9px] border border-border bg-bg px-3 py-[10px] font-mono text-[13px] focus:border-accent focus:outline-none" />
+            placeholder="e.g. https://example.com or any text" className="textarea w-full font-mono" />
         )}
         {pmode === 'file' && (
           <div>
@@ -161,23 +159,16 @@ export function SheetComposer({
       </div>
 
       <div className="mt-3 flex gap-2">
-        <button type="button" onClick={addToSheet} disabled={!pd || sel.size === 0}
-          className="cursor-pointer rounded-xl bg-primary px-4 py-[10px] text-[14px] font-[640] text-primary-ink hover:brightness-110 disabled:cursor-default disabled:opacity-50">
-          Add to sheet
-        </button>
-        <button type="button" onClick={erase} disabled={sel.size === 0}
-          className="cursor-pointer rounded-xl border border-border bg-surface px-4 py-[10px] text-[14px] font-[600] text-muted hover:text-text disabled:opacity-50">
-          Erase
-        </button>
+        <button type="button" onClick={addToSheet} disabled={!pd || sel.size === 0} className="btn btn-primary">Add to sheet</button>
+        <button type="button" onClick={erase} disabled={sel.size === 0} className="btn btn-ghost">Erase</button>
       </div>
 
       <hr className="my-4 border-t border-border" />
-      <button type="button" onClick={print} disabled={!filled || printing}
-        className="w-full cursor-pointer rounded-xl bg-primary px-4 py-[14px] text-[15px] font-[640] text-primary-ink transition-[filter] hover:brightness-110 disabled:cursor-default disabled:opacity-50">
+      <button type="button" onClick={print} disabled={!filled || printing} className="btn btn-primary btn-block btn-lg">
         {printing ? 'Printing…' : `Print sheet${filled ? ` (${filled})` : ''}`}
       </button>
       {filled > 0 && (
-        <button type="button" onClick={clearSheet} className="mt-2 w-full cursor-pointer text-center font-mono text-[12px] text-faint hover:text-danger">
+        <button type="button" onClick={clearSheet} className="btn btn-ghost btn-sm mt-2 w-full font-mono text-faint hover:text-error">
           {clearArmed ? 'Click again to clear' : 'Clear sheet'}
         </button>
       )}

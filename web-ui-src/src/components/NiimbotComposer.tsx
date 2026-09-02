@@ -88,7 +88,7 @@ export function NiimbotComposer({
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={kind === 'qr' ? 'e.g. https://example.com or any text' : 'e.g. 42 — or a short\nlabel on two lines'}
-            className="resize-y rounded-[9px] border border-border bg-bg px-3 py-[10px] font-mono text-[13px] text-text focus:border-accent focus:outline-none"
+            className="textarea w-full font-mono"
           />
         </label>
       ) : (
@@ -97,7 +97,7 @@ export function NiimbotComposer({
           {imgUrl && (
             <div className="relative mt-2 inline-block">
               <img src={imgUrl} alt="" className="max-h-32 rounded border border-border" />
-              <button type="button" onClick={() => loadImage(null)} aria-label="Remove image" className="absolute -right-2 -top-2 flex h-[22px] w-[22px] items-center justify-center rounded-full bg-danger text-white">
+              <button type="button" onClick={() => loadImage(null)} aria-label="Remove image" className="btn btn-circle btn-error btn-xs absolute -right-2 -top-2">
                 <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M6 6 18 18M18 6 6 18" /></svg>
               </button>
             </div>
@@ -116,12 +116,7 @@ export function NiimbotComposer({
       )}
 
       <hr className="my-4 border-t border-border" />
-      <button
-        type="button"
-        onClick={onPrint}
-        disabled={busy || !hasContent}
-        className="w-full cursor-pointer rounded-xl bg-primary px-4 py-[14px] text-[15px] font-[640] text-primary-ink transition-[filter] hover:brightness-110 disabled:cursor-default disabled:opacity-50"
-      >
+      <button type="button" onClick={onPrint} disabled={busy || !hasContent} className="btn btn-primary btn-block btn-lg">
         {busy ? 'Printing…' : 'Print label'}
       </button>
     </div>
@@ -130,17 +125,14 @@ export function NiimbotComposer({
 
 export function Seg<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: [T, string][] }) {
   return (
-    <div className="mt-3 inline-flex rounded-xl border border-border bg-bg p-1" role="tablist">
+    <div role="tablist" className="tabs tabs-box tabs-sm mt-3 inline-flex w-auto">
       {options.map(([v, label]) => (
         <button
           key={v}
           role="tab"
           aria-selected={value === v}
           onClick={() => onChange(v)}
-          className={
-            'cursor-pointer rounded-[8px] px-4 py-[6px] font-sans text-[13px] font-[600] transition-colors ' +
-            (value === v ? 'bg-surface text-text shadow-card' : 'text-muted hover:text-text')
-          }
+          className={'tab ' + (value === v ? 'tab-active' : '')}
         >
           {label}
         </button>

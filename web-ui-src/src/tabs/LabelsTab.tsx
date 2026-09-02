@@ -68,7 +68,7 @@ export function LabelsTab() {
   const activeTemplate = format?.kind === 'a4' ? templates.find((t) => t.id === format.tplId) : undefined
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+    <div className="card border border-base-300 bg-base-100 p-5 shadow-sm">
       {opts.length === 0 ? (
         <p className="font-mono text-[13px] text-muted">No printers yet. Connect one from the Devices manager (gear icon).</p>
       ) : (
@@ -76,11 +76,11 @@ export function LabelsTab() {
           <div className="mb-4 flex items-end gap-2">
             <label className="flex flex-1 flex-col gap-[6px]">
               <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">Label format</span>
-              <select value={formatV} onChange={(e) => selectFormat(e.target.value)} className="rounded-[9px] border border-border bg-bg px-3 py-[10px] font-mono text-[13px] text-text focus:border-accent focus:outline-none">
+              <select value={formatV} onChange={(e) => selectFormat(e.target.value)} className="select w-full font-mono">
                 {opts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
               </select>
             </label>
-            <button type="button" onClick={() => setManageOpen(true)} title="Add, edit or delete A4 label sizes" className="cursor-pointer rounded-md bg-bg px-3 py-[10px] font-mono text-[11px] font-[600] text-muted hover:text-text">
+            <button type="button" onClick={() => setManageOpen(true)} title="Add, edit or delete A4 label sizes" className="btn btn-outline btn-sm">
               Manage labels
             </button>
           </div>
@@ -109,9 +109,9 @@ export function LabelsTab() {
             <div className={'mt-3 font-mono text-[13px] ' + (conn.status === 'err' ? 'text-danger' : conn.status === 'ok' ? 'text-accent' : 'text-muted')}>{conn.msg}</div>
             <div className="mt-4 flex justify-center gap-2">
               {conn.status === 'err' && (
-                <button type="button" onClick={() => ensureConnected(conn.fmt, conn.then)} className="cursor-pointer rounded-xl bg-primary px-4 py-2 text-[14px] font-[640] text-primary-ink hover:brightness-110">Try again</button>
+                <button type="button" onClick={() => ensureConnected(conn.fmt, conn.then)} className="btn btn-primary btn-sm">Try again</button>
               )}
-              <button type="button" onClick={() => setConn(null)} className="cursor-pointer rounded-xl border border-border bg-surface px-4 py-2 text-[14px] font-[600] text-muted hover:text-text">Compose anyway</button>
+              <button type="button" onClick={() => setConn(null)} className="btn btn-ghost btn-sm">Compose anyway</button>
             </div>
           </div>
         )}

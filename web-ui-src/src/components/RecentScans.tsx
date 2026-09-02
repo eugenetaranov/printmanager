@@ -140,23 +140,14 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
     <section className="mt-6">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="m-0 text-[13px] font-[640] tracking-[0.02em]">Recent scans</h2>
-        <div className="flex items-center gap-[10px]">
+        <div className="flex items-center gap-2">
           {nSel >= 2 && (
-            <button
-              type="button"
-              onClick={openMerge}
-              className="cursor-pointer rounded-[7px] bg-accent px-3 py-[3px] font-mono text-xs font-[600] tracking-[0.02em] text-white hover:brightness-[1.06]"
-            >
-              Merge {nSel}
-            </button>
+            <button type="button" onClick={openMerge} className="btn btn-primary btn-sm font-mono">Merge {nSel}</button>
           )}
           <button
             type="button"
             onClick={onClear}
-            className={
-              'cursor-pointer rounded-md px-1 py-[2px] font-mono text-xs font-[600] tracking-[0.02em] ' +
-              (clearArmed ? 'bg-danger text-white' : 'text-faint hover:text-danger')
-            }
+            className={'btn btn-sm font-mono ' + (clearArmed ? 'btn-error' : 'btn-ghost text-faint')}
           >
             {clearArmed ? 'Click again to delete all' : 'Clear all'}
           </button>
@@ -173,7 +164,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       <div className="mt-[14px] overflow-x-auto">
         {/* table-fixed + colgroup: column widths are pinned, so content changing
             (e.g. the order badge showing/hiding) can never reflow the layout. */}
-        <table className="w-full table-fixed border-collapse text-[13px]">
+        <table className="table table-sm w-full table-fixed text-[13px]">
           <colgroup>
             <col className="w-10" />
             <col className="w-[46px]" />
@@ -192,7 +183,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                   checked={allChecked}
                   ref={(el) => { if (el) el.indeterminate = nSel > 0 && !allChecked }}
                   onChange={toggleAll}
-                  className="cursor-pointer align-middle accent-[var(--accent)]"
+                  className="checkbox checkbox-sm align-middle"
                 />
               </th>
               <th></th>
@@ -215,7 +206,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                         aria-label="Select"
                         checked={i >= 0}
                         onChange={() => toggle(s.name)}
-                        className="cursor-pointer align-middle accent-[var(--accent)]"
+                        className="checkbox checkbox-sm align-middle"
                       />
                       {i >= 0 && (
                         <span className="absolute left-full ml-[3px] font-mono text-[10px] font-[700] leading-none text-accent">
@@ -260,28 +251,16 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                   <td className="whitespace-nowrap font-mono text-xs tabular-nums text-faint">{ago(s.mtime)}</td>
                   <td>
                     <div className="flex justify-end gap-[2px] whitespace-nowrap">
-                      <a
-                        className="rounded-md p-[5px] leading-[0] text-muted no-underline hover:bg-bg hover:text-text"
-                        href={api.fileUrl(s.name)}
-                        download
-                        title="Download"
-                        aria-label="Download"
-                      >
+                      <a className="btn btn-ghost btn-xs btn-square" href={api.fileUrl(s.name)} download title="Download" aria-label="Download">
                         <IconDownload />
                       </a>
-                      <button
-                        type="button"
-                        onClick={() => setRenaming(s.name)}
-                        className="rounded-md p-[5px] leading-[0] text-muted hover:bg-bg hover:text-text"
-                        title="Rename"
-                        aria-label="Rename"
-                      >
+                      <button type="button" onClick={() => setRenaming(s.name)} className="btn btn-ghost btn-xs btn-square" title="Rename" aria-label="Rename">
                         <IconRename />
                       </button>
                       <button
                         type="button"
                         onClick={() => onRemove(s.name)}
-                        className={'rounded-md p-[5px] leading-[0] ' + (removeArmed === s.name ? 'bg-danger text-white' : 'text-muted hover:bg-bg hover:text-text')}
+                        className={'btn btn-xs btn-square ' + (removeArmed === s.name ? 'btn-error' : 'btn-ghost')}
                         title={removeArmed === s.name ? 'Click again to delete' : 'Remove'}
                         aria-label="Remove"
                       >
@@ -333,22 +312,11 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             else if (e.key === 'Escape') { e.preventDefault(); if (!mergeBusy) setMergeOpen(false) }
           }}
           placeholder="auto: merged-YYYYMMDD-HHMMSS"
-          className="w-full rounded-[9px] border border-border bg-bg px-[11px] py-[9px] font-mono text-[13px] text-text focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-weak)] focus:outline-none"
+          className="input w-full font-mono"
         />
         <div className="mt-[18px] flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => { if (!mergeBusy) setMergeOpen(false) }}
-            className="cursor-pointer rounded-[9px] border border-border bg-surface px-[14px] py-2 font-mono text-xs font-[600] tracking-[0.02em] text-muted hover:bg-bg hover:text-text"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={doMerge}
-            disabled={mergeBusy}
-            className="cursor-pointer rounded-[9px] bg-accent px-4 py-2 font-mono text-xs font-[600] tracking-[0.02em] text-white hover:brightness-[1.06] disabled:cursor-default disabled:opacity-50"
-          >
+          <button type="button" onClick={() => { if (!mergeBusy) setMergeOpen(false) }} className="btn btn-ghost btn-sm">Cancel</button>
+          <button type="button" onClick={doMerge} disabled={mergeBusy} className="btn btn-primary btn-sm">
             {mergeBusy ? 'Merging…' : 'Merge'}
           </button>
         </div>
@@ -381,7 +349,7 @@ function RenameField({ name, onCommit, onDone }: { name: string; onCommit: (to: 
         else if (e.key === 'Escape') { commit(false) }
       }}
       onBlur={() => commit(true)}
-      className="w-full min-w-[160px] rounded-md border border-accent bg-bg px-[6px] py-1 font-mono text-[13px] text-text"
+      className="input input-sm w-full min-w-[160px] font-mono"
     />
   )
 }

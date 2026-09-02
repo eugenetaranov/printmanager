@@ -58,7 +58,7 @@ export function ScanTab() {
 
   return (
     <>
-      <form onSubmit={submit} className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+      <form onSubmit={submit} className="card border border-base-300 bg-base-100 p-5 shadow-sm">
         {(hasModes || hasRes) && (
           <div className="mb-4 grid grid-cols-2 gap-3">
             {hasModes && (
@@ -87,15 +87,11 @@ export function ScanTab() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="auto: scan-YYYYMMDD-HHMMSS"
-            className="rounded-[9px] border border-border bg-bg px-3 py-[10px] font-mono text-[13px] text-text placeholder:text-faint focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-weak)] focus:outline-none"
+            className="input w-full font-mono"
           />
         </label>
 
-        <button
-          type="submit"
-          disabled={scanning}
-          className="mt-4 w-full cursor-pointer rounded-xl bg-primary px-4 py-[14px] text-[15px] font-[640] text-primary-ink transition-[filter] hover:brightness-110 disabled:cursor-default disabled:opacity-70"
-        >
+        <button type="submit" disabled={scanning} className="btn btn-primary btn-block btn-lg mt-4">
           {scanning ? 'Scanning…' : 'Scan'}
         </button>
 
@@ -122,7 +118,7 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-[9px] border border-border bg-bg px-3 py-[10px] font-mono text-[13px] text-text focus:border-accent focus:outline-none"
+      className="select w-full font-mono"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>{o.label}</option>

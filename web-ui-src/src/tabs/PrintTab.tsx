@@ -155,14 +155,14 @@ export function PrintTab() {
   const multiPage = (doc?.pages ?? 1) > 1
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+    <div className="card border border-base-300 bg-base-100 p-5 shadow-sm">
       {queues.length >= 2 && (
         <label className="mb-4 flex flex-col gap-[6px]">
           <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">Printer</span>
           <select
             value={queue}
             onChange={(e) => setQueue(e.target.value)}
-            className="rounded-[9px] border border-border bg-bg px-3 py-[10px] font-mono text-[13px] text-text focus:border-accent focus:outline-none"
+            className="select w-full font-mono"
           >
             {queues.map((q) => (
               <option key={q.queue} value={q.queue}>
@@ -237,40 +237,21 @@ export function PrintTab() {
 
       {/* Double-sided toggle (hidden for single-page docs) */}
       {doc && multiPage && (
-        <button
-          type="button"
-          role="switch"
-          aria-checked={sides === 'two'}
-          onClick={() => setSides((s) => (s === 'two' ? 'one' : 'two'))}
-          className="mt-4 flex w-full items-center justify-between"
-        >
+        <label className="mt-4 flex w-full cursor-pointer items-center justify-between">
           <span className="text-[14px]">Double-sided</span>
-          <span className={'relative h-[26px] w-[46px] rounded-full transition-colors ' + (sides === 'two' ? 'bg-accent' : 'bg-border')}>
-            <span className={'absolute top-[3px] h-5 w-5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.28)] transition-transform ' + (sides === 'two' ? 'translate-x-[23px]' : 'translate-x-[3px]')} />
-          </span>
-        </button>
+          <input type="checkbox" className="toggle toggle-primary" checked={sides === 'two'} onChange={(e) => setSides(e.target.checked ? 'two' : 'one')} />
+        </label>
       )}
 
       {/* Guided manual-duplex flip step */}
       {flip && (
-        <div className="mt-4 rounded-xl border border-border bg-bg p-4">
-          <p className="m-0 mb-3 text-[13px] leading-[1.5] text-text">{flip.instruction}</p>
+        <div className="mt-4 rounded-xl border border-base-300 bg-base-200 p-4">
+          <p className="m-0 mb-3 text-[13px] leading-[1.5] text-base-content">{flip.instruction}</p>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={doContinue}
-              disabled={busy}
-              className="cursor-pointer rounded-xl bg-primary px-4 py-[10px] text-[14px] font-[640] text-primary-ink hover:brightness-110 disabled:opacity-70"
-            >
+            <button type="button" onClick={doContinue} disabled={busy} className="btn btn-primary">
               {busy ? 'Printing…' : 'Continue'}
             </button>
-            <button
-              type="button"
-              onClick={doCancel}
-              className="cursor-pointer rounded-xl border border-border bg-surface px-4 py-[10px] text-[14px] font-[600] text-muted hover:text-text"
-            >
-              Cancel
-            </button>
+            <button type="button" onClick={doCancel} className="btn btn-ghost">Cancel</button>
           </div>
         </div>
       )}
@@ -278,12 +259,7 @@ export function PrintTab() {
       {!flip && (
         <>
           <hr className="my-4 border-t border-border" />
-          <button
-            type="button"
-            onClick={print}
-            disabled={!doc || busy}
-            className="w-full cursor-pointer rounded-xl bg-primary px-4 py-[14px] text-[15px] font-[640] text-primary-ink transition-[filter] hover:brightness-110 disabled:cursor-default disabled:opacity-50"
-          >
+          <button type="button" onClick={print} disabled={!doc || busy} className="btn btn-primary btn-block btn-lg">
             {busy ? 'Printing…' : 'Print'}
           </button>
         </>

@@ -31,19 +31,16 @@ export function Modal({
   if (!open) return null
   return createPortal(
     <div
+      className="modal modal-open"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(20,20,16,0.38)] p-5 backdrop-blur-[2px] [animation:mfade_0.16s_ease_both]"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
-        className={
-          'max-h-[86vh] w-full overflow-y-auto rounded-2xl border border-border bg-surface p-5 shadow-pop [animation:mpop_0.18s_cubic-bezier(0.2,0.9,0.3,1.2)_both] ' +
-          (wide ? 'max-w-[520px]' : 'max-w-[340px]')
-        }
+        className={'modal-box ' + (wide ? 'max-w-[520px]' : 'max-w-[380px]')}
       >
         {children}
       </div>

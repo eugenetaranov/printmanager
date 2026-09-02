@@ -1,4 +1,57 @@
 @import 'tailwindcss';
+@plugin "daisyui" {
+  themes: pm-light --default, pm-dark --prefersdark;
+  logs: false;
+}
+/* Custom DaisyUI themes matching this app's identity: brand green as primary,
+   the neutral paper palette, and automatic light/dark via prefers-color-scheme. */
+@plugin "daisyui/theme" {
+  name: "pm-light";
+  default: true;
+  color-scheme: light;
+  --color-base-100: #ffffff;
+  --color-base-200: #fbfbf9;
+  --color-base-300: #e7e6e1;
+  --color-base-content: #1b1b18;
+  --color-primary: #0f7a63;
+  --color-primary-content: #ffffff;
+  --color-secondary: #f2f1ec;
+  --color-secondary-content: #1b1b18;
+  --color-accent: #0f7a63;
+  --color-accent-content: #ffffff;
+  --color-neutral: #1b1b18;
+  --color-neutral-content: #ffffff;
+  --color-success: #0f7a63;
+  --color-warning: #c07d16;
+  --color-error: #b03a2c;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.625rem;
+  --radius-box: 1rem;
+  --border: 1px;
+}
+@plugin "daisyui/theme" {
+  name: "pm-dark";
+  color-scheme: dark;
+  --color-base-100: #1e1e22;
+  --color-base-200: #151518;
+  --color-base-300: #2e2e34;
+  --color-base-content: #eceae6;
+  --color-primary: #43c3a4;
+  --color-primary-content: #10221d;
+  --color-secondary: #26262c;
+  --color-secondary-content: #eceae6;
+  --color-accent: #43c3a4;
+  --color-accent-content: #10221d;
+  --color-neutral: #eceae6;
+  --color-neutral-content: #151518;
+  --color-success: #43c3a4;
+  --color-warning: #d69a3c;
+  --color-error: #e2745f;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.625rem;
+  --radius-box: 1rem;
+  --border: 1px;
+}
 
 /* Design tokens ported verbatim from the previous UI (scan-web.py :root), so
    components reproduce the original bespoke look rather than a framework skin.
