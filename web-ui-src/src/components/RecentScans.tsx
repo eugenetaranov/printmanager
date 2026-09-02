@@ -171,10 +171,21 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       )}
 
       <div className="mt-[14px] overflow-x-auto">
-        <table className="w-full border-collapse text-[13px]">
+        {/* table-fixed + colgroup: column widths are pinned, so content changing
+            (e.g. the order badge showing/hiding) can never reflow the layout. */}
+        <table className="w-full table-fixed border-collapse text-[13px]">
+          <colgroup>
+            <col className="w-10" />
+            <col className="w-[46px]" />
+            <col />
+            <col className="w-[52px]" />
+            <col className="w-[66px]" />
+            <col className="w-[74px]" />
+            <col className="w-[104px]" />
+          </colgroup>
           <thead>
             <tr className="[&>th]:border-b [&>th]:border-border [&>th]:px-[10px] [&>th]:pb-2 [&>th]:text-left [&>th]:font-mono [&>th]:text-[11px] [&>th]:font-[600] [&>th]:uppercase [&>th]:tracking-[0.04em] [&>th]:text-faint">
-              <th className="w-[34px] text-center">
+              <th className="text-center">
                 <input
                   type="checkbox"
                   aria-label="Select all"
@@ -184,7 +195,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                   className="cursor-pointer align-middle accent-[var(--accent)]"
                 />
               </th>
-              <th className="w-9"></th>
+              <th></th>
               <th>Name</th>
               <th>DPI</th>
               <th>Size</th>
@@ -197,19 +208,21 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
               const i = selected.indexOf(s.name)
               return (
                 <tr key={s.name} className={'[&>td]:border-b [&>td]:border-border [&>td]:px-[10px] [&>td]:py-2 [&>td]:align-middle ' + (s.name === newest ? '[&>td]:[animation:rowin_0.35s_ease_both]' : '')}>
-                  <td className="w-[34px] whitespace-nowrap text-center">
-                    <input
-                      type="checkbox"
-                      aria-label="Select"
-                      checked={i >= 0}
-                      onChange={() => toggle(s.name)}
-                      className="cursor-pointer align-middle accent-[var(--accent)]"
-                    />
-                    {i >= 0 && (
-                      <span className="ml-[2px] inline-block min-w-[9px] align-middle font-mono text-[10px] font-[700] text-accent">
-                        {i + 1}
-                      </span>
-                    )}
+                  <td className="whitespace-nowrap text-center">
+                    <span className="relative inline-flex items-center justify-center">
+                      <input
+                        type="checkbox"
+                        aria-label="Select"
+                        checked={i >= 0}
+                        onChange={() => toggle(s.name)}
+                        className="cursor-pointer align-middle accent-[var(--accent)]"
+                      />
+                      {i >= 0 && (
+                        <span className="absolute left-full ml-[3px] font-mono text-[10px] font-[700] leading-none text-accent">
+                          {i + 1}
+                        </span>
+                      )}
+                    </span>
                   </td>
                   <td>
                     <img
