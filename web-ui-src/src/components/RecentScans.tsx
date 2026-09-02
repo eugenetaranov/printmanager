@@ -178,9 +178,16 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="m-0 text-body font-[640] tracking-[0.02em]">Recent scans</h2>
         <div className="flex items-center gap-2">
-          {nSel >= 2 && (
-            <button type="button" onClick={openMerge} className="btn btn-primary btn-sm">Merge {nSel}</button>
-          )}
+          {/* Always shown (disabled until 2+ selected) so the merge feature is
+              discoverable; the tooltip wrapper keeps the hint working while disabled. */}
+          <span
+            className="tooltip tooltip-top"
+            data-tip={nSel >= 2 ? 'Merge selected scans into one PDF' : 'Select 2 or more scans to merge them into one PDF'}
+          >
+            <button type="button" onClick={openMerge} disabled={nSel < 2} className="btn btn-primary btn-sm">
+              {nSel >= 2 ? `Merge ${nSel}` : 'Merge'}
+            </button>
+          </span>
           <button
             type="button"
             onClick={onClear}
