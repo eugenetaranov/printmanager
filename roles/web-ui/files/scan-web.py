@@ -2262,7 +2262,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
     var inp=document.createElement('input');
     inp.className='edit'; inp.type='text'; inp.value=base; inp.maxLength=80;
     span.replaceWith(inp); inp.focus(); inp.select();
+    var closed=false;
     function done(save){
+      if(closed) return;   // Enter re-renders the row, whose blur would re-fire done() with the now-stale name
+      closed=true;
       var to=inp.value.trim();
       if(!save || !to || to===base){ refresh(); return; }
       fetch('/rename',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
