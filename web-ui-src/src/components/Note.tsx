@@ -21,7 +21,7 @@ export function Note({ note }: { note: NoteState }) {
   if (!note.content) return null
   const color = note.kind === 'ok' ? 'text-primary' : note.kind === 'err' ? 'text-error' : 'text-base-content/60'
   return (
-    <p aria-live="polite" className={`mt-3 font-mono text-[13px] ${color}`}>
+    <p aria-live="polite" className={`mt-3 text-body ${color}`}>
       {note.content}
     </p>
   )

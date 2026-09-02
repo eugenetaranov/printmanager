@@ -176,15 +176,15 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
   return (
     <section className="mt-6">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="m-0 text-[13px] font-[640] tracking-[0.02em]">Recent scans</h2>
+        <h2 className="m-0 text-body font-[640] tracking-[0.02em]">Recent scans</h2>
         <div className="flex items-center gap-2">
           {nSel >= 2 && (
-            <button type="button" onClick={openMerge} className="btn btn-primary btn-sm font-mono">Merge {nSel}</button>
+            <button type="button" onClick={openMerge} className="btn btn-primary btn-sm">Merge {nSel}</button>
           )}
           <button
             type="button"
             onClick={onClear}
-            className={'btn btn-sm font-mono ' + (clearArmed ? 'btn-error' : 'btn-ghost text-base-content/45')}
+            className={'btn btn-sm ' + (clearArmed ? 'btn-error' : 'btn-ghost text-base-content/45')}
           >
             {clearArmed ? 'Click again to delete all' : 'Clear all'}
           </button>
@@ -203,7 +203,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             (e.g. the order badge showing/hiding) can never reflow the layout.
             No overflow wrapper — it would let tooltip bubbles create a horizontal
             scrollbar; the fixed-layout table always fits its container. */}
-        <table className="table table-sm w-full table-fixed text-[13px]">
+        <table className="table table-sm w-full table-fixed text-body">
           <colgroup>
             <col className="w-10" />
             <col className="w-[46px]" />
@@ -214,7 +214,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             <col className="w-[168px]" />
           </colgroup>
           <thead>
-            <tr className="[&>th]:border-b [&>th]:border-base-300 [&>th]:px-[10px] [&>th]:pb-2 [&>th]:text-left [&>th]:font-mono [&>th]:text-[11px] [&>th]:font-[600] [&>th]:uppercase [&>th]:tracking-[0.04em] [&>th]:text-base-content/45">
+            <tr className="[&>th]:border-b [&>th]:border-base-300 [&>th]:px-[10px] [&>th]:pb-2 [&>th]:text-left [&>th]:font-mono [&>th]:text-2xs [&>th]:font-[600] [&>th]:uppercase [&>th]:tracking-[0.04em] [&>th]:text-base-content/45">
               <th className="text-center">
                 <input
                   type="checkbox"
@@ -259,7 +259,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                         className="checkbox checkbox-sm align-middle"
                       />
                       {i >= 0 && (
-                        <span className="absolute left-full ml-[3px] font-mono text-[10px] font-[700] leading-none text-primary">
+                        <span className="absolute left-full ml-[3px] font-mono text-2xs font-[700] leading-none text-primary">
                           {i + 1}
                         </span>
                       )}
@@ -297,7 +297,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                         }}
                       />
                     ) : (
-                      <span className="break-all font-mono text-[13px]">{s.name}</span>
+                      <span className="break-all font-mono text-body">{s.name}</span>
                     )}
                   </td>
                   <td className="whitespace-nowrap font-mono text-xs tabular-nums text-base-content/60">{s.dpi || '—'}</td>
@@ -336,14 +336,14 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       </div>
 
       {loadError && (
-        <div role="alert" className="mt-2 flex items-center justify-between gap-3 rounded-md bg-error/10 px-3 py-2 text-[13px] text-error">
+        <div role="alert" className="mt-2 flex items-center justify-between gap-3 rounded-md bg-error/10 px-3 py-2 text-body text-error">
           <span>Couldn’t reach the scan service.</span>
           <button type="button" onClick={() => load()} className="btn btn-ghost btn-xs">Retry</button>
         </div>
       )}
 
       {loaded && !loadError && scans.length === 0 && (
-        <p className="px-[2px] py-4 text-sm text-base-content/60">No scans yet. Place a page on the glass and press Scan.</p>
+        <p className="px-[2px] py-4 text-body text-base-content/60">No scans yet. Place a page on the glass and press Scan.</p>
       )}
 
       {preview && (
@@ -359,11 +359,11 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       )}
 
       <Modal open={mergeOpen} onClose={() => { if (!mergeBusy) setMergeOpen(false) }} labelledBy="mergeTitle">
-        <h3 id="mergeTitle" className="m-0 mb-1 text-[15px] font-[640] tracking-[0.01em]">Merge scans</h3>
-        <p className="m-0 mb-4 text-[12.5px] leading-[1.45] text-base-content/60">
+        <h3 id="mergeTitle" className="m-0 mb-1 text-title font-[640] tracking-[0.01em]">Merge scans</h3>
+        <p className="m-0 mb-4 text-body leading-[1.45] text-base-content/60">
           Combining {mergeNames.current.length} scans into one PDF, in the order you selected. The originals are removed after merging.
         </p>
-        <label htmlFor="mergeName" className="mb-[6px] block font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
+        <label htmlFor="mergeName" className="mb-[6px] block field-label">
           Name <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
         </label>
         <input
@@ -383,7 +383,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
         />
 
         <div className="mt-4 mb-[6px] flex items-baseline justify-between">
-          <label htmlFor="mergeCap" className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
+          <label htmlFor="mergeCap" className="field-label">
             Max size <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
           </label>
           <span className="font-mono text-xs text-base-content/70">{mergeCap === 0 ? 'No limit' : `${mergeCap} MB`}</span>
@@ -398,11 +398,11 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
           onChange={(e) => setMergeCap(Number(e.target.value))}
           className="range range-sm w-full"
         />
-        <div className="mt-1 flex justify-between px-[2px] font-mono text-[10px] text-base-content/40">
+        <div className="mt-1 flex justify-between px-[2px] font-mono text-2xs text-base-content/40">
           <span>Off</span><span>10 MB</span>
         </div>
 
-        {mergeError && <p className="mt-3 font-mono text-[12px] text-error">{mergeError}</p>}
+        {mergeError && <p className="mt-3 text-xs text-error">{mergeError}</p>}
 
         <div className="mt-[18px] flex justify-end gap-2">
           <button type="button" onClick={() => { if (!mergeBusy) setMergeOpen(false) }} className="btn btn-ghost btn-sm">Cancel</button>

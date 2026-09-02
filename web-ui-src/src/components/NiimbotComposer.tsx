@@ -73,13 +73,13 @@ export function NiimbotComposer({
 
   return (
     <div>
-      <p className="font-mono text-xs text-base-content/45">Label {format.w}×{format.h} mm — change the roll size in Devices</p>
+      <p className="text-xs text-base-content/45">Label {format.w}×{format.h} mm — change the roll size in Devices</p>
 
       <Seg value={kind} onChange={setKind} options={[['text', 'Text'], ['image', 'Image'], ['qr', 'QR']]} />
 
       {kind !== 'image' ? (
         <label className="mt-3 flex flex-col gap-[6px]">
-          <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
+          <span className="field-label">
             {kind === 'qr' ? 'Text or URL' : <>Text <span className="normal-case opacity-70">one line per row</span></>}
           </span>
           <textarea
@@ -93,7 +93,7 @@ export function NiimbotComposer({
         </label>
       ) : (
         <div className="mt-3">
-          <input type="file" accept="image/*" onChange={(e) => loadImage(e.target.files?.[0])} className="text-[13px]" />
+          <input type="file" accept="image/*" onChange={(e) => loadImage(e.target.files?.[0])} className="text-body" />
           {imgUrl && (
             <div className="relative mt-2 inline-block">
               <img src={imgUrl} alt="" className="max-h-32 rounded border border-base-300" />
@@ -102,13 +102,13 @@ export function NiimbotComposer({
               </button>
             </div>
           )}
-          <div className="mt-1 font-mono text-[11px] text-base-content/45">Tip: paste an image with ⌘V / Ctrl+V</div>
+          <div className="mt-1 text-2xs text-base-content/45">Tip: paste an image with ⌘V / Ctrl+V</div>
         </div>
       )}
 
       {previewPng && (
         <div className="mt-4">
-          <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Preview</span>
+          <span className="field-label">Preview</span>
           <div className="mt-[6px] inline-block rounded-lg border border-base-300 bg-white p-[7px] shadow-sm">
             <img src={previewPng} alt="Label preview" className="block max-w-full" />
           </div>

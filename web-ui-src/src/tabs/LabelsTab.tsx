@@ -85,12 +85,12 @@ export function LabelsTab() {
           <div className="skeleton mt-4 h-11 w-full rounded" />
         </div>
       ) : opts.length === 0 ? (
-        <p className="font-mono text-[13px] text-base-content/60">No printers yet. Open the Devices manager (the printer icon, top-right) to connect one.</p>
+        <p className="text-body text-base-content/60">No printers yet. Open the Devices manager (the printer icon, top-right) to connect one.</p>
       ) : (
         <>
           <div className="mb-4 flex items-end gap-2">
             <label className="flex flex-1 flex-col gap-[6px]">
-              <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Label format</span>
+              <span className="field-label">Label format</span>
               <select value={formatV} onChange={(e) => selectFormat(e.target.value)} className="select w-full font-mono">
                 {opts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
               </select>
@@ -119,9 +119,9 @@ export function LabelsTab() {
       <Modal open={!!conn} onClose={() => setConn(null)} labelledBy="connName">
         {conn && (
           <div className="text-center">
-            <div id="connName" className="text-[15px] font-[640]">{conn.fmt.name}</div>
+            <div id="connName" className="text-title font-[640]">{conn.fmt.name}</div>
             <div className="mt-1 font-mono text-xs text-base-content/45">{conn.fmt.w}×{conn.fmt.h} mm</div>
-            <div className={'mt-3 font-mono text-[13px] ' + (conn.status === 'err' ? 'text-error' : conn.status === 'ok' ? 'text-primary' : 'text-base-content/60')}>{conn.msg}</div>
+            <div className={'mt-3 text-body ' + (conn.status === 'err' ? 'text-error' : conn.status === 'ok' ? 'text-primary' : 'text-base-content/60')}>{conn.msg}</div>
             <div className="mt-4 flex justify-center gap-2">
               {conn.status === 'err' && (
                 <button type="button" onClick={() => ensureConnected(conn.fmt, conn.then)} className="btn btn-primary btn-sm">Try again</button>

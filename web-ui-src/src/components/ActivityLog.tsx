@@ -53,7 +53,7 @@ export function ActivityFooter() {
   const rows = [...entries].reverse()
   return (
     <footer className="mt-10 w-full border-t border-base-300 pt-3">
-      <h2 className="m-0 mb-2 text-[13px] font-[640] tracking-[0.02em]">Activity</h2>
+      <h2 className="m-0 mb-2 text-body font-[640] tracking-[0.02em]">Activity</h2>
       <div className="divide-y divide-base-200">
         {rows.map((e) => <LogRow key={e.id} entry={e} onUndo={runUndo} />)}
       </div>
@@ -64,15 +64,15 @@ export function ActivityFooter() {
 function LogRow({ entry, onUndo }: { entry: LogEntry; onUndo: (id: string) => void }) {
   return (
     <div className="flex items-center justify-between gap-3 py-[6px]">
-      <span className={'min-w-0 truncate font-mono text-[13px] ' + (entry.undone ? 'text-base-content/40 line-through' : 'text-base-content')}>
+      <span className={'min-w-0 truncate font-mono text-body ' + (entry.undone ? 'text-base-content/40 line-through' : 'text-base-content')}>
         {entry.content}
       </span>
       {entry.undo && !entry.undone ? (
-        <button type="button" onClick={() => onUndo(entry.id)} disabled={entry.undoing} className="btn btn-ghost btn-xs w-16 flex-none font-mono">
+        <button type="button" onClick={() => onUndo(entry.id)} disabled={entry.undoing} className="btn btn-ghost btn-xs w-16 flex-none">
           {entry.undoing ? '…' : 'Undo'}
         </button>
       ) : (
-        <span className="w-16 flex-none text-right font-mono text-[11px] text-base-content/40">{entry.undone ? 'undone' : ''}</span>
+        <span className="w-16 flex-none text-right font-mono text-2xs text-base-content/40">{entry.undone ? 'undone' : ''}</span>
       )}
     </div>
   )

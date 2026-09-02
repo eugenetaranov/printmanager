@@ -159,7 +159,7 @@ export function PrintTab() {
     <div className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5 shadow-sm">
       {queues.length >= 2 && (
         <label className="mb-4 flex flex-col gap-[6px]">
-          <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Printer</span>
+          <span className="field-label">Printer</span>
           <select
             value={queue}
             onChange={(e) => setQueue(e.target.value)}
@@ -198,7 +198,7 @@ export function PrintTab() {
         />
         {doc ? (
           <div className="flex items-center gap-2">
-            <span className="break-all font-mono text-[13px] text-base-content">{doc.filename}</span>
+            <span className="break-all font-mono text-body text-base-content">{doc.filename}</span>
             <button
               type="button"
               onClick={(e) => { e.preventDefault(); clearFile() }}
@@ -211,8 +211,8 @@ export function PrintTab() {
         ) : (
           <>
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-base-content/60"><path d="M12 15V4M8 8l4-4 4 4" /><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
-            <div className="text-[14px] text-base-content">Drop a file, or <span className="text-primary">choose one</span></div>
-            <div className="font-mono text-xs text-base-content/45">PDF, image, or text — drag, choose, or paste an image</div>
+            <div className="text-body text-base-content">Drop a file, or <span className="text-primary">choose one</span></div>
+            <div className="text-xs text-base-content/45">PDF, image, or text — drag, choose, or paste an image</div>
           </>
         )}
       </label>
@@ -221,7 +221,7 @@ export function PrintTab() {
       {doc && multiPage && (
         <div className="mt-4">
           <div className="mb-2 flex items-baseline justify-between">
-            <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Pages to print</span>
+            <span className="field-label">Pages to print</span>
             <span className="font-mono text-xs tabular-nums text-base-content/60">
               {range.from}–{range.to} <span className="text-base-content/45">of {doc.pages}</span>
             </span>
@@ -239,7 +239,7 @@ export function PrintTab() {
       {/* Double-sided toggle (hidden for single-page docs) */}
       {doc && multiPage && (
         <label className="mt-4 flex w-full cursor-pointer items-center justify-between">
-          <span className="text-[14px]">Double-sided</span>
+          <span className="text-body">Double-sided</span>
           <input type="checkbox" className="toggle toggle-primary" checked={sides === 'two'} onChange={(e) => setSides(e.target.checked ? 'two' : 'one')} />
         </label>
       )}
@@ -247,7 +247,7 @@ export function PrintTab() {
       {/* Guided manual-duplex flip step */}
       {flip && (
         <div className="mt-4 rounded-xl border border-base-300 bg-base-200 p-4">
-          <p className="m-0 mb-3 text-[13px] leading-[1.5] text-base-content">{flip.instruction}</p>
+          <p className="m-0 mb-3 text-body leading-[1.5] text-base-content">{flip.instruction}</p>
           <div className="flex gap-2">
             <button type="button" onClick={doContinue} disabled={busy} className="btn btn-primary">
               {busy ? 'Printing…' : 'Continue'}

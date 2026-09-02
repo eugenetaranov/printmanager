@@ -103,12 +103,12 @@ export function SheetComposer({
   return (
     <div>
       <div className="mb-2 flex items-baseline justify-between">
-        <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
+        <span className="field-label">
           {sel.size ? `${sel.size} cell${sel.size === 1 ? '' : 's'} selected` : 'Tap cells to place your label'}
         </span>
         <span className="flex gap-1">
-          <button type="button" onClick={() => setSel(new Set(Array.from({ length: n }, (_, i) => i)))} className="btn btn-ghost btn-xs font-mono">All</button>
-          <button type="button" onClick={() => setSel(new Set())} className="btn btn-ghost btn-xs font-mono">None</button>
+          <button type="button" onClick={() => setSel(new Set(Array.from({ length: n }, (_, i) => i)))} className="btn btn-ghost btn-xs">All</button>
+          <button type="button" onClick={() => setSel(new Set())} className="btn btn-ghost btn-xs">None</button>
         </span>
       </div>
 
@@ -151,7 +151,7 @@ export function SheetComposer({
         )}
         {pmode === 'file' && (
           <div>
-            <input type="file" accept="image/*,application/pdf" className="text-[13px]"
+            <input type="file" accept="image/*,application/pdf" className="text-body"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) readImageB64(f).then(({ b64, dataUrl }) => setImg({ b64, url: dataUrl, name: f.name })) }} />
             {img && <div className="mt-2"><img src={img.url} alt="" className="max-h-24 rounded border border-base-300" /></div>}
           </div>
@@ -168,7 +168,7 @@ export function SheetComposer({
         {printing ? 'Printing…' : `Print sheet${filled ? ` (${filled})` : ''}`}
       </button>
       {filled > 0 && (
-        <button type="button" onClick={clearSheet} className="btn btn-ghost btn-sm mt-2 w-full font-mono text-base-content/45 hover:text-error">
+        <button type="button" onClick={clearSheet} className="btn btn-ghost btn-sm mt-2 w-full text-base-content/45 hover:text-error">
           {clearArmed ? 'Click again to clear' : 'Clear sheet'}
         </button>
       )}

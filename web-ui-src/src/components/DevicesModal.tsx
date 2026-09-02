@@ -102,7 +102,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
   return (
     <Modal open={open} onClose={onClose} labelledBy="devTitle" wide>
       <div className="mb-4 flex items-center justify-between">
-        <h3 id="devTitle" className="m-0 text-[15px] font-[640]">Devices</h3>
+        <h3 id="devTitle" className="m-0 text-title font-[640]">Devices</h3>
         <div className="flex gap-2">
           <IconBtn title="Refresh devices" tip="bottom" onClick={refresh} disabled={busy}><Icon.refresh /></IconBtn>
           <IconBtn title="Close" tip="bottom" onClick={onClose}><Icon.close /></IconBtn>
@@ -130,13 +130,13 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
         if (!rows.length) return null
         return (
           <div key={g.kind} className="mb-3">
-            <div className="mb-1 font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-base-content/45">{g.label}</div>
+            <div className="mb-1 field-label">{g.label}</div>
             {rows.map((d) => (
               <div key={d.kind + d.id + d.name} className="flex items-center gap-2 border-b border-base-300 py-2 last:border-0">
                 <Dot status={d.status} />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px]">{d.name}</div>
-                  <div className={'truncate font-mono text-[11px] ' + (d.error ? 'text-error' : 'text-base-content/45')}>{d.error || d.detail || d.status}</div>
+                  <div className="truncate text-body">{d.name}</div>
+                  <div className={'truncate font-mono text-2xs ' + (d.error ? 'text-error' : 'text-base-content/45')}>{d.error || d.detail || d.status}</div>
                 </div>
                 {d.kind === 'printer' && d.id && (
                   <IconBtn title="Print test page" onClick={() => testDevice(d)}><Icon.test /></IconBtn>
@@ -146,18 +146,18 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
           </div>
         )
       })}
-      {loaded && !anyInv && <p className="text-sm text-base-content/60">No devices found.</p>}
+      {loaded && !anyInv && <p className="text-body text-base-content/60">No devices found.</p>}
 
       {/* Niimbot printers */}
       <div className={'mt-4 ' + (loaded ? '' : 'hidden')}>
         <div className="mb-1 flex items-center justify-between">
-          <span className="font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-base-content/45">Label printers (Niimbot)</span>
+          <span className="field-label">Label printers (Niimbot)</span>
           <IconBtn title="Scan for Bluetooth printers" onClick={scan} disabled={scanning}>
             {scanning ? <span className="loading loading-spinner loading-xs" /> : <Icon.search />}
           </IconBtn>
         </div>
-        {showAdapterWarn && <p className="mb-2 font-mono text-[11px] text-warning">No Bluetooth adapter detected.</p>}
-        {printers.length === 0 && <p className="text-sm text-base-content/60">No Niimbot printers yet. Tap “Scan for printers”.</p>}
+        {showAdapterWarn && <p className="mb-2 text-2xs text-warning">No Bluetooth adapter detected.</p>}
+        {printers.length === 0 && <p className="text-body text-base-content/60">No Niimbot printers yet. Tap “Scan for printers”.</p>}
 
         {printers.map((p) => {
           const conn = p.status === 'connected'
@@ -169,8 +169,8 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
               <div className="flex items-center gap-2">
                 <Dot status={p.status} />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px]">{p.model_label || p.model}</div>
-                  <div className="truncate font-mono text-[11px] text-base-content/45">
+                  <div className="truncate text-body">{p.model_label || p.model}</div>
+                  <div className="truncate font-mono text-2xs text-base-content/45">
                     {p.name} · <span className={ds?.cls === 'err' ? 'text-error' : ds?.cls === 'ok' ? 'text-primary' : ''}>{stTxt}</span>
                     {p.label_mm ? ` · ${p.label_mm[0]}×${p.label_mm[1]} mm` : ''}
                   </div>
@@ -191,7 +191,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
               </div>
               {editSize === p.address && <SizeEditor w={mm[0]} h={mm[1]} onSave={(w, h) => saveSize(p, w, h)} onCancel={() => setEditSize('')} />}
               {logAddr === p.address && (
-                <div className="mt-2 max-h-40 overflow-y-auto rounded-md bg-base-200 p-2 font-mono text-[11px] text-base-content/60">
+                <div className="mt-2 max-h-40 overflow-y-auto rounded-md bg-base-200 p-2 font-mono text-2xs text-base-content/60">
                   {log.length === 0 ? 'No log yet.' : log.map((l, i) => <div key={i}>{typeof l === 'string' ? l : JSON.stringify(l)}</div>)}
                   <div className="mt-1 text-right">
                     <button type="button" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})} className="btn btn-link btn-xs h-auto min-h-0 p-0 text-base-content/45 hover:text-error">clear</button>
@@ -205,13 +205,13 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
         {/* Scan candidates */}
         {candidates.length > 0 && (
           <div className="mt-3">
-            <div className="mb-1 font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-base-content/45">Found</div>
+            <div className="mb-1 field-label">Found</div>
             {candidates.map((c) => (
               <div key={c.address} className="flex items-center gap-2 border-b border-base-300 py-2 last:border-0">
                 <span className="h-[7px] w-[7px] flex-none rounded-full bg-warning" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px]">{c.name}</div>
-                  <div className="truncate font-mono text-[11px] text-base-content/45">{c.address}{c.rssi != null ? ` · ${c.rssi} dBm` : ''}</div>
+                  <div className="truncate text-body">{c.name}</div>
+                  <div className="truncate font-mono text-2xs text-base-content/45">{c.address}{c.rssi != null ? ` · ${c.rssi} dBm` : ''}</div>
                 </div>
                 <IconBtn title="Connect" variant="primary" onClick={() => connect(c)}><Icon.connect /></IconBtn>
               </div>
@@ -220,7 +220,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
         )}
       </div>
 
-      {note && <p className={'mt-3 font-mono text-[12px] ' + (note.cls === 'err' ? 'text-error' : note.cls === 'ok' ? 'text-primary' : 'text-base-content/60')}>{note.msg}</p>}
+      {note && <p className={'mt-3 text-xs ' + (note.cls === 'err' ? 'text-error' : note.cls === 'ok' ? 'text-primary' : 'text-base-content/60')}>{note.msg}</p>}
     </Modal>
   )
 }
@@ -230,7 +230,7 @@ function MiniBtn({ children, onClick, primary, active }: { children: React.React
     <button
       type="button"
       onClick={onClick}
-      className={'btn btn-xs font-mono ' + (primary ? 'btn-primary' : active ? 'btn-active' : 'btn-ghost')}
+      className={'btn btn-xs ' + (primary ? 'btn-primary' : active ? 'btn-active' : 'btn-ghost')}
     >
       {children}
     </button>
@@ -274,11 +274,11 @@ function SizeEditor({ w, h, onSave, onCancel }: { w: number; h: number; onSave: 
   const [hh, setHh] = useState(String(h))
   return (
     <div className="mt-2 flex items-center gap-2 rounded-md bg-base-200 p-2">
-      <span className="font-mono text-[11px] text-base-content/45">Roll size</span>
+      <span className="font-mono text-2xs text-base-content/45">Roll size</span>
       <input type="number" min={5} max={120} value={ww} onChange={(e) => setWw(e.target.value)} aria-label="Width mm" className="input input-sm w-16 font-mono" />
       <span className="text-base-content/45">×</span>
       <input type="number" min={5} max={300} value={hh} onChange={(e) => setHh(e.target.value)} aria-label="Length mm" className="input input-sm w-16 font-mono" />
-      <span className="font-mono text-[11px] text-base-content/45">mm</span>
+      <span className="font-mono text-2xs text-base-content/45">mm</span>
       <MiniBtn primary onClick={() => onSave(parseFloat(ww), parseFloat(hh))}>Save</MiniBtn>
       <MiniBtn onClick={onCancel}>Cancel</MiniBtn>
     </div>

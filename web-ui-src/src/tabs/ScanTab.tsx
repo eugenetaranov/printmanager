@@ -73,13 +73,13 @@ export function ScanTab() {
           <div className="mb-4 grid grid-cols-2 gap-3">
             {hasModes && (
               <label className="flex flex-col gap-[6px]">
-                <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Mode</span>
+                <span className="field-label">Mode</span>
                 <Select value={mode} onChange={setMode} options={config.modes.map((m) => ({ value: m.value, label: m.label }))} />
               </label>
             )}
             {hasRes && (
               <label className="flex flex-col gap-[6px]">
-                <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Resolution</span>
+                <span className="field-label">Resolution</span>
                 <Select value={resolution} onChange={setResolution} options={config.resolutions.map((r) => ({ value: r, label: r }))} />
               </label>
             )}
@@ -87,7 +87,7 @@ export function ScanTab() {
         ) : null}
 
         <label className="flex flex-col gap-[6px]">
-          <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
+          <span className="field-label">
             Name <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
           </span>
           <input
@@ -103,13 +103,13 @@ export function ScanTab() {
 
         <div>
           <div className="mb-[6px] flex items-baseline justify-between">
-            <label htmlFor="scanCap" className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
+            <label htmlFor="scanCap" className="field-label">
               Max size <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
             </label>
             <span className="font-mono text-xs text-base-content/70">{cap === 0 ? 'No limit' : `${cap} MB`}</span>
           </div>
           <input id="scanCap" type="range" min={0} max={10} step={1} value={cap} onChange={(e) => setCap(Number(e.target.value))} className="range range-sm w-full" />
-          <div className="mt-1 flex justify-between px-[2px] font-mono text-[10px] text-base-content/40">
+          <div className="mt-1 flex justify-between px-[2px] font-mono text-2xs text-base-content/40">
             <span>Off</span><span>10 MB</span>
           </div>
         </div>
