@@ -184,7 +184,10 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             className="tooltip tooltip-top"
             data-tip={nSel >= 2 ? 'Merge selected scans into one PDF' : 'Select 2 or more scans to merge them into one PDF'}
           >
-            <button type="button" onClick={openMerge} disabled={nSel < 2} className="btn btn-primary btn-sm">
+            <button type="button" onClick={openMerge} disabled={nSel < 2} className="btn btn-primary btn-sm min-w-[7.5rem]">
+              {/* Balancing spacer: mirrors the counter slot so "Merge" stays
+                  centered whether or not the count is showing. */}
+              <span className="inline-block w-[2ch]" aria-hidden="true" />
               Merge
               {/* Fixed-width slot so the button doesn't resize when the count appears. */}
               <span className="inline-block w-[2ch] text-left tabular-nums">{nSel >= 2 ? nSel : ''}</span>
