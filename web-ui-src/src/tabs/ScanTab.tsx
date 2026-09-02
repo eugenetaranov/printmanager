@@ -62,7 +62,7 @@ export function ScanTab() {
 
   return (
     <>
-      <form onSubmit={submit} className="card border border-base-300 bg-base-100 p-5 shadow-sm">
+      <form onSubmit={submit} className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5 shadow-sm">
         {config === null ? (
           <div className="mb-4 grid grid-cols-2 gap-3">
             <FieldSkeleton /><FieldSkeleton />

@@ -155,7 +155,7 @@ export function PrintTab() {
   const multiPage = (doc?.pages ?? 1) > 1
 
   return (
-    <div className="card border border-base-300 bg-base-100 p-5 shadow-sm">
+    <div className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5 shadow-sm">
       {queues.length >= 2 && (
         <label className="mb-4 flex flex-col gap-[6px]">
           <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Printer</span>

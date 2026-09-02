@@ -70,7 +70,7 @@ export function LabelsTab() {
   const activeTemplate = format?.kind === 'a4' ? templates.find((t) => t.id === format.tplId) : undefined
 
   return (
-    <div className="card border border-base-300 bg-base-100 p-5 shadow-sm">
+    <div className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5 shadow-sm">
       {!loaded ? (
         <div>
           <div className="mb-4 flex items-end gap-2">

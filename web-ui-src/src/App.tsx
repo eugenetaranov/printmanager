@@ -28,7 +28,7 @@ function Shell() {
   const [devicesOpen, setDevicesOpen] = useState(false)
 
   return (
-    <div className="mx-auto max-w-[760px] px-5 pb-24 pt-[clamp(22px,5vw,44px)]">
+    <div className="mx-auto max-w-[900px] px-5 pb-24 pt-[clamp(22px,5vw,44px)]">
       <header className="mb-5 flex items-start justify-between gap-4">
         <div className="text-[19px] font-[640] tracking-[-0.01em]">Print / Scan</div>
         <div className="flex items-center gap-3">
