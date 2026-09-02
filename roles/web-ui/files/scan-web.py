@@ -28,6 +28,7 @@ import tempfile
 import urllib.parse
 import subprocess
 import threading
+import mimetypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -63,6 +64,10 @@ THUMB_DIR = os.path.join(DATA_DIR, "thumbs")
 META_DIR = os.path.join(DATA_DIR, "meta")
 PORT = int(_cfg("port", "SCAN_WEB_PORT", 8080))
 TITLE = _cfg("title", "SCAN_WEB_TITLE", "printmanager")
+# Directory of the built React SPA (Vite `dist/`). When it contains an
+# index.html the server serves the SPA; otherwise it falls back to the embedded
+# HTML below, so the app keeps working before the SPA has been built/deployed.
+UI_DIR = _cfg("ui_dir", "SCAN_WEB_UI_DIR", "/usr/local/lib/scan-web/webui-dist")
 SHARE = _cfg("share", "SCAN_WEB_SHARE", "smb://printmanager.local/scans")
 SCRIPT = _cfg("script", "SCAN_WEB_SCRIPT", "/usr/local/lib/scan-web/scan-to-share.sh")
 DEF_MODE = _cfg("default_mode", "SCAN_WEB_DEFAULT_MODE", "24bit Color")
@@ -84,6 +89,28 @@ os.environ["SCAN_WEB_DATA"] = DATA_DIR
 MODES = [("24bit Color", "Color"), ("True Gray", "Gray"), ("Black & White", "Black & white")]
 MODE_VALUES = [m[0] for m in MODES]
 RESOLUTIONS = ["150", "200", "300", "400", "600"]
+
+SPA_INDEX = os.path.join(UI_DIR, "index.html")
+
+
+def spa_available():
+    """True when a built SPA is present; the server then serves it instead of
+    the embedded HTML."""
+    return os.path.isfile(SPA_INDEX)
+
+
+def config_json():
+    """Runtime config the SPA reads on load — what the embedded UI used to get as
+    server-rendered template placeholders."""
+    return {
+        "modes": [{"value": v, "label": lbl} for v, lbl in MODES],
+        "resolutions": RESOLUTIONS,
+        "defaultMode": DEF_MODE,
+        "defaultResolution": DEF_RES,
+        "share": SHARE,
+        "features": {"print": PRINT_ENABLED, "document": DOCUMENT_ENABLED,
+                     "devices": DEVICES_ENABLED},
+    }
 NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
 SAFE_RE = re.compile(r"[^A-Za-z0-9 _-]+")
 # Grid-derived sheet names like "A4 · 8 labels (2×4)"; auto-corrected to the real
@@ -1244,8 +1271,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        for k, v in (extra or {}).items():
+        extra = extra or {}
+        if "Cache-Control" not in extra:
+            self.send_header("Cache-Control", "no-store")
+        for k, v in extra.items():
             self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
@@ -1344,10 +1373,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
-        if path in ("/", "/index.html", "/scan", "/print", "/document"):
-            self._send(200, render_page(path))
-        elif path == "/recent":
+        # --- JSON API (GET) ---
+        if path == "/recent":
             self._json(200, {"scans": list_scans()})
+        elif path == "/config":
+            self._json(200, config_json())
         elif path == "/devices/list":
             self._json(200, {"devices": inventory()})
         elif path == "/niimbot/state":
@@ -1364,8 +1394,30 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_pdf(urllib.parse.unquote(path[len("/file/"):]))
         elif path.startswith("/thumb/"):
             self._serve_thumb(urllib.parse.unquote(path[len("/thumb/"):]))
+        # --- SPA (when built) or the embedded HTML fallback ---
+        elif spa_available():
+            self._serve_spa(path)
+        elif path in ("/", "/index.html", "/scan", "/print", "/document"):
+            self._send(200, render_page(path))
         else:
             self._send(404, "Not found", "text/plain")
+
+    def _serve_spa(self, path):
+        # Serve a built asset when the request maps to a real file under UI_DIR;
+        # otherwise return index.html so client-side routing can resolve the view.
+        rel = path.lstrip("/") or "index.html"
+        full = os.path.normpath(os.path.join(UI_DIR, rel))
+        if full.startswith(UI_DIR + os.sep) and os.path.isfile(full):
+            ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
+            # Vite emits content-hashed files under /assets — cache them hard.
+            cache = ("public, max-age=31536000, immutable"
+                     if rel.startswith("assets/") else "no-store")
+            with open(full, "rb") as f:
+                data = f.read()
+            return self._send(200, data, ctype, {"Cache-Control": cache})
+        with open(SPA_INDEX, "rb") as f:
+            data = f.read()
+        self._send(200, data, "text/html; charset=utf-8")
 
     def _serve_pdf(self, name):
         if not NAME_RE.fullmatch(name):

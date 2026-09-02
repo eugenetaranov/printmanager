@@ -51,12 +51,12 @@
 
 ## 7. Backend: serve the SPA
 
-- [ ] 7.1 Replace the embedded-HTML page routes in `scan-web.py` with static-asset serving of
+- [x] 7.1 Replace the embedded-HTML page routes in `scan-web.py` with static-asset serving of
   the built `dist/` (correct content types, caching for hashed assets).
-- [ ] 7.2 Add SPA fallback: unknown non-API, non-asset paths return `index.html`; keep all JSON
+- [x] 7.2 Add SPA fallback: unknown non-API, non-asset paths return `index.html`; keep all JSON
   endpoints and `NAME_RE` filename validation unchanged.
-- [ ] 7.3 Delete the embedded HTML/CSS/JS string block once serving `dist/` (the cutover edit).
-- [ ] 7.4 Add a `GET /config` JSON endpoint exposing what the old UI injected as template
+- [ ] 7.3 Delete the embedded HTML/CSS/JS string block once serving `dist/` (the cutover edit — deferred until on-Pi parity is verified; the server currently serves the SPA when built and falls back to the embedded HTML otherwise).
+- [x] 7.4 Add a `GET /config` JSON endpoint exposing what the old UI injected as template
   placeholders: scan mode/resolution options + defaults, the SMB share URL, and feature flags
   (print / document / devices enabled). The SPA reads it on load (`api.config()`).
 
