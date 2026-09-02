@@ -3,6 +3,8 @@ import { printSheet, type Template } from '../api/client'
 import { useStatus } from './status'
 import { readImageB64, type A4Format } from '../lib/formats'
 import { Seg } from './NiimbotComposer'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 
 type CellContent =
   | { mode: 'text'; text: string }
@@ -107,8 +109,8 @@ export function SheetComposer({
           {sel.size ? `${sel.size} cell${sel.size === 1 ? '' : 's'} selected` : 'Tap cells to place your label'}
         </span>
         <span className="flex gap-1">
-          <button type="button" onClick={() => setSel(new Set(Array.from({ length: n }, (_, i) => i)))} className="cursor-pointer rounded-md bg-background px-3 py-1 font-mono text-[11px] text-muted-foreground hover:text-foreground">All</button>
-          <button type="button" onClick={() => setSel(new Set())} className="cursor-pointer rounded-md bg-background px-3 py-1 font-mono text-[11px] text-muted-foreground hover:text-foreground">None</button>
+          <Button variant="ghost" size="xs" className="font-mono" onClick={() => setSel(new Set(Array.from({ length: n }, (_, i) => i)))}>All</Button>
+          <Button variant="ghost" size="xs" className="font-mono" onClick={() => setSel(new Set())}>None</Button>
         </span>
       </div>
 
@@ -142,14 +144,12 @@ export function SheetComposer({
 
       <div className="mt-3">
         {pmode === 'text' && (
-          <textarea rows={2} maxLength={200} value={text} onChange={(e) => setText(e.target.value)}
-            placeholder={'e.g. 42 — or a short\nlabel on two lines'}
-            className="w-full resize-y rounded-[9px] border border-border bg-background px-3 py-[10px] font-mono text-[13px] focus:border-primary focus:outline-none" />
+          <Textarea rows={2} maxLength={200} value={text} onChange={(e) => setText(e.target.value)}
+            placeholder={'e.g. 42 — or a short\nlabel on two lines'} className="font-mono" />
         )}
         {pmode === 'qr' && (
-          <textarea rows={2} maxLength={512} value={qr} onChange={(e) => setQr(e.target.value)}
-            placeholder="e.g. https://example.com or any text"
-            className="w-full resize-y rounded-[9px] border border-border bg-background px-3 py-[10px] font-mono text-[13px] focus:border-primary focus:outline-none" />
+          <Textarea rows={2} maxLength={512} value={qr} onChange={(e) => setQr(e.target.value)}
+            placeholder="e.g. https://example.com or any text" className="font-mono" />
         )}
         {pmode === 'file' && (
           <div>
@@ -161,25 +161,18 @@ export function SheetComposer({
       </div>
 
       <div className="mt-3 flex gap-2">
-        <button type="button" onClick={addToSheet} disabled={!pd || sel.size === 0}
-          className="cursor-pointer rounded-xl bg-primary px-4 py-[10px] text-[14px] font-[640] text-primary-foreground hover:brightness-110 disabled:cursor-default disabled:opacity-50">
-          Add to sheet
-        </button>
-        <button type="button" onClick={erase} disabled={sel.size === 0}
-          className="cursor-pointer rounded-xl border border-border bg-card px-4 py-[10px] text-[14px] font-[600] text-muted-foreground hover:text-foreground disabled:opacity-50">
-          Erase
-        </button>
+        <Button onClick={addToSheet} disabled={!pd || sel.size === 0}>Add to sheet</Button>
+        <Button variant="outline" onClick={erase} disabled={sel.size === 0}>Erase</Button>
       </div>
 
       <hr className="my-4 border-t border-border" />
-      <button type="button" onClick={print} disabled={!filled || printing}
-        className="w-full cursor-pointer rounded-xl bg-primary px-4 py-[14px] text-[15px] font-[640] text-primary-foreground transition-[filter] hover:brightness-110 disabled:cursor-default disabled:opacity-50">
+      <Button size="lg" onClick={print} disabled={!filled || printing} className="h-11 w-full text-[15px]">
         {printing ? 'Printing…' : `Print sheet${filled ? ` (${filled})` : ''}`}
-      </button>
+      </Button>
       {filled > 0 && (
-        <button type="button" onClick={clearSheet} className="mt-2 w-full cursor-pointer text-center font-mono text-[12px] text-faint hover:text-destructive">
+        <Button variant="ghost" size="sm" onClick={clearSheet} className="mt-2 w-full font-mono text-faint hover:text-destructive">
           {clearArmed ? 'Click again to clear' : 'Clear sheet'}
-        </button>
+        </Button>
       )}
     </div>
   )

@@ -3,6 +3,10 @@ import { api, type Queue } from '../api/client'
 import { useStatus } from '../components/status'
 import { useNote, Note } from '../components/Note'
 import { DualRange } from '../components/DualRange'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Switch } from '@/components/ui/switch'
+import { Field, PlainSelect } from '../components/form'
 
 interface Doc {
   filename: string
@@ -155,22 +159,17 @@ export function PrintTab() {
   const multiPage = (doc?.pages ?? 1) > 1
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+    <Card className="p-5">
       {queues.length >= 2 && (
-        <label className="mb-4 flex flex-col gap-[6px]">
-          <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">Printer</span>
-          <select
-            value={queue}
-            onChange={(e) => setQueue(e.target.value)}
-            className="rounded-[9px] border border-border bg-background px-3 py-[10px] font-mono text-[13px] text-foreground focus:border-primary focus:outline-none"
-          >
-            {queues.map((q) => (
-              <option key={q.queue} value={q.queue}>
-                {q.name}{q.queue !== q.name ? ` (${q.queue})` : ''}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="mb-4">
+          <Field label="Printer">
+            <PlainSelect
+              value={queue}
+              onChange={setQueue}
+              options={queues.map((q) => [q.queue, q.name + (q.queue !== q.name ? ` (${q.queue})` : '')])}
+            />
+          </Field>
+        </div>
       )}
 
       {/* Dropzone */}
@@ -237,18 +236,10 @@ export function PrintTab() {
 
       {/* Double-sided toggle (hidden for single-page docs) */}
       {doc && multiPage && (
-        <button
-          type="button"
-          role="switch"
-          aria-checked={sides === 'two'}
-          onClick={() => setSides((s) => (s === 'two' ? 'one' : 'two'))}
-          className="mt-4 flex w-full items-center justify-between"
-        >
+        <label className="mt-4 flex w-full cursor-pointer items-center justify-between">
           <span className="text-[14px]">Double-sided</span>
-          <span className={'relative h-[26px] w-[46px] rounded-full transition-colors ' + (sides === 'two' ? 'bg-primary' : 'bg-border')}>
-            <span className={'absolute top-[3px] h-5 w-5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.28)] transition-transform ' + (sides === 'two' ? 'translate-x-[23px]' : 'translate-x-[3px]')} />
-          </span>
-        </button>
+          <Switch checked={sides === 'two'} onCheckedChange={(on) => setSides(on ? 'two' : 'one')} />
+        </label>
       )}
 
       {/* Guided manual-duplex flip step */}
@@ -256,21 +247,8 @@ export function PrintTab() {
         <div className="mt-4 rounded-xl border border-border bg-background p-4">
           <p className="m-0 mb-3 text-[13px] leading-[1.5] text-foreground">{flip.instruction}</p>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={doContinue}
-              disabled={busy}
-              className="cursor-pointer rounded-xl bg-primary px-4 py-[10px] text-[14px] font-[640] text-primary-foreground hover:brightness-110 disabled:opacity-70"
-            >
-              {busy ? 'Printing…' : 'Continue'}
-            </button>
-            <button
-              type="button"
-              onClick={doCancel}
-              className="cursor-pointer rounded-xl border border-border bg-card px-4 py-[10px] text-[14px] font-[600] text-muted-foreground hover:text-foreground"
-            >
-              Cancel
-            </button>
+            <Button onClick={doContinue} disabled={busy}>{busy ? 'Printing…' : 'Continue'}</Button>
+            <Button variant="outline" onClick={doCancel}>Cancel</Button>
           </div>
         </div>
       )}
@@ -278,18 +256,13 @@ export function PrintTab() {
       {!flip && (
         <>
           <hr className="my-4 border-t border-border" />
-          <button
-            type="button"
-            onClick={print}
-            disabled={!doc || busy}
-            className="w-full cursor-pointer rounded-xl bg-primary px-4 py-[14px] text-[15px] font-[640] text-primary-foreground transition-[filter] hover:brightness-110 disabled:cursor-default disabled:opacity-50"
-          >
+          <Button size="lg" onClick={print} disabled={!doc || busy} className="h-11 w-full text-[15px]">
             {busy ? 'Printing…' : 'Print'}
-          </button>
+          </Button>
         </>
       )}
 
       <Note note={note} />
-    </div>
+    </Card>
   )
 }

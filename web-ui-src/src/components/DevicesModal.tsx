@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Modal } from './Modal'
 import { devices as devApi, niimbot as nb, type Device, type NiimState, type NiimPrinter, type NiimCandidate } from '../api/client'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 type DStatus = { msg: string; cls: '' | 'ok' | 'err' }
 
@@ -100,7 +102,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
     <Modal open={open} onClose={onClose} labelledBy="devTitle" wide>
       <div className="mb-4 flex items-center justify-between">
         <h3 id="devTitle" className="m-0 text-[15px] font-[640]">Devices</h3>
-        <button type="button" onClick={refresh} disabled={busy} className="mr-8 cursor-pointer rounded-md bg-background px-3 py-1 font-mono text-[11px] font-[600] text-muted-foreground hover:text-foreground disabled:opacity-50">Refresh</button>
+        <Button variant="outline" size="sm" onClick={refresh} disabled={busy} className="mr-8 font-mono">Refresh</Button>
       </div>
 
       {/* Inventory */}
@@ -118,7 +120,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                   <div className={'truncate font-mono text-[11px] ' + (d.error ? 'text-destructive' : 'text-faint')}>{d.error || d.detail || d.status}</div>
                 </div>
                 {d.kind === 'printer' && d.id && (
-                  <button type="button" onClick={() => testDevice(d)} className="cursor-pointer rounded-md bg-background px-2 py-1 font-mono text-[11px] text-muted-foreground hover:text-foreground">Test</button>
+                  <Button variant="ghost" size="xs" className="font-mono" onClick={() => testDevice(d)}>Test</Button>
                 )}
               </div>
             ))}
@@ -131,9 +133,9 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
       <div className="mt-4">
         <div className="mb-1 flex items-center justify-between">
           <span className="font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-faint">Label printers (Niimbot)</span>
-          <button type="button" onClick={scan} disabled={scanning} className="cursor-pointer rounded-md bg-background px-3 py-1 font-mono text-[11px] font-[600] text-muted-foreground hover:text-foreground disabled:opacity-50">
+          <Button variant="outline" size="sm" onClick={scan} disabled={scanning} className="font-mono">
             {scanning ? 'Scanning…' : 'Scan for printers'}
-          </button>
+          </Button>
         </div>
         {showAdapterWarn && <p className="mb-2 font-mono text-[11px] text-warn">No Bluetooth adapter detected.</p>}
         {printers.length === 0 && <p className="text-sm text-muted-foreground">No Niimbot printers yet. Tap “Scan for printers”.</p>}
@@ -173,7 +175,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                 <div className="mt-2 max-h-40 overflow-y-auto rounded-md bg-background p-2 font-mono text-[11px] text-muted-foreground">
                   {log.length === 0 ? 'No log yet.' : log.map((l, i) => <div key={i}>{typeof l === 'string' ? l : JSON.stringify(l)}</div>)}
                   <div className="mt-1 text-right">
-                    <button type="button" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})} className="cursor-pointer text-faint hover:text-destructive">clear</button>
+                    <Button variant="link" size="xs" className="h-auto p-0 text-faint hover:text-destructive" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})}>clear</Button>
                   </div>
                 </div>
               )}
@@ -206,16 +208,14 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
 
 function MiniBtn({ children, onClick, primary, active }: { children: React.ReactNode; onClick: () => void; primary?: boolean; active?: boolean }) {
   return (
-    <button
-      type="button"
+    <Button
+      size="xs"
+      variant={primary ? 'default' : active ? 'secondary' : 'ghost'}
       onClick={onClick}
-      className={
-        'cursor-pointer rounded-md px-2 py-1 font-mono text-[11px] font-[600] ' +
-        (primary ? 'bg-primary text-white hover:brightness-[1.06]' : active ? 'bg-accent text-primary' : 'bg-background text-muted-foreground hover:text-foreground')
-      }
+      className="font-mono"
     >
       {children}
-    </button>
+    </Button>
   )
 }
 
@@ -225,9 +225,9 @@ function SizeEditor({ w, h, onSave, onCancel }: { w: number; h: number; onSave: 
   return (
     <div className="mt-2 flex items-center gap-2 rounded-md bg-background p-2">
       <span className="font-mono text-[11px] text-faint">Roll size</span>
-      <input type="number" min={5} max={120} value={ww} onChange={(e) => setWw(e.target.value)} aria-label="Width mm" className="w-16 rounded border border-border bg-card px-2 py-1 font-mono text-[12px]" />
+      <Input type="number" min={5} max={120} value={ww} onChange={(e) => setWw(e.target.value)} aria-label="Width mm" className="h-8 w-16 font-mono text-[12px]" />
       <span className="text-faint">×</span>
-      <input type="number" min={5} max={300} value={hh} onChange={(e) => setHh(e.target.value)} aria-label="Length mm" className="w-16 rounded border border-border bg-card px-2 py-1 font-mono text-[12px]" />
+      <Input type="number" min={5} max={300} value={hh} onChange={(e) => setHh(e.target.value)} aria-label="Length mm" className="h-8 w-16 font-mono text-[12px]" />
       <span className="font-mono text-[11px] text-faint">mm</span>
       <MiniBtn primary onClick={() => onSave(parseFloat(ww), parseFloat(hh))}>Save</MiniBtn>
       <MiniBtn onClick={onCancel}>Cancel</MiniBtn>

@@ -3,6 +3,9 @@ import {
 } from 'react'
 import { api, type Scan } from '../api/client'
 import { Modal } from './Modal'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 
 export interface RecentScansHandle {
   refresh: (newest?: string) => void
@@ -140,26 +143,18 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
     <section className="mt-6">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="m-0 text-[13px] font-[640] tracking-[0.02em]">Recent scans</h2>
-        <div className="flex items-center gap-[10px]">
+        <div className="flex items-center gap-2">
           {nSel >= 2 && (
-            <button
-              type="button"
-              onClick={openMerge}
-              className="cursor-pointer rounded-[7px] bg-primary px-3 py-[3px] font-mono text-xs font-[600] tracking-[0.02em] text-white hover:brightness-[1.06]"
-            >
-              Merge {nSel}
-            </button>
+            <Button size="sm" onClick={openMerge} className="font-mono">Merge {nSel}</Button>
           )}
-          <button
-            type="button"
+          <Button
+            size="sm"
+            variant={clearArmed ? 'destructive' : 'ghost'}
             onClick={onClear}
-            className={
-              'cursor-pointer rounded-md px-1 py-[2px] font-mono text-xs font-[600] tracking-[0.02em] ' +
-              (clearArmed ? 'bg-destructive text-white' : 'text-faint hover:text-destructive')
-            }
+            className="font-mono text-faint"
           >
             {clearArmed ? 'Click again to delete all' : 'Clear all'}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -186,14 +181,13 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
           <thead>
             <tr className="[&>th]:border-b [&>th]:border-border [&>th]:px-[10px] [&>th]:pb-2 [&>th]:text-left [&>th]:font-mono [&>th]:text-[11px] [&>th]:font-[600] [&>th]:uppercase [&>th]:tracking-[0.04em] [&>th]:text-faint">
               <th className="text-center">
-                <input
-                  type="checkbox"
-                  aria-label="Select all"
-                  checked={allChecked}
-                  ref={(el) => { if (el) el.indeterminate = nSel > 0 && !allChecked }}
-                  onChange={toggleAll}
-                  className="cursor-pointer align-middle accent-[var(--primary)]"
-                />
+                <div className="flex justify-center">
+                  <Checkbox
+                    aria-label="Select all"
+                    checked={allChecked ? true : nSel > 0 ? 'indeterminate' : false}
+                    onCheckedChange={toggleAll}
+                  />
+                </div>
               </th>
               <th></th>
               <th>Name</th>
@@ -210,13 +204,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                 <tr key={s.name} className={'[&>td]:border-b [&>td]:border-border [&>td]:px-[10px] [&>td]:py-2 [&>td]:align-middle ' + (s.name === newest ? '[&>td]:[animation:rowin_0.35s_ease_both]' : '')}>
                   <td className="whitespace-nowrap text-center">
                     <span className="relative inline-flex items-center justify-center">
-                      <input
-                        type="checkbox"
-                        aria-label="Select"
-                        checked={i >= 0}
-                        onChange={() => toggle(s.name)}
-                        className="cursor-pointer align-middle accent-[var(--primary)]"
-                      />
+                      <Checkbox aria-label="Select" checked={i >= 0} onCheckedChange={() => toggle(s.name)} />
                       {i >= 0 && (
                         <span className="absolute left-full ml-[3px] font-mono text-[10px] font-[700] leading-none text-primary">
                           {i + 1}
@@ -260,33 +248,21 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                   <td className="whitespace-nowrap font-mono text-xs tabular-nums text-faint">{ago(s.mtime)}</td>
                   <td>
                     <div className="flex justify-end gap-[2px] whitespace-nowrap">
-                      <a
-                        className="rounded-md p-[5px] leading-[0] text-muted-foreground no-underline hover:bg-background hover:text-foreground"
-                        href={api.fileUrl(s.name)}
-                        download
-                        title="Download"
-                        aria-label="Download"
-                      >
-                        <IconDownload />
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => setRenaming(s.name)}
-                        className="rounded-md p-[5px] leading-[0] text-muted-foreground hover:bg-background hover:text-foreground"
-                        title="Rename"
-                        aria-label="Rename"
-                      >
+                      <Button asChild variant="ghost" size="icon-sm" title="Download" aria-label="Download">
+                        <a href={api.fileUrl(s.name)} download><IconDownload /></a>
+                      </Button>
+                      <Button variant="ghost" size="icon-sm" onClick={() => setRenaming(s.name)} title="Rename" aria-label="Rename">
                         <IconRename />
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant={removeArmed === s.name ? 'destructive' : 'ghost'}
+                        size="icon-sm"
                         onClick={() => onRemove(s.name)}
-                        className={'rounded-md p-[5px] leading-[0] ' + (removeArmed === s.name ? 'bg-destructive text-white' : 'text-muted-foreground hover:bg-background hover:text-foreground')}
                         title={removeArmed === s.name ? 'Click again to delete' : 'Remove'}
                         aria-label="Remove"
                       >
                         <IconRemove />
-                      </button>
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -320,9 +296,8 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
         <label htmlFor="mergeName" className="mb-[6px] block font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">
           Name <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
         </label>
-        <input
+        <Input
           id="mergeName"
-          type="text"
           maxLength={80}
           autoComplete="off"
           autoFocus
@@ -333,24 +308,11 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             else if (e.key === 'Escape') { e.preventDefault(); if (!mergeBusy) setMergeOpen(false) }
           }}
           placeholder="auto: merged-YYYYMMDD-HHMMSS"
-          className="w-full rounded-[9px] border border-border bg-background px-[11px] py-[9px] font-mono text-[13px] text-foreground focus:border-primary focus:shadow-[0_0_0_3px_var(--accent)] focus:outline-none"
+          className="font-mono"
         />
         <div className="mt-[18px] flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => { if (!mergeBusy) setMergeOpen(false) }}
-            className="cursor-pointer rounded-[9px] border border-border bg-card px-[14px] py-2 font-mono text-xs font-[600] tracking-[0.02em] text-muted-foreground hover:bg-background hover:text-foreground"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={doMerge}
-            disabled={mergeBusy}
-            className="cursor-pointer rounded-[9px] bg-primary px-4 py-2 font-mono text-xs font-[600] tracking-[0.02em] text-white hover:brightness-[1.06] disabled:cursor-default disabled:opacity-50"
-          >
-            {mergeBusy ? 'Merging…' : 'Merge'}
-          </button>
+          <Button variant="outline" onClick={() => { if (!mergeBusy) setMergeOpen(false) }}>Cancel</Button>
+          <Button onClick={doMerge} disabled={mergeBusy}>{mergeBusy ? 'Merging…' : 'Merge'}</Button>
         </div>
       </Modal>
     </section>
@@ -369,9 +331,8 @@ function RenameField({ name, onCommit, onDone }: { name: string; onCommit: (to: 
     else onDone()
   }
   return (
-    <input
+    <Input
       autoFocus
-      type="text"
       maxLength={80}
       value={val}
       onChange={(e) => setVal(e.target.value)}
@@ -381,7 +342,7 @@ function RenameField({ name, onCommit, onDone }: { name: string; onCommit: (to: 
         else if (e.key === 'Escape') { commit(false) }
       }}
       onBlur={() => commit(true)}
-      className="w-full min-w-[160px] rounded-md border border-primary bg-background px-[6px] py-1 font-mono text-[13px] text-foreground"
+      className="h-8 min-w-[160px] font-mono"
     />
   )
 }

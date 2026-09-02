@@ -6,6 +6,9 @@ import { NiimbotComposer } from '../components/NiimbotComposer'
 import { SheetComposer } from '../components/SheetComposer'
 import { ManageLabels } from '../components/ManageLabels'
 import { formatOptions, type FormatOption, type ThermalFormat } from '../lib/formats'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Field, PlainSelect } from '../components/form'
 
 const STORE_KEY = 'pm_format'
 
@@ -68,21 +71,20 @@ export function LabelsTab() {
   const activeTemplate = format?.kind === 'a4' ? templates.find((t) => t.id === format.tplId) : undefined
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+    <Card className="p-5">
       {opts.length === 0 ? (
         <p className="font-mono text-[13px] text-muted-foreground">No printers yet. Connect one from the Devices manager (gear icon).</p>
       ) : (
         <>
           <div className="mb-4 flex items-end gap-2">
-            <label className="flex flex-1 flex-col gap-[6px]">
-              <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">Label format</span>
-              <select value={formatV} onChange={(e) => selectFormat(e.target.value)} className="rounded-[9px] border border-border bg-background px-3 py-[10px] font-mono text-[13px] text-foreground focus:border-primary focus:outline-none">
-                {opts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-              </select>
-            </label>
-            <button type="button" onClick={() => setManageOpen(true)} title="Add, edit or delete A4 label sizes" className="cursor-pointer rounded-md bg-background px-3 py-[10px] font-mono text-[11px] font-[600] text-muted-foreground hover:text-foreground">
+            <div className="flex-1">
+              <Field label="Label format">
+                <PlainSelect value={formatV} onChange={selectFormat} options={opts.map((o) => [o.v, o.label])} />
+              </Field>
+            </div>
+            <Button variant="outline" onClick={() => setManageOpen(true)} title="Add, edit or delete A4 label sizes">
               Manage labels
-            </button>
+            </Button>
           </div>
 
           {format?.kind === 'thermal' && (
@@ -109,15 +111,15 @@ export function LabelsTab() {
             <div className={'mt-3 font-mono text-[13px] ' + (conn.status === 'err' ? 'text-destructive' : conn.status === 'ok' ? 'text-primary' : 'text-muted-foreground')}>{conn.msg}</div>
             <div className="mt-4 flex justify-center gap-2">
               {conn.status === 'err' && (
-                <button type="button" onClick={() => ensureConnected(conn.fmt, conn.then)} className="cursor-pointer rounded-xl bg-primary px-4 py-2 text-[14px] font-[640] text-primary-foreground hover:brightness-110">Try again</button>
+                <Button onClick={() => ensureConnected(conn.fmt, conn.then)}>Try again</Button>
               )}
-              <button type="button" onClick={() => setConn(null)} className="cursor-pointer rounded-xl border border-border bg-card px-4 py-2 text-[14px] font-[600] text-muted-foreground hover:text-foreground">Compose anyway</button>
+              <Button variant="outline" onClick={() => setConn(null)}>Compose anyway</Button>
             </div>
           </div>
         )}
       </Modal>
 
       <ManageLabels open={manageOpen} onClose={() => setManageOpen(false)} templates={templates} onChanged={loadTemplates} />
-    </div>
+    </Card>
   )
 }

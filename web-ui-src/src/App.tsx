@@ -1,10 +1,13 @@
 import { useState } from 'react'
+import { Monitor } from 'lucide-react'
 import { StatusProvider, StatusLed } from './components/status'
 import { useRoute, type TabId } from './lib/router'
 import { ScanTab } from './tabs/ScanTab'
 import { PrintTab } from './tabs/PrintTab'
 import { LabelsTab } from './tabs/LabelsTab'
 import { DevicesModal } from './components/DevicesModal'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'scan', label: 'Scan' },
@@ -30,39 +33,19 @@ function Shell() {
         <div className="text-[19px] font-[640] tracking-[-0.01em]">Print / Scan</div>
         <div className="flex items-center gap-3">
           <StatusLed />
-          <button
-            type="button"
-            title="Devices"
-            aria-label="Manage devices"
-            onClick={() => setDevicesOpen(true)}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 9V3h12v6" />
-              <path d="M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2" />
-              <rect x="6" y="13.5" width="12" height="7.5" rx="1" />
-              <path d="M17.5 11.5h.01" />
-            </svg>
-          </button>
+          <Button variant="outline" size="icon" title="Devices" aria-label="Manage devices" onClick={() => setDevicesOpen(true)}>
+            <Monitor />
+          </Button>
         </div>
       </header>
 
-      <nav className="mb-6 inline-flex rounded-xl border border-border bg-card p-1 shadow-sm" role="tablist" aria-label="Tools">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => navigate(t.id)}
-            className={
-              'cursor-pointer rounded-[9px] px-[18px] py-2 font-sans text-[13.5px] font-[640] tracking-[-0.01em] transition-colors ' +
-              (tab === t.id ? 'bg-accent text-primary' : 'text-muted-foreground hover:text-foreground')
-            }
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      <Tabs value={tab} onValueChange={(v) => navigate(v as TabId)} className="mb-6">
+        <TabsList>
+          {TABS.map((t) => (
+            <TabsTrigger key={t.id} value={t.id}>{t.label}</TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {tab === 'scan' && <ScanTab />}
       {tab === 'labels' && <LabelsTab />}

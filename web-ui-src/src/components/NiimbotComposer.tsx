@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { niimbot as nb } from '../api/client'
 import { useStatus } from './status'
 import { readImageB64, type ThermalFormat } from '../lib/formats'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 
 type Kind = 'text' | 'image' | 'qr'
 
@@ -82,13 +84,13 @@ export function NiimbotComposer({
           <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">
             {kind === 'qr' ? 'Text or URL' : <>Text <span className="normal-case opacity-70">one line per row</span></>}
           </span>
-          <textarea
+          <Textarea
             rows={2}
             maxLength={kind === 'qr' ? 512 : 200}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={kind === 'qr' ? 'e.g. https://example.com or any text' : 'e.g. 42 — or a short\nlabel on two lines'}
-            className="resize-y rounded-[9px] border border-border bg-background px-3 py-[10px] font-mono text-[13px] text-foreground focus:border-primary focus:outline-none"
+            className="font-mono"
           />
         </label>
       ) : (
@@ -116,14 +118,9 @@ export function NiimbotComposer({
       )}
 
       <hr className="my-4 border-t border-border" />
-      <button
-        type="button"
-        onClick={onPrint}
-        disabled={busy || !hasContent}
-        className="w-full cursor-pointer rounded-xl bg-primary px-4 py-[14px] text-[15px] font-[640] text-primary-foreground transition-[filter] hover:brightness-110 disabled:cursor-default disabled:opacity-50"
-      >
+      <Button size="lg" onClick={onPrint} disabled={busy || !hasContent} className="h-11 w-full text-[15px]">
         {busy ? 'Printing…' : 'Print label'}
-      </button>
+      </Button>
     </div>
   )
 }
