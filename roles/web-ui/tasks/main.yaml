@@ -40,9 +40,9 @@
 # --- React SPA (built on the target from this repo) -------------------------
 # scan-web.py serves the built SPA from scan_web_ui_dir when present, else the
 # embedded HTML — so a failed/absent build never takes the UI down.
-- name: Install SPA build tooling (curl, xz, git)
+- name: Install SPA build tooling (curl, xz)
   apt:
-    name: [curl, xz-utils, git, ca-certificates]
+    name: [curl, xz-utils, ca-certificates]
     state: present
   when: scan_web_enabled and scan_web_spa
 
@@ -57,12 +57,39 @@
   command: /usr/local/lib/scan-web/install-node.sh
   when: scan_web_enabled and scan_web_spa
 
-- name: Fetch the web-UI source on the target
-  git:
-    repo: "{{ web_ui_repo }}"
-    dest: "{{ web_ui_build_dir }}"
-    version: "{{ web_ui_version }}"
-    force: true
+# The SPA source is uploaded from this repo's local working tree (not cloned
+# from GitHub), so a deploy ships whatever is checked out here — no push/pull
+# round-trip. Run tack from the repo root: the copy `src` paths below resolve
+# relative to the working directory. node_modules/ and dist/ are deliberately
+# not referenced, so they're never uploaded (npm ci rebuilds node_modules on
+# the target). The src/ sync uses delete:true to also drop files removed here.
+- name: Ensure the web-UI build directory exists
+  file:
+    path: "{{ web_ui_build_dir }}"
+    state: directory
+    mode: "0755"
+  when: scan_web_enabled and scan_web_spa
+
+- name: Upload the web-UI src/ tree
+  copy:
+    src: web-ui-src/src
+    dest: "{{ web_ui_build_dir }}/web-ui-src"
+    delete: true
+  when: scan_web_enabled and scan_web_spa
+
+- name: Upload the web-UI build inputs (manifests, Vite + TS config, entry HTML)
+  copy:
+    src: "web-ui-src/{{ item }}"
+    dest: "{{ web_ui_build_dir }}/web-ui-src/{{ item }}"
+    create_dirs: true
+  loop:
+    - index.html
+    - package.json
+    - package-lock.json
+    - vite.config.ts
+    - tsconfig.json
+    - tsconfig.app.json
+    - tsconfig.node.json
   when: scan_web_enabled and scan_web_spa
 
 - name: Install the SPA build script

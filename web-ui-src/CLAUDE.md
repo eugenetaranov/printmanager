@@ -9,10 +9,15 @@ and say why — don't silently diverge.
 
 - **React 19 + TypeScript + Vite 6 + Tailwind v4 + DaisyUI 5.** Single-page app in
   `src/`, served as static `dist/` by the Python backend (`../roles/web-ui/files/scan-web.py`).
-- **Build-on-Pi deploy model.** The Pi `git clone`s this repo at `web_ui_version` (default
-  `main`) and runs `npm ci && vite build` *itself*. So: deploying = `git push origin main`
-  then `tack site.yaml --tags web`. Running tack from a branch does **not** deploy that
-  branch — the Pi always builds `origin/main`. Test a branch by setting `web_ui_version`.
+- **Build-on-Pi, upload-from-local deploy model.** Deploy with `tack run site.yaml --tags web`
+  **from the repo root**: the `web-ui` role `copy`s this local `web-ui-src/` tree up to the Pi
+  (the `src/` sync uses `delete:true`; `node_modules/`+`dist/` are never referenced, so they're
+  not uploaded), which then runs `npm ci && vite build` *itself*. So a deploy ships whatever is
+  checked out locally — **no `git push`/clone round-trip**, and branches/uncommitted changes
+  deploy as-is. The copy `src` paths are working-directory-relative, so run tack from the repo
+  root. If you add a new root-level build input (a Tailwind/PostCSS config, `.env`, etc.), add it
+  to the build-inputs `loop` in `roles/web-ui/tasks/main.yaml` — only `src/` and the listed files
+  are uploaded.
 - Always `npm run build` (`tsc -b && vite build`) before committing UI changes — the Pi
   build is strict and a type error there means a failed deploy.
 

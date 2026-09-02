@@ -130,10 +130,11 @@ The UI is a **React single-page app** (`web-ui-src/`, Vite + Tailwind v4, TypeSc
 `scan_web_ui_dir` when a build is present, and falls back to the embedded HTML
 otherwise — so the app keeps working before/without a build.
 
-- **Build/deploy:** the `web-ui` role installs a pinned Node.js on the target,
-  clones this repo, runs `npm ci && vite build`, and installs `dist/` where the
-  server serves it (atomic swap; a failed build never replaces a working bundle).
-  Toggle with `scan_web_spa`; pin the source with `web_ui_version`.
+- **Build/deploy:** run `tack run site.yaml --tags web` from the repo root. The
+  `web-ui` role installs a pinned Node.js on the target, uploads this local
+  `web-ui-src/` tree (no GitHub clone), runs `npm ci && vite build`, and installs
+  `dist/` where the server serves it (atomic swap; a failed build never replaces a
+  working bundle). Toggle with `scan_web_spa`.
 - **Local dev:** `cd web-ui-src && npm install`, then
   `VITE_API_TARGET=http://printmanager.local npm run dev` — Vite serves the SPA
   and proxies the JSON API (`/scan`, `/recent`, `/document/*`, `/niimbot/*`, …)
