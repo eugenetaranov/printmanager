@@ -15,6 +15,7 @@ export function ScanTab() {
   const [name, setName] = useState('')
   const [mode, setMode] = useState('')
   const [resolution, setResolution] = useState('')
+  const [cap, setCap] = useState(0)   // MB; 0 = no limit
   const [scanning, setScanning] = useState(false)
 
   useEffect(() => {
@@ -31,14 +32,15 @@ export function ScanTab() {
     setScanning(true)
     clear()
     status.set('busy', 'Scanning')
-    api.scan({ name, mode, resolution })
+    api.scan({ name, mode, resolution, maxMb: cap > 0 ? cap : undefined })
       .then((d) => {
         if (d.ok && d.file) {
           status.set('idle', 'Ready')
           const file = d.file
+          const mb = d.size ? ` · ${(d.size / 1048576).toFixed(1)} MB` : ''
           push(
             <>
-              Saved {file} · {d.seconds}s —{' '}
+              Saved {file} · {d.seconds}s{mb} —{' '}
               <a href={api.fileUrl(file)} target="_blank" rel="noopener" className="link">open</a>
             </>,
             async () => { await api.remove(file); recent.current?.refresh() },
@@ -98,6 +100,19 @@ export function ScanTab() {
             className="input w-full font-mono"
           />
         </label>
+
+        <div>
+          <div className="mb-[6px] flex items-baseline justify-between">
+            <label htmlFor="scanCap" className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
+              Max size <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
+            </label>
+            <span className="font-mono text-xs text-base-content/70">{cap === 0 ? 'No limit' : `${cap} MB`}</span>
+          </div>
+          <input id="scanCap" type="range" min={0} max={10} step={1} value={cap} onChange={(e) => setCap(Number(e.target.value))} className="range range-sm w-full" />
+          <div className="mt-1 flex justify-between px-[2px] font-mono text-[10px] text-base-content/40">
+            <span>Off</span><span>10 MB</span>
+          </div>
+        </div>
 
         <button type="submit" disabled={scanning} className="btn btn-primary btn-block btn-lg mt-4">
           {scanning ? 'Scanning…' : 'Scan'}

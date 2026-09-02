@@ -19,6 +19,7 @@ export interface OkResult {
 export interface ScanResult extends OkResult {
   file?: string
   seconds?: number
+  size?: number
 }
 
 export interface RenameResult extends OkResult {
@@ -84,11 +85,12 @@ export const api = {
 
   recent: () => getJSON<{ scans: Scan[] }>('/recent').then((d) => d.scans ?? []),
 
-  scan: (opts: { name?: string; mode?: string; resolution?: string }) =>
+  scan: (opts: { name?: string; mode?: string; resolution?: string; maxMb?: number }) =>
     postForm<ScanResult>('/scan', {
       name: opts.name ?? '',
       ...(opts.mode ? { mode: opts.mode } : {}),
       ...(opts.resolution ? { resolution: opts.resolution } : {}),
+      max_mb: String(opts.maxMb ?? 0),
     }),
 
   rename: (name: string, to: string) => postForm<RenameResult>('/rename', { name, to }),

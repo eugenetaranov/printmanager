@@ -556,6 +556,26 @@ def clear_scans():
     return len(items), token
 
 
+def shrink_scan_file(name, max_mb):
+    """Best-effort compress a stored scan in place to fit under max_mb."""
+    if not (max_mb and max_mb > 0):
+        return
+    path = os.path.join(SCAN_DIR, name)
+    if not os.path.isfile(path):
+        return
+    cap = int(max_mb * 1024 * 1024)
+    if os.path.getsize(path) <= cap:
+        return
+    tmp = tempfile.mkdtemp()
+    try:
+        out = _compress_to_cap(path, tmp, cap)
+        if out != path and os.path.getsize(out) < os.path.getsize(path):
+            shutil.move(out, path)
+            _rm(os.path.join(THUMB_DIR, name[:-4] + ".jpg"))   # re-render thumb
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def print_scan(name):
     """Submit a stored scan straight to the default print queue (single-sided)."""
     if not PRINT_ENABLED:
@@ -1671,12 +1691,22 @@ class Handler(BaseHTTPRequestHandler):
         mode = f.get("mode", [DEF_MODE])[0]
         res = f.get("resolution", [DEF_RES])[0]
         given = sanitize(f.get("name", [""])[0])
+        try:
+            max_mb = float(f.get("max_mb", ["0"])[0])
+        except (TypeError, ValueError):
+            max_mb = 0
         t0 = time.time()
         try:
             fname = run_scan(mode, res, given)
             if not fname:
                 raise RuntimeError("No output file was produced")
-            self._json(200, {"ok": True, "file": fname,
+            try:
+                shrink_scan_file(fname, max_mb)   # best-effort; keep the scan regardless
+            except Exception:
+                pass
+            path = os.path.join(SCAN_DIR, fname)
+            size = os.path.getsize(path) if os.path.isfile(path) else None
+            self._json(200, {"ok": True, "file": fname, "size": size,
                              "seconds": round(time.time() - t0, 1)})
         except subprocess.TimeoutExpired:
             self._json(200, {"ok": False,
