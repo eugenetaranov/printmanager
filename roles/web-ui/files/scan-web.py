@@ -1346,11 +1346,40 @@ def niimbot_rows():
     return rows
 
 
+# --- Inventory CUPS cache ----------------------------------------------------
+# The Devices list needs the printer rows too, but lpstat is ~1s (see the note
+# on _cups_cache), so the modal paid that on every open — even revisits seconds
+# apart. Cache the raw cups_devices() rows with a short TTL: return instantly,
+# refresh in the background when stale, and probe synchronously only on a cold
+# cache or an explicit force (the modal's Refresh / a forget). Kept separate
+# from _cups_cache, which stores filtered rows for the print pickers.
+_inv_cups = {"rows": None, "t": 0.0}
+_inv_cups_lock = threading.Lock()
+_INV_CUPS_TTL = 30.0
+
+
+def _refresh_inv_cups():
+    if not _inv_cups_lock.acquire(blocking=False):
+        return
+    try:
+        _inv_cups.update(rows=cups_devices(), t=time.time())
+    finally:
+        _inv_cups_lock.release()
+
+
+def _cups_devices_cached(force=False):
+    if force or _inv_cups["rows"] is None:
+        _refresh_inv_cups()
+    elif time.time() - _inv_cups["t"] > _INV_CUPS_TTL:
+        threading.Thread(target=_refresh_inv_cups, daemon=True).start()
+    return _inv_cups["rows"] or []
+
+
 def inventory(force=False):
     # Niimbot label printers are NOT included here — they have their own managed
     # section (fed by /niimbot/state) so they aren't listed twice.
     rows = []
-    rows += cups_devices()
+    rows += _cups_devices_cached(force)
     rows += sane_devices(force)
     rows += usb_devices([r["name"] for r in rows if r.get("id")])
     return rows
@@ -1412,10 +1441,39 @@ def forget_device(kind, dev_id):
     raise RuntimeError("This device can't be removed")
 
 
+# --- BLE adapter cache -------------------------------------------------------
+# sync_adapter_ok() runs a BleakScanner.discover (~1-2s), which the Devices modal
+# hit on every open (with_adapter=1). Cache it the same way as the CUPS rows:
+# instant read, background refresh when stale, sync probe only on a cold cache.
+# Adapter presence changes rarely, so a short TTL is plenty.
+_adapter_cache = {"ok": None, "t": 0.0}
+_adapter_lock = threading.Lock()
+_ADAPTER_TTL = 30.0
+
+
+def _refresh_adapter():
+    if not _adapter_lock.acquire(blocking=False):
+        return
+    try:
+        _adapter_cache.update(ok=_niimbot().manager.sync_adapter_ok(), t=time.time())
+    except Exception:
+        pass
+    finally:
+        _adapter_lock.release()
+
+
+def _adapter_ok_cached():
+    if _adapter_cache["ok"] is None:
+        _refresh_adapter()
+    elif time.time() - _adapter_cache["t"] > _ADAPTER_TTL:
+        threading.Thread(target=_refresh_adapter, daemon=True).start()
+    return bool(_adapter_cache["ok"])
+
+
 def niimbot_state(with_adapter=True):
     nb = _niimbot()
     return {"enabled": True,
-            "adapter": nb.manager.sync_adapter_ok() if with_adapter else True,
+            "adapter": _adapter_ok_cached() if with_adapter else True,
             "printers": nb.manager.state(), "active": nb.manager.active,
             "log": nb.manager.recent_log()[-200:]}
 
