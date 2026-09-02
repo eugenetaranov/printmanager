@@ -53,7 +53,7 @@ export function ActivityFooter() {
   const rows = [...entries].reverse()
   return (
     <footer className="mt-10 w-full border-t border-base-300 pt-3">
-      <div className="mb-1 font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-base-content/45">Activity</div>
+      <h2 className="m-0 mb-2 text-[13px] font-[640] tracking-[0.02em]">Activity</h2>
       <div className="divide-y divide-base-200">
         {rows.map((e) => <LogRow key={e.id} entry={e} onUndo={runUndo} />)}
       </div>
@@ -64,7 +64,7 @@ export function ActivityFooter() {
 function LogRow({ entry, onUndo }: { entry: LogEntry; onUndo: (id: string) => void }) {
   return (
     <div className="flex items-center justify-between gap-3 py-[6px]">
-      <span className={'min-w-0 truncate font-mono text-[13px] ' + (entry.undone ? 'text-base-content/40 line-through' : 'text-base-content/80')}>
+      <span className={'min-w-0 truncate font-mono text-[13px] ' + (entry.undone ? 'text-base-content/40 line-through' : 'text-base-content')}>
         {entry.content}
       </span>
       {entry.undo && !entry.undone ? (
