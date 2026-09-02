@@ -109,7 +109,7 @@ export function ScanTab() {
             <span className="font-mono text-xs text-base-content/70">{cap === 0 ? 'No limit' : `${cap} MB`}</span>
           </div>
           <input id="scanCap" type="range" min={0} max={10} step={1} value={cap} onChange={(e) => setCap(Number(e.target.value))} className="range range-sm w-full" />
-          <div className="mt-1 flex justify-between px-[2px] font-mono text-2xs text-base-content/40">
+          <div className="mt-1 flex justify-between px-[2px] font-mono text-2xs text-base-content/60">
             <span>Off</span><span>10 MB</span>
           </div>
         </div>

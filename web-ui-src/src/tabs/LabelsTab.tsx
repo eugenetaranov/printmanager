@@ -120,7 +120,7 @@ export function LabelsTab() {
         {conn && (
           <div className="text-center">
             <div id="connName" className="text-title font-[640]">{conn.fmt.name}</div>
-            <div className="mt-1 font-mono text-xs text-base-content/45">{conn.fmt.w}×{conn.fmt.h} mm</div>
+            <div className="mt-1 font-mono text-xs text-base-content/60">{conn.fmt.w}×{conn.fmt.h} mm</div>
             <div className={'mt-3 text-body ' + (conn.status === 'err' ? 'text-error' : conn.status === 'ok' ? 'text-primary' : 'text-base-content/60')}>{conn.msg}</div>
             <div className="mt-4 flex justify-center gap-2">
               {conn.status === 'err' && (

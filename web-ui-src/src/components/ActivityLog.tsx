@@ -64,7 +64,7 @@ export function ActivityFooter() {
 function LogRow({ entry, onUndo }: { entry: LogEntry; onUndo: (id: string) => void }) {
   return (
     <div className="flex items-center justify-between gap-3 py-[6px]">
-      <span className={'min-w-0 truncate font-mono text-body ' + (entry.undone ? 'text-base-content/40 line-through' : 'text-base-content')}>
+      <span className={'min-w-0 truncate font-mono text-body ' + (entry.undone ? 'text-base-content/60 line-through' : 'text-base-content')}>
         {entry.content}
       </span>
       {entry.undo && !entry.undone ? (
@@ -72,7 +72,7 @@ function LogRow({ entry, onUndo }: { entry: LogEntry; onUndo: (id: string) => vo
           {entry.undoing ? '…' : 'Undo'}
         </button>
       ) : (
-        <span className="w-16 flex-none text-right font-mono text-2xs text-base-content/40">{entry.undone ? 'undone' : ''}</span>
+        <span className="w-16 flex-none text-right font-mono text-2xs text-base-content/60">{entry.undone ? 'undone' : ''}</span>
       )}
     </div>
   )

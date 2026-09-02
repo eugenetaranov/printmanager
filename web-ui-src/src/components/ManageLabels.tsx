@@ -85,7 +85,7 @@ export function ManageLabels({
             <div key={t.id} className="flex items-center gap-2 border-b border-base-300 py-2 last:border-0">
               <div className="min-w-0 flex-1">
                 <div className="truncate text-body">{t.name}</div>
-                <div className="font-mono text-2xs text-base-content/45">{t.cols}×{t.rows} · {Math.round(Number(t.cell_w))}×{Math.round(Number(t.cell_h))} mm{t.builtin ? ' · built-in' : ''}</div>
+                <div className="font-mono text-2xs text-base-content/60">{t.cols}×{t.rows} · {Math.round(Number(t.cell_w))}×{Math.round(Number(t.cell_h))} mm{t.builtin ? ' · built-in' : ''}</div>
               </div>
               <button type="button" onClick={() => setDraft(draftFrom(t))} className="btn btn-ghost btn-sm">Edit</button>
               <button type="button" onClick={() => remove(t.id)} className={'btn btn-sm ' + (armed === t.id ? 'btn-error' : 'btn-ghost')}>{armed === t.id ? 'Confirm' : 'Delete'}</button>

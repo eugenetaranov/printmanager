@@ -136,7 +136,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                 <Dot status={d.status} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-body">{d.name}</div>
-                  <div className={'truncate font-mono text-2xs ' + (d.error ? 'text-error' : 'text-base-content/45')}>{d.error || d.detail || d.status}</div>
+                  <div className={'truncate font-mono text-2xs ' + (d.error ? 'text-error' : 'text-base-content/60')}>{d.error || d.detail || d.status}</div>
                 </div>
                 {d.kind === 'printer' && d.id && (
                   <IconBtn title="Print test page" onClick={() => testDevice(d)}><Icon.test /></IconBtn>
@@ -170,7 +170,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                 <Dot status={p.status} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-body">{p.model_label || p.model}</div>
-                  <div className="truncate font-mono text-2xs text-base-content/45">
+                  <div className="truncate font-mono text-2xs text-base-content/60">
                     {p.name} · <span className={ds?.cls === 'err' ? 'text-error' : ds?.cls === 'ok' ? 'text-primary' : ''}>{stTxt}</span>
                     {p.label_mm ? ` · ${p.label_mm[0]}×${p.label_mm[1]} mm` : ''}
                   </div>
@@ -194,7 +194,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                 <div className="mt-2 max-h-40 overflow-y-auto rounded-md bg-base-200 p-2 font-mono text-2xs text-base-content/60">
                   {log.length === 0 ? 'No log yet.' : log.map((l, i) => <div key={i}>{typeof l === 'string' ? l : JSON.stringify(l)}</div>)}
                   <div className="mt-1 text-right">
-                    <button type="button" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})} className="btn btn-link btn-xs h-auto min-h-0 p-0 text-base-content/45 hover:text-error">clear</button>
+                    <button type="button" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})} className="btn btn-link btn-xs h-auto min-h-0 p-0 text-base-content/60 hover:text-error">clear</button>
                   </div>
                 </div>
               )}
@@ -211,7 +211,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                 <span className="h-[7px] w-[7px] flex-none rounded-full bg-warning" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-body">{c.name}</div>
-                  <div className="truncate font-mono text-2xs text-base-content/45">{c.address}{c.rssi != null ? ` · ${c.rssi} dBm` : ''}</div>
+                  <div className="truncate font-mono text-2xs text-base-content/60">{c.address}{c.rssi != null ? ` · ${c.rssi} dBm` : ''}</div>
                 </div>
                 <IconBtn title="Connect" variant="primary" onClick={() => connect(c)}><Icon.connect /></IconBtn>
               </div>
@@ -274,11 +274,11 @@ function SizeEditor({ w, h, onSave, onCancel }: { w: number; h: number; onSave: 
   const [hh, setHh] = useState(String(h))
   return (
     <div className="mt-2 flex items-center gap-2 rounded-md bg-base-200 p-2">
-      <span className="font-mono text-2xs text-base-content/45">Roll size</span>
+      <span className="font-mono text-2xs text-base-content/60">Roll size</span>
       <input type="number" min={5} max={120} value={ww} onChange={(e) => setWw(e.target.value)} aria-label="Width mm" className="input input-sm w-16 font-mono" />
-      <span className="text-base-content/45">×</span>
+      <span className="text-base-content/60">×</span>
       <input type="number" min={5} max={300} value={hh} onChange={(e) => setHh(e.target.value)} aria-label="Length mm" className="input input-sm w-16 font-mono" />
-      <span className="font-mono text-2xs text-base-content/45">mm</span>
+      <span className="font-mono text-2xs text-base-content/60">mm</span>
       <MiniBtn primary onClick={() => onSave(parseFloat(ww), parseFloat(hh))}>Save</MiniBtn>
       <MiniBtn onClick={onCancel}>Cancel</MiniBtn>
     </div>

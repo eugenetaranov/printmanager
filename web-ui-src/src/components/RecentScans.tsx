@@ -184,7 +184,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
           <button
             type="button"
             onClick={onClear}
-            className={'btn btn-sm ' + (clearArmed ? 'btn-error' : 'btn-ghost text-base-content/45')}
+            className={'btn btn-sm ' + (clearArmed ? 'btn-error' : 'btn-ghost text-base-content/60')}
           >
             {clearArmed ? 'Click again to delete all' : 'Clear all'}
           </button>
@@ -192,7 +192,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       </div>
 
       {share && (
-        <div className="break-all font-mono text-xs font-medium text-base-content/45">
+        <div className="break-all font-mono text-xs font-medium text-base-content/60">
           Saved to{' '}
           <a href={share} className="text-primary no-underline hover:underline">{share}</a>
         </div>
@@ -208,13 +208,13 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             <col className="w-10" />
             <col className="w-[46px]" />
             <col />
-            <col className="w-[52px]" />
+            <col className="w-0 sm:w-[52px]" />
             <col className="w-[66px]" />
-            <col className="w-[74px]" />
-            <col className="w-[168px]" />
+            <col className="w-0 sm:w-[74px]" />
+            <col className="w-[104px] sm:w-[168px]" />
           </colgroup>
           <thead>
-            <tr className="[&>th]:border-b [&>th]:border-base-300 [&>th]:px-[10px] [&>th]:pb-2 [&>th]:text-left [&>th]:font-mono [&>th]:text-2xs [&>th]:font-[600] [&>th]:uppercase [&>th]:tracking-[0.04em] [&>th]:text-base-content/45">
+            <tr className="[&>th]:border-b [&>th]:border-base-300 [&>th]:px-[10px] [&>th]:pb-2 [&>th]:text-left [&>th]:font-mono [&>th]:text-2xs [&>th]:font-[600] [&>th]:uppercase [&>th]:tracking-[0.04em] [&>th]:text-base-content/60">
               <th className="text-center">
                 <input
                   type="checkbox"
@@ -227,9 +227,9 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
               </th>
               <th></th>
               <th>Name</th>
-              <th>DPI</th>
+              <th className="hidden sm:table-cell">DPI</th>
               <th>Size</th>
-              <th>When</th>
+              <th className="hidden sm:table-cell">When</th>
               <th></th>
             </tr>
           </thead>
@@ -239,9 +239,9 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                 <td><div className="skeleton mx-auto h-4 w-4 rounded" /></td>
                 <td><div className="skeleton h-11 w-[34px] rounded" /></td>
                 <td><div className="skeleton h-4 w-40 rounded" /></td>
-                <td><div className="skeleton h-4 w-6 rounded" /></td>
+                <td className="hidden sm:table-cell"><div className="skeleton h-4 w-6 rounded" /></td>
                 <td><div className="skeleton h-4 w-12 rounded" /></td>
-                <td><div className="skeleton h-4 w-12 rounded" /></td>
+                <td className="hidden sm:table-cell"><div className="skeleton h-4 w-12 rounded" /></td>
                 <td><div className="skeleton ml-auto h-4 w-16 rounded" /></td>
               </tr>
             ))}
@@ -300,9 +300,9 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                       <span className="break-all font-mono text-body">{s.name}</span>
                     )}
                   </td>
-                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-base-content/60">{s.dpi || '—'}</td>
+                  <td className="hidden whitespace-nowrap font-mono text-xs tabular-nums text-base-content/60 sm:table-cell">{s.dpi || '—'}</td>
                   <td className="whitespace-nowrap font-mono text-xs tabular-nums text-base-content/60">{fmtSize(s.size)}</td>
-                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-base-content/45">{ago(s.mtime)}</td>
+                  <td className="hidden whitespace-nowrap font-mono text-xs tabular-nums text-base-content/60 sm:table-cell">{ago(s.mtime)}</td>
                   <td>
                     <div className="flex justify-end gap-[2px] whitespace-nowrap">
                       <a className="tooltip tooltip-top btn btn-ghost btn-xs btn-square" href={api.fileUrl(s.name)} target="_blank" rel="noopener" data-tip="Open in new tab" aria-label="Open">
@@ -311,10 +311,10 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                       <button type="button" onClick={() => onPrint(s.name)} disabled={printing === s.name} className="tooltip tooltip-top btn btn-ghost btn-xs btn-square" data-tip="Print" aria-label="Print">
                         {printing === s.name ? <span className="loading loading-spinner loading-xs" /> : <IconPrint />}
                       </button>
-                      <a className="tooltip tooltip-top btn btn-ghost btn-xs btn-square" href={api.fileUrl(s.name)} download data-tip="Download" aria-label="Download">
+                      <a className="tooltip tooltip-top btn btn-ghost btn-xs btn-square hidden sm:inline-flex" href={api.fileUrl(s.name)} download data-tip="Download" aria-label="Download">
                         <IconDownload />
                       </a>
-                      <button type="button" onClick={() => setRenaming(s.name)} className="tooltip tooltip-top btn btn-ghost btn-xs btn-square" data-tip="Rename" aria-label="Rename">
+                      <button type="button" onClick={() => setRenaming(s.name)} className="tooltip tooltip-top btn btn-ghost btn-xs btn-square hidden sm:inline-flex" data-tip="Rename" aria-label="Rename">
                         <IconRename />
                       </button>
                       <button
@@ -398,7 +398,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
           onChange={(e) => setMergeCap(Number(e.target.value))}
           className="range range-sm w-full"
         />
-        <div className="mt-1 flex justify-between px-[2px] font-mono text-2xs text-base-content/40">
+        <div className="mt-1 flex justify-between px-[2px] font-mono text-2xs text-base-content/60">
           <span>Off</span><span>10 MB</span>
         </div>
 

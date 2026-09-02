@@ -48,6 +48,11 @@ arbitrary `text-[Npx]` values — pick the nearest token:
   `font-mono` on prose (help text, error/status sentences, empty states) or on buttons.
   Data columns of numbers also get `tabular-nums`.
 - Weight for hierarchy: headings `600–700`, body `400`, labels `500–600`.
+- **Muted text is one tier: `text-base-content/60`.** Don't scatter `/40`/`/45`/`/70`;
+  secondary/meta text uses `/60` (matches the `field-label` mix). Essential text that must
+  meet WCAG AA — filenames, primary values — stays full-contrast `text-base-content` (no
+  opacity). Note: nord's dark-on-light palette means small text below ~`/80` doesn't hit a
+  strict 4.5:1, so keep anything load-bearing at full contrast rather than dimming it.
 
 ## Components & patterns
 
@@ -62,9 +67,23 @@ arbitrary `text-[Npx]` values — pick the nearest token:
 - **Tables use `table-fixed` + a `<colgroup>`** with pinned widths, so changing content
   (a badge showing/hiding) can never reflow columns. Do **not** wrap the table in
   `overflow-x-auto`; the fixed layout already fits its container, and the wrapper
-  reintroduces the tooltip scrollbar.
+  reintroduces the tooltip scrollbar. **Make it responsive** by dropping non-essential
+  columns below `sm` — hide the `<th>`/`<td>` with `hidden sm:table-cell` *and* collapse
+  the matching `<col>` to `w-0 sm:w-[..]` (in `table-fixed`, a `<col>` width is reserved
+  even when its cells are hidden, so `display:none` on the `<col>` alone isn't enough).
+  The Recent-scans table keeps select/thumb/name/size/actions on mobile and hides
+  DPI/When plus the Download/Rename row actions.
+- **Interactive SVG must be keyboard-operable.** The label-grid cells
+  (`SheetComposer.tsx`) are `<g tabIndex={0} role="checkbox" aria-checked aria-label>` with
+  Enter/Space to toggle and arrow keys to rove focus (via `data-cell` lookup), plus a drawn
+  focus-ring `<rect>` (SVG `:focus-visible` styling is unreliable, so render the ring from
+  a `focusIdx` state). Any new SVG interaction follows the same pattern — don't ship
+  click-only SVG.
 - **Modals** go through `src/components/Modal.tsx` (DaisyUI `modal-box`, `overflow-x-hidden`,
   `max-w-[380px]` normal / `max-w-[640px]` wide). Pass `labelledBy` for the a11y title link.
+  It moves focus into the dialog on open, **traps Tab** inside it, closes on Esc/backdrop,
+  and restores focus to the trigger on close — so any new modal gets this for free; don't
+  hand-roll another dialog.
 - **Loading**: show `skeleton` rows/fields (not a blocking spinner) for anything that can
   arrive late; reserve the final height so content doesn't jump (CLS).
 - **Tab route path must equal the tab name** (Scan → `/scan`, Labels → `/labels`) — see
@@ -99,5 +118,8 @@ accessibility (contrast 4.5:1, focus rings, keyboard nav, aria-labels) → touch
 → typography/color tokens → animation → forms/feedback → navigation. A change that "looks
 unprofessional" is usually a violation high in that list, not a color choice.
 
-Deferred, still-open items worth picking up: responsive/mobile table layout, modal focus
-trap, keyboard access for the SVG label grid, a full contrast audit.
+The review's structural a11y items are now done: responsive/mobile table, modal focus
+trap, SVG-grid keyboard access, and the muted-tier contrast cleanup (see above). What
+remains is a **strict WCAG-AA contrast pass** — verifying every foreground/background pair
+with a tool and darkening the secondary palette if AA on small text is required (currently
+only load-bearing text is guaranteed full-contrast).

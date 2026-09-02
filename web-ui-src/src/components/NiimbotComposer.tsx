@@ -73,7 +73,7 @@ export function NiimbotComposer({
 
   return (
     <div>
-      <p className="text-xs text-base-content/45">Label {format.w}×{format.h} mm — change the roll size in Devices</p>
+      <p className="text-xs text-base-content/60">Label {format.w}×{format.h} mm — change the roll size in Devices</p>
 
       <Seg value={kind} onChange={setKind} options={[['text', 'Text'], ['image', 'Image'], ['qr', 'QR']]} />
 
@@ -102,7 +102,7 @@ export function NiimbotComposer({
               </button>
             </div>
           )}
-          <div className="mt-1 text-2xs text-base-content/45">Tip: paste an image with ⌘V / Ctrl+V</div>
+          <div className="mt-1 text-2xs text-base-content/60">Tip: paste an image with ⌘V / Ctrl+V</div>
         </div>
       )}
 

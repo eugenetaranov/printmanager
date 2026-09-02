@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { printSheet, type Template } from '../api/client'
 import { useStatus } from './status'
 import { readImageB64, type A4Format } from '../lib/formats'
@@ -49,6 +49,21 @@ export function SheetComposer({
   const [img, setImg] = useState<{ b64: string; url: string; name: string } | null>(null)
   const [printing, setPrinting] = useState(false)
   const [clearArmed, setClearArmed] = useState(false)
+  const [focusIdx, setFocusIdx] = useState<number | null>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+
+  // Keyboard: Enter/Space toggles a cell; arrows move focus across the grid.
+  const onCellKey = (e: React.KeyboardEvent, i: number) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(i); return }
+    const delta =
+      e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 :
+      e.key === 'ArrowDown' ? g.cols : e.key === 'ArrowUp' ? -g.cols : 0
+    if (!delta) return
+    const t = i + delta
+    if (t < 0 || t >= n) return
+    e.preventDefault()
+    svgRef.current?.querySelector<SVGGElement>(`[data-cell="${t}"]`)?.focus()
+  }
 
   const cellXY = (i: number) => {
     const c = i % g.cols, r = Math.floor(i / g.cols)
@@ -113,16 +128,33 @@ export function SheetComposer({
       </div>
 
       <div className="mx-auto max-w-[280px]">
-        <svg viewBox={`0 0 ${g.page_w} ${g.page_h}`} className="w-full rounded-lg border border-base-300 bg-white" role="group" aria-label="Label sheet">
+        <svg ref={svgRef} viewBox={`0 0 ${g.page_w} ${g.page_h}`} className="w-full rounded-lg border border-base-300 bg-white" role="group" aria-label="Label sheet">
           {Array.from({ length: n }, (_, i) => {
             const { x, y } = cellXY(i)
             const isSel = sel.has(i)
+            const isFocus = focusIdx === i
             const cc = content[i]
             return (
-              <g key={i} onClick={() => toggle(i)} style={{ cursor: 'pointer' }}>
+              <g
+                key={i}
+                data-cell={i}
+                tabIndex={0}
+                role="checkbox"
+                aria-checked={isSel}
+                aria-label={`Cell ${i + 1}, ${cc ? 'filled' : 'empty'}${isSel ? ', selected' : ''}`}
+                onClick={() => toggle(i)}
+                onKeyDown={(e) => onCellKey(e, i)}
+                onFocus={() => setFocusIdx(i)}
+                onBlur={() => setFocusIdx((f) => (f === i ? null : f))}
+                style={{ cursor: 'pointer', outline: 'none' }}
+              >
                 <rect x={x} y={y} width={g.cell_w} height={g.cell_h} rx={1.5}
                   fill={isSel ? 'color-mix(in oklch, var(--color-primary) 15%, transparent)' : cc ? '#fff' : '#fafafa'}
                   stroke={isSel ? 'var(--color-primary)' : '#d8d8d2'} strokeWidth={isSel ? 0.7 : 0.3} />
+                {isFocus && (
+                  <rect x={x - 0.4} y={y - 0.4} width={g.cell_w + 0.8} height={g.cell_h + 0.8} rx={2}
+                    fill="none" stroke="var(--color-primary)" strokeWidth={0.6} strokeDasharray="1.6 1.2" pointerEvents="none" />
+                )}
                 {cc?.mode === 'file' && (
                   <image href={cc.dataUrl} x={x + 1} y={y + 1} width={g.cell_w - 2} height={g.cell_h - 2} preserveAspectRatio="xMidYMid meet" />
                 )}
@@ -168,7 +200,7 @@ export function SheetComposer({
         {printing ? 'Printing…' : `Print sheet${filled ? ` (${filled})` : ''}`}
       </button>
       {filled > 0 && (
-        <button type="button" onClick={clearSheet} className="btn btn-ghost btn-sm mt-2 w-full text-base-content/45 hover:text-error">
+        <button type="button" onClick={clearSheet} className="btn btn-ghost btn-sm mt-2 w-full text-base-content/60 hover:text-error">
           {clearArmed ? 'Click again to clear' : 'Clear sheet'}
         </button>
       )}
