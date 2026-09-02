@@ -363,6 +363,35 @@ def rename_scan(name, newbase):
     return newbase + ".pdf", None
 
 
+def merge_scans(names, newbase):
+    # Concatenate the given scans (in the order supplied) into a single PDF.
+    # Raises ValueError / CalledProcessError / TimeoutExpired for the route to catch.
+    srcs = []
+    for n in names:
+        if not (NAME_RE.fullmatch(n) and n.lower().endswith(".pdf")):
+            raise ValueError("bad name")
+        p = os.path.join(SCAN_DIR, n)
+        if not os.path.isfile(p):
+            raise ValueError("%s not found" % n)
+        srcs.append(p)
+    if len(srcs) < 2:
+        raise ValueError("select at least two scans")
+    base = sanitize(newbase) or time.strftime("merged-%Y%m%d-%H%M%S")
+    dst = os.path.join(SCAN_DIR, base + ".pdf")
+    if os.path.exists(dst):
+        raise ValueError("a scan with that name already exists")
+    tmp = tempfile.mkdtemp()
+    try:
+        out = os.path.join(tmp, base + ".pdf")
+        subprocess.run(["pdfunite"] + srcs + [out], check=True, timeout=120)
+        shutil.move(out, dst)          # result now safely in SCAN_DIR
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    for n in names:                    # delete sources only after a successful merge
+        remove_scan(n)
+    return base + ".pdf"
+
+
 def clear_scans():
     removed = 0
     for s in list_scans(10000):
@@ -1372,6 +1401,15 @@ class Handler(BaseHTTPRequestHandler):
             f = self._form()
             new, err = rename_scan(f.get("name", [""])[0], f.get("to", [""])[0])
             return self._json(200, {"ok": bool(new), "file": new, "error": err})
+        if path == "/merge":
+            obj = self._json_body()
+            try:
+                f = merge_scans(obj.get("names") or [], obj.get("to", ""))
+                return self._json(200, {"ok": True, "file": f})
+            except subprocess.TimeoutExpired:
+                return self._json(200, {"ok": False, "error": "Merge timed out."})
+            except Exception as e:
+                return self._json(200, {"ok": False, "error": str(e)})
         if path == "/templates":
             try:
                 tid = upsert_template(self._json_body())
@@ -1547,6 +1585,13 @@ textarea.txt{min-height:74px;line-height:1.4;resize:vertical;display:block}
 .clear:hover{color:var(--danger)}
 .clear:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .clear.armed{color:#fff;background:var(--danger)}
+.recentActs{display:flex;align-items:center;gap:10px}
+.merge{border:none;cursor:pointer;padding:3px 12px;border-radius:7px;font:600 12px var(--mono);letter-spacing:.02em;color:#fff;background:var(--accent)}
+.merge:hover{filter:brightness(1.06)}
+.merge:disabled{opacity:.5;cursor:default;filter:none}
+.merge:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.mergeName{display:inline-flex;align-items:center;gap:6px}
+.mergeName input{width:150px;padding:4px 8px;font:500 12px var(--mono);color:var(--text);background:var(--bg);border:1px solid var(--accent);border-radius:7px}
 .tablewrap{margin-top:14px;overflow-x:auto}
 table.scans{width:100%;border-collapse:collapse;font-size:13px}
 table.scans th{text-align:left;font:600 11px var(--mono);letter-spacing:.04em;text-transform:uppercase;
@@ -1557,6 +1602,10 @@ table.scans tr.new td{animation:in .35s ease both}
 .thumb{width:34px;height:44px;object-fit:cover;border-radius:3px;border:1px solid var(--border);
   background:var(--bg);display:block;cursor:zoom-in}
 .th-thumb{width:36px}
+.th-sel{width:34px;padding-left:4px;padding-right:4px}
+.sel{width:34px;text-align:center;white-space:nowrap}
+.sel input,#selAllScans{accent-color:var(--accent);cursor:pointer;margin:0;vertical-align:middle}
+.selnum{display:inline-block;min-width:9px;margin-left:2px;font:700 10px var(--mono);color:var(--accent);vertical-align:middle}
 .fname{font:500 13px var(--mono);word-break:break-all}
 .fname .edit{width:100%;min-width:160px;padding:4px 6px;font:500 13px var(--mono);
   color:var(--text);background:var(--bg);border:1px solid var(--accent);border-radius:6px}
@@ -1863,12 +1912,16 @@ input[type=number]{font-variant-numeric:tabular-nums}
     <section class="recent">
       <div class="recentHead">
         <h2>Recent scans</h2>
-        <button type="button" class="clear" id="clearBtn">Clear all</button>
+        <div class="recentActs">
+          <button type="button" class="merge" id="mergeBtn" hidden>Merge</button>
+          <button type="button" class="clear" id="clearBtn">Clear all</button>
+        </div>
       </div>
       <div class="path">Saved to <a href="__SHARE__">__SHARE__</a></div>
       <div class="tablewrap">
         <table class="scans">
           <thead><tr>
+            <th class="th-sel"><input type="checkbox" id="selAllScans" title="Select all" aria-label="Select all"></th>
             <th class="th-thumb"></th><th>Name</th><th>DPI</th><th>Size</th>
             <th class="th-when">When</th><th></th>
           </tr></thead>
@@ -2203,6 +2256,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
       tr.className = (s.name===newest?'new':'');
       tr.dataset.name=s.name;
       tr.innerHTML=
+        '<td class="sel"><input type="checkbox" class="rowsel" aria-label="Select"><span class="selnum"></span></td>'+
         '<td><img class="thumb" loading="lazy" src="/thumb/'+enc+'" alt="" data-src="/thumb/'+enc+'"></td>'+
         '<td><span class="fname">'+esc(s.name)+'</span></td>'+
         '<td class="dpi">'+(s.dpi?esc(s.dpi):'—')+'</td>'+
@@ -2215,6 +2269,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
         '</div></td>';
       tbody.appendChild(tr);
     });
+    syncSel();
   }
   function refresh(newest){
     return fetch('/recent').then(function(r){return r.json();})
@@ -2307,6 +2362,78 @@ input[type=number]{font-variant-numeric:tabular-nums}
       .catch(function(){ note.className='note err'; note.textContent='Could not clear the scans.'; })
       .finally(function(){ clearBtn.disabled=false; clearBtn.textContent='Clear all'; });
   });
+
+  // --- select + merge scans ---
+  var mergeBtn=document.getElementById('mergeBtn'), selAll=document.getElementById('selAllScans');
+  var selected=[];   // scan names in tick order == the merge order
+
+  // syncSel() reconciles the checkbox column, order badges, select-all state and the
+  // Merge button with `selected` after any render/selection change. Called from render().
+  function syncSel(){
+    var rows=tbody.querySelectorAll('tr'), have={};
+    rows.forEach(function(tr){ have[tr.dataset.name]=1; });
+    selected=selected.filter(function(n){ return have[n]; });   // drop rows that are gone
+    var nSel=0;
+    rows.forEach(function(tr){
+      var cb=tr.querySelector('.rowsel'), badge=tr.querySelector('.selnum');
+      var i=selected.indexOf(tr.dataset.name);
+      if(cb) cb.checked = i>=0;
+      if(badge) badge.textContent = i>=0 ? (i+1) : '';
+      if(i>=0) nSel++;
+    });
+    if(selAll){ selAll.checked = rows.length>0 && nSel===rows.length; selAll.indeterminate = nSel>0 && nSel<rows.length; }
+    if(mergeBtn && !mergeBtn.classList.contains('naming')){
+      mergeBtn.hidden = nSel<2; mergeBtn.disabled = nSel<2;
+      mergeBtn.textContent = nSel>=2 ? ('Merge '+nSel) : 'Merge';
+    }
+  }
+  tbody.addEventListener('change',function(e){
+    var cb=e.target.closest('.rowsel'); if(!cb) return;
+    var name=cb.closest('tr').dataset.name, i=selected.indexOf(name);
+    if(cb.checked){ if(i<0) selected.push(name); } else if(i>=0){ selected.splice(i,1); }
+    syncSel();
+  });
+  if(selAll) selAll.addEventListener('change',function(){
+    selected = selAll.checked
+      ? Array.prototype.map.call(tbody.querySelectorAll('tr'),function(tr){return tr.dataset.name;})
+      : [];
+    syncSel();
+  });
+
+  // Merge -> inline name prompt -> POST /merge. Sources are deleted server-side on success.
+  function startMerge(){
+    if(selected.length<2 || mergeBtn.classList.contains('naming')) return;
+    var names=selected.slice(), n=names.length;
+    mergeBtn.classList.add('naming'); mergeBtn.hidden=true;
+    var wrap=document.createElement('span'); wrap.className='mergeName';
+    var inp=document.createElement('input'); inp.type='text'; inp.placeholder='name (optional)'; inp.maxLength=80;
+    var go=document.createElement('button'); go.type='button'; go.className='merge'; go.textContent='Merge '+n;
+    wrap.appendChild(inp); wrap.appendChild(go);
+    mergeBtn.parentNode.insertBefore(wrap, mergeBtn); inp.focus();
+    var closed=false;
+    function restore(){ wrap.remove(); mergeBtn.classList.remove('naming'); mergeBtn.hidden=false; }
+    function cancel(){ if(closed) return; closed=true; restore(); syncSel(); }
+    function submit(){
+      if(closed) return; closed=true;   // one-shot: mousedown-submit then click/blur are ignored
+      var to=inp.value.trim();
+      go.disabled=true; go.textContent='Merging…';
+      fetch('/merge',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({names:names, to:to})})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          restore();
+          if(d.ok){ note.className='note ok'; note.textContent='Merged '+n+' scans → '+d.file+'.'; selected=[]; return refresh(d.file); }
+          note.className='note err'; note.textContent=d.error||'Merge failed.'; syncSel();
+        })
+        .catch(function(){ restore(); note.className='note err'; note.textContent='Could not reach the merge service.'; syncSel(); });
+    }
+    // preventDefault on mousedown keeps focus off the button, so the input's blur (=cancel)
+    // never races ahead of the click (cf. the double-submit fix in startRename).
+    go.addEventListener('mousedown',function(ev){ ev.preventDefault(); submit(); });
+    inp.addEventListener('keydown',function(ev){ if(ev.key==='Enter'){ev.preventDefault();submit();} else if(ev.key==='Escape'){ev.preventDefault();cancel();} });
+    inp.addEventListener('blur',cancel);
+  }
+  mergeBtn.addEventListener('click',startMerge);
 
   // --- print / labels ---
   var TEMPLATES=__TEMPLATES_JSON__, TBYID={};
