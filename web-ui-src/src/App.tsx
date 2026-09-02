@@ -68,7 +68,7 @@ function Shell() {
       {tab === 'labels' && <LabelsTab />}
       {tab === 'print' && <PrintTab />}
 
-      <ActivityFooter />
+      {tab === 'scan' && <ActivityFooter />}
 
       <DevicesModal open={devicesOpen} onClose={() => setDevicesOpen(false)} />
     </div>
