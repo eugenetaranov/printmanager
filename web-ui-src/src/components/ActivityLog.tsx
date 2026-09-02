@@ -46,44 +46,34 @@ export function useActivityLog(): LogValue {
   return c
 }
 
-// Footer: newest event prominent with an Undo button; older events subtle, each
-// still undoable.
+// Footer: a uniform list of recent events, newest first, each undoable.
 export function ActivityFooter() {
   const { entries, runUndo } = useActivityLog()
   if (entries.length === 0) return null
-  const latest = entries[entries.length - 1]
-  const older = entries.slice(0, -1).reverse()
+  const rows = [...entries].reverse()
   return (
-    <footer className="mt-10 border-t border-base-300 pt-4">
+    <footer className="mx-auto mt-10 w-full max-w-[600px] border-t border-base-300 pt-3">
       <div className="mb-1 font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-base-content/45">Activity</div>
-      <LogRow entry={latest} onUndo={runUndo} prominent />
-      {older.length > 0 && (
-        <div className="mt-1">
-          {older.map((e) => <LogRow key={e.id} entry={e} onUndo={runUndo} />)}
-        </div>
-      )}
+      <div className="divide-y divide-base-200">
+        {rows.map((e) => <LogRow key={e.id} entry={e} onUndo={runUndo} />)}
+      </div>
     </footer>
   )
 }
 
-function LogRow({ entry, onUndo, prominent }: { entry: LogEntry; onUndo: (id: string) => void; prominent?: boolean }) {
+function LogRow({ entry, onUndo }: { entry: LogEntry; onUndo: (id: string) => void }) {
   return (
-    <div className={'flex items-center justify-between gap-3 ' + (prominent ? 'rounded-md bg-base-200 px-3 py-2' : 'px-3 py-[3px] opacity-55')}>
-      <span className={'min-w-0 truncate font-mono ' + (prominent ? 'text-[13px]' : 'text-[12px]') + (entry.undone ? ' text-base-content/45 line-through' : '')}>
+    <div className="flex items-center justify-between gap-3 py-[6px]">
+      <span className={'min-w-0 truncate font-mono text-[13px] ' + (entry.undone ? 'text-base-content/40 line-through' : 'text-base-content/80')}>
         {entry.content}
       </span>
       {entry.undo && !entry.undone ? (
-        <button
-          type="button"
-          onClick={() => onUndo(entry.id)}
-          disabled={entry.undoing}
-          className={'btn btn-ghost flex-none font-mono ' + (prominent ? 'btn-sm' : 'btn-xs')}
-        >
-          {entry.undoing ? 'Undoing…' : 'Undo'}
+        <button type="button" onClick={() => onUndo(entry.id)} disabled={entry.undoing} className="btn btn-ghost btn-xs w-16 flex-none font-mono">
+          {entry.undoing ? '…' : 'Undo'}
         </button>
-      ) : entry.undone ? (
-        <span className="flex-none font-mono text-[11px] text-base-content/45">undone</span>
-      ) : null}
+      ) : (
+        <span className="w-16 flex-none text-right font-mono text-[11px] text-base-content/40">{entry.undone ? 'undone' : ''}</span>
+      )}
     </div>
   )
 }

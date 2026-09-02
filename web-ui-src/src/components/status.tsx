@@ -34,7 +34,7 @@ export function StatusLed() {
   return (
     <span
       data-state={state}
-      className="flex flex-none items-center gap-[7px] self-start pt-1 font-mono text-xs leading-none text-base-content/60"
+      className="flex flex-none items-center gap-[7px] font-mono text-xs leading-none text-base-content/60"
     >
       <span
         className={
