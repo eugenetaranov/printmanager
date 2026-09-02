@@ -3,6 +3,20 @@
    workgroup = {{ .samba_workgroup }}
    server string = {{ .samba_server_string }}
    security = user
+   # macOS (Finder) interop. Expose AppleDouble metadata and resource forks as
+   # xattr streams so Finder/ditto can read a file's metadata stream. Without
+   # this, copying a file OFF the share fails with EBADF — surfaced by Finder as
+   # "error code -51" — because macOS requests an alternate data stream that
+   # plain Samba does not provide. Module order (catia, fruit, streams_xattr) is
+   # required. Provided by the samba-vfs-modules package.
+   vfs objects = catia fruit streams_xattr
+   fruit:metadata = stream
+   fruit:model = MacSamba
+   fruit:posix_rename = yes
+   fruit:veto_appledouble = no
+   fruit:nfs_aces = no
+   fruit:wipe_intentionally_left_blank_rfork = yes
+   fruit:delete_empty_adfiles = yes
 {{- if .scan_samba_guest }}
    # Unauthenticated clients are mapped to the guest account below.
    map to guest = bad user

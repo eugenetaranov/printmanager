@@ -1,6 +1,9 @@
-# Samba packages.
+# Samba packages. samba-vfs-modules provides the catia/fruit/streams_xattr VFS
+# modules used for macOS (Finder) interop in smb.conf — without them smbd fails
+# to load the share and macOS copies fail with "error code -51".
 share_packages:
   - samba
+  - samba-vfs-modules
 
 # Destination directory scans are written to and the [scans] share exposes.
 scan_dir: /srv/scans
