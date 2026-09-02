@@ -52,7 +52,7 @@ export function ActivityFooter() {
   if (entries.length === 0) return null
   const rows = [...entries].reverse()
   return (
-    <footer className="mx-auto mt-10 w-full max-w-[600px] border-t border-base-300 pt-3">
+    <footer className="mt-10 w-full border-t border-base-300 pt-3">
       <div className="mb-1 font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-base-content/45">Activity</div>
       <div className="divide-y divide-base-200">
         {rows.map((e) => <LogRow key={e.id} entry={e} onUndo={runUndo} />)}
