@@ -45,7 +45,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
   // Merge modal state.
   const [mergeOpen, setMergeOpen] = useState(false)
   const [mergeName, setMergeName] = useState('')
-  const [mergeCap, setMergeCap] = useState('')
+  const [mergeCap, setMergeCap] = useState(0)   // MB; 0 = no limit
   const [mergeError, setMergeError] = useState('')
   const [mergeBusy, setMergeBusy] = useState(false)
   const mergeNames = useRef<string[]>([])
@@ -119,7 +119,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
     if (selected.length < 2) return
     mergeNames.current = selected.slice()
     setMergeName('')
-    setMergeCap('')
+    setMergeCap(0)
     setMergeError('')
     setMergeBusy(false)
     setMergeOpen(true)
@@ -129,8 +129,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
     setMergeBusy(true)
     setMergeError('')
     const n = mergeNames.current.length
-    const cap = parseFloat(mergeCap)
-    api.merge(mergeNames.current, mergeName.trim(), cap > 0 ? cap : undefined)
+    api.merge(mergeNames.current, mergeName.trim(), mergeCap > 0 ? mergeCap : undefined)
       .then((d) => {
         setMergeBusy(false)
         if (d.ok && d.file) {
@@ -348,21 +347,25 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
           className="input w-full font-mono"
         />
 
-        <label htmlFor="mergeCap" className="mb-[6px] mt-4 block font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
-          Max size (MB) <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
-        </label>
+        <div className="mt-4 mb-[6px] flex items-baseline justify-between">
+          <label htmlFor="mergeCap" className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
+            Max size <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
+          </label>
+          <span className="font-mono text-xs text-base-content/70">{mergeCap === 0 ? 'No limit' : `${mergeCap} MB`}</span>
+        </div>
         <input
           id="mergeCap"
-          type="number"
-          min={0.1}
-          step={0.5}
-          inputMode="decimal"
+          type="range"
+          min={0}
+          max={10}
+          step={1}
           value={mergeCap}
-          onChange={(e) => setMergeCap(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); doMerge() } }}
-          placeholder="e.g. 2 — compress to fit"
-          className="input w-full font-mono"
+          onChange={(e) => setMergeCap(Number(e.target.value))}
+          className="range range-sm w-full"
         />
+        <div className="mt-1 flex justify-between px-[2px] font-mono text-[10px] text-base-content/40">
+          <span>Off</span><span>10 MB</span>
+        </div>
 
         {mergeError && <p className="mt-3 font-mono text-[12px] text-error">{mergeError}</p>}
 
