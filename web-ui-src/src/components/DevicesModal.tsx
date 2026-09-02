@@ -11,7 +11,7 @@ const GROUPS: { kind: string; label: string }[] = [
 ]
 
 function Dot({ status }: { status: string }) {
-  const cls = status === 'error' ? 'bg-error' : status === 'connected' ? 'bg-primary' : 'bg-warn'
+  const cls = status === 'error' ? 'bg-error' : status === 'connected' ? 'bg-primary' : 'bg-warning'
   return <span className={'h-[7px] w-[7px] flex-none rounded-full ' + cls} />
 }
 
@@ -121,7 +121,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                   <div className={'truncate font-mono text-[11px] ' + (d.error ? 'text-error' : 'text-base-content/45')}>{d.error || d.detail || d.status}</div>
                 </div>
                 {d.kind === 'printer' && d.id && (
-                  <button type="button" onClick={() => testDevice(d)} className="btn btn-ghost btn-xs font-mono">Test</button>
+                  <IconBtn title="Print test page" onClick={() => testDevice(d)}><Icon.test /></IconBtn>
                 )}
               </div>
             ))}
@@ -138,7 +138,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
             {scanning ? 'Scanning…' : 'Scan for printers'}
           </button>
         </div>
-        {showAdapterWarn && <p className="mb-2 font-mono text-[11px] text-warn">No Bluetooth adapter detected.</p>}
+        {showAdapterWarn && <p className="mb-2 font-mono text-[11px] text-warning">No Bluetooth adapter detected.</p>}
         {printers.length === 0 && <p className="text-sm text-base-content/60">No Niimbot printers yet. Tap “Scan for printers”.</p>}
 
         {printers.map((p) => {
@@ -160,15 +160,15 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                 <div className="flex flex-none gap-1">
                   {conn ? (
                     <>
-                      <MiniBtn onClick={() => action('test', p)}>Test</MiniBtn>
-                      <MiniBtn onClick={() => action('disconnect', p)}>Disconnect</MiniBtn>
+                      <IconBtn title="Print test label" onClick={() => action('test', p)}><Icon.test /></IconBtn>
+                      <IconBtn title="Disconnect" onClick={() => action('disconnect', p)}><Icon.disconnect /></IconBtn>
                     </>
                   ) : (
-                    <MiniBtn primary onClick={() => action('reconnect', p)}>Reconnect</MiniBtn>
+                    <IconBtn title="Reconnect" variant="primary" onClick={() => action('reconnect', p)}><Icon.reconnect /></IconBtn>
                   )}
-                  <MiniBtn active={editSize === p.address} onClick={() => setEditSize((a) => (a === p.address ? '' : p.address))}>Size</MiniBtn>
-                  <MiniBtn active={logAddr === p.address} onClick={() => setLogAddr((a) => (a === p.address ? '' : p.address))}>Log</MiniBtn>
-                  <MiniBtn onClick={() => action('forget', p)}>Forget</MiniBtn>
+                  <IconBtn title="Roll size" variant={editSize === p.address ? 'active' : undefined} onClick={() => setEditSize((a) => (a === p.address ? '' : p.address))}><Icon.size /></IconBtn>
+                  <IconBtn title="Connection log" variant={logAddr === p.address ? 'active' : undefined} onClick={() => setLogAddr((a) => (a === p.address ? '' : p.address))}><Icon.log /></IconBtn>
+                  <IconBtn title="Forget" onClick={() => action('forget', p)}><Icon.forget /></IconBtn>
                 </div>
               </div>
               {editSize === p.address && <SizeEditor w={mm[0]} h={mm[1]} onSave={(w, h) => saveSize(p, w, h)} onCancel={() => setEditSize('')} />}
@@ -190,12 +190,12 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
             <div className="mb-1 font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-base-content/45">Found</div>
             {candidates.map((c) => (
               <div key={c.address} className="flex items-center gap-2 border-b border-base-300 py-2 last:border-0">
-                <span className="h-[7px] w-[7px] flex-none rounded-full bg-warn" />
+                <span className="h-[7px] w-[7px] flex-none rounded-full bg-warning" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px]">{c.name}</div>
                   <div className="truncate font-mono text-[11px] text-base-content/45">{c.address}{c.rssi != null ? ` · ${c.rssi} dBm` : ''}</div>
                 </div>
-                <MiniBtn primary onClick={() => connect(c)}>Connect</MiniBtn>
+                <IconBtn title="Connect" variant="primary" onClick={() => connect(c)}><Icon.connect /></IconBtn>
               </div>
             ))}
           </div>
@@ -217,6 +217,34 @@ function MiniBtn({ children, onClick, primary, active }: { children: React.React
       {children}
     </button>
   )
+}
+
+// Square icon button with a native-title tooltip — keeps the device rows compact.
+function IconBtn({ title, onClick, variant, children }: { title: string; onClick: () => void; variant?: 'primary' | 'active'; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className={'btn btn-square btn-sm ' + (variant === 'primary' ? 'btn-primary' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
+    >
+      {children}
+    </button>
+  )
+}
+
+const svg = (children: React.ReactNode) => () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+)
+const Icon = {
+  test: svg(<><path d="M6 9V3h12v6" /><path d="M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2" /><rect x="6" y="13" width="12" height="8" rx="1" /></>),
+  reconnect: svg(<><path d="M21 12a9 9 0 1 1-2.6-6.4" /><path d="M21 3v6h-6" /></>),
+  disconnect: svg(<><path d="M18.4 6.6a9 9 0 1 1-12.7 0" /><path d="M12 2v10" /></>),
+  size: svg(<><rect x="2.5" y="7" width="19" height="10" rx="1.5" /><path d="M7 7v3M11 7v4M15 7v3M19 7v4" /></>),
+  log: svg(<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />),
+  forget: svg(<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />),
+  connect: svg(<path d="M12 5v14M5 12h14" />),
 }
 
 function SizeEditor({ w, h, onSave, onCancel }: { w: number; h: number; onSave: (w: number, h: number) => void; onCancel: () => void }) {
