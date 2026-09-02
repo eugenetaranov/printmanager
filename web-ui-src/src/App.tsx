@@ -28,7 +28,7 @@ function Shell() {
   const [devicesOpen, setDevicesOpen] = useState(false)
 
   return (
-    <div className="mx-auto max-w-[900px] px-5 pb-24 pt-[clamp(22px,5vw,44px)]">
+    <div className="mx-auto flex min-h-[100dvh] max-w-[900px] flex-col px-5 pb-24 pt-[clamp(22px,5vw,44px)]">
       <header className="mb-5 flex items-start justify-between gap-4">
         <div className="text-hero font-[640] tracking-[-0.01em]">Print / Scan</div>
         <div className="flex items-center gap-3">
@@ -70,7 +70,10 @@ function Shell() {
 
       {tab === 'scan' && <ActivityFooter />}
 
-      <div className="mt-8 text-right font-mono text-2xs text-base-content/60">Build: {__APP_VERSION__}</div>
+      {/* mt-auto pins the build line to the bottom of the viewport (flex-col
+          container) so it sits at the same place on every tab, instead of
+          floating up under short content. */}
+      <div className="mt-auto pt-8 text-right font-mono text-2xs text-base-content/60">Build: {__APP_VERSION__}</div>
 
       <DevicesModal open={devicesOpen} onClose={() => setDevicesOpen(false)} />
     </div>
