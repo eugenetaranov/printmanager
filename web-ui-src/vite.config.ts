@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import type { IncomingMessage } from 'node:http'
+import path from 'node:path'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
@@ -29,6 +30,9 @@ function htmlNavBypass(req: IncomingMessage): string | undefined {
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: { '@': path.resolve(__dirname, './src') },
+  },
   server: {
     proxy: {
       ...Object.fromEntries(

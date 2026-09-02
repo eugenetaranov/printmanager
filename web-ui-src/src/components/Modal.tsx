@@ -1,8 +1,9 @@
-import { useEffect, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
+import type { ReactNode } from 'react'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
-// Centered modal dialog: dimmed backdrop, pop-in card, Esc / backdrop-click to
-// close. Mirrors the previous UI's merge modal styling.
+// Thin wrapper over shadcn's Dialog so existing call sites keep the simple
+// open/onClose API while gaining a real focus trap, Escape/backdrop handling,
+// and animations. DialogContent renders its own close (X) button.
 export function Modal({
   open,
   onClose,
@@ -16,38 +17,17 @@ export function Modal({
   wide?: boolean
   children: ReactNode
 }) {
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onClose()
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
-  if (!open) return null
-  return createPortal(
-    <div
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(20,20,16,0.38)] p-5 backdrop-blur-[2px] [animation:mfade_0.16s_ease_both]"
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent
         aria-labelledby={labelledBy}
-        className={
-          'max-h-[86vh] w-full overflow-y-auto rounded-2xl border border-border bg-surface p-5 shadow-pop [animation:mpop_0.18s_cubic-bezier(0.2,0.9,0.3,1.2)_both] ' +
-          (wide ? 'max-w-[520px]' : 'max-w-[340px]')
-        }
+        className={wide ? 'sm:max-w-[520px]' : 'sm:max-w-[380px]'}
       >
+        {/* Callers render their own visible heading; this satisfies Radix's
+            requirement for a DialogTitle without duplicating it visually. */}
+        <DialogTitle className="sr-only">Dialog</DialogTitle>
         {children}
-      </div>
-    </div>,
-    document.body,
+      </DialogContent>
+    </Dialog>
   )
 }

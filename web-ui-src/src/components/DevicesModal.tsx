@@ -11,7 +11,7 @@ const GROUPS: { kind: string; label: string }[] = [
 ]
 
 function Dot({ status }: { status: string }) {
-  const cls = status === 'error' ? 'bg-danger' : status === 'connected' ? 'bg-accent' : 'bg-warn'
+  const cls = status === 'error' ? 'bg-destructive' : status === 'connected' ? 'bg-primary' : 'bg-warn'
   return <span className={'h-[7px] w-[7px] flex-none rounded-full ' + cls} />
 }
 
@@ -100,10 +100,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
     <Modal open={open} onClose={onClose} labelledBy="devTitle" wide>
       <div className="mb-4 flex items-center justify-between">
         <h3 id="devTitle" className="m-0 text-[15px] font-[640]">Devices</h3>
-        <div className="flex gap-2">
-          <button type="button" onClick={refresh} disabled={busy} className="cursor-pointer rounded-md bg-bg px-3 py-1 font-mono text-[11px] font-[600] text-muted hover:text-text disabled:opacity-50">Refresh</button>
-          <button type="button" onClick={onClose} aria-label="Close" className="cursor-pointer rounded-md px-2 py-1 text-muted hover:text-text">✕</button>
-        </div>
+        <button type="button" onClick={refresh} disabled={busy} className="mr-8 cursor-pointer rounded-md bg-background px-3 py-1 font-mono text-[11px] font-[600] text-muted-foreground hover:text-foreground disabled:opacity-50">Refresh</button>
       </div>
 
       {/* Inventory */}
@@ -118,28 +115,28 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                 <Dot status={d.status} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px]">{d.name}</div>
-                  <div className={'truncate font-mono text-[11px] ' + (d.error ? 'text-danger' : 'text-faint')}>{d.error || d.detail || d.status}</div>
+                  <div className={'truncate font-mono text-[11px] ' + (d.error ? 'text-destructive' : 'text-faint')}>{d.error || d.detail || d.status}</div>
                 </div>
                 {d.kind === 'printer' && d.id && (
-                  <button type="button" onClick={() => testDevice(d)} className="cursor-pointer rounded-md bg-bg px-2 py-1 font-mono text-[11px] text-muted hover:text-text">Test</button>
+                  <button type="button" onClick={() => testDevice(d)} className="cursor-pointer rounded-md bg-background px-2 py-1 font-mono text-[11px] text-muted-foreground hover:text-foreground">Test</button>
                 )}
               </div>
             ))}
           </div>
         )
       })}
-      {!anyInv && <p className="text-sm text-muted">No devices found.</p>}
+      {!anyInv && <p className="text-sm text-muted-foreground">No devices found.</p>}
 
       {/* Niimbot printers */}
       <div className="mt-4">
         <div className="mb-1 flex items-center justify-between">
           <span className="font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-faint">Label printers (Niimbot)</span>
-          <button type="button" onClick={scan} disabled={scanning} className="cursor-pointer rounded-md bg-bg px-3 py-1 font-mono text-[11px] font-[600] text-muted hover:text-text disabled:opacity-50">
+          <button type="button" onClick={scan} disabled={scanning} className="cursor-pointer rounded-md bg-background px-3 py-1 font-mono text-[11px] font-[600] text-muted-foreground hover:text-foreground disabled:opacity-50">
             {scanning ? 'Scanning…' : 'Scan for printers'}
           </button>
         </div>
         {showAdapterWarn && <p className="mb-2 font-mono text-[11px] text-warn">No Bluetooth adapter detected.</p>}
-        {printers.length === 0 && <p className="text-sm text-muted">No Niimbot printers yet. Tap “Scan for printers”.</p>}
+        {printers.length === 0 && <p className="text-sm text-muted-foreground">No Niimbot printers yet. Tap “Scan for printers”.</p>}
 
         {printers.map((p) => {
           const conn = p.status === 'connected'
@@ -153,7 +150,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px]">{p.model_label || p.model}</div>
                   <div className="truncate font-mono text-[11px] text-faint">
-                    {p.name} · <span className={ds?.cls === 'err' ? 'text-danger' : ds?.cls === 'ok' ? 'text-accent' : ''}>{stTxt}</span>
+                    {p.name} · <span className={ds?.cls === 'err' ? 'text-destructive' : ds?.cls === 'ok' ? 'text-primary' : ''}>{stTxt}</span>
                     {p.label_mm ? ` · ${p.label_mm[0]}×${p.label_mm[1]} mm` : ''}
                   </div>
                 </div>
@@ -173,10 +170,10 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
               </div>
               {editSize === p.address && <SizeEditor w={mm[0]} h={mm[1]} onSave={(w, h) => saveSize(p, w, h)} onCancel={() => setEditSize('')} />}
               {logAddr === p.address && (
-                <div className="mt-2 max-h-40 overflow-y-auto rounded-md bg-bg p-2 font-mono text-[11px] text-muted">
+                <div className="mt-2 max-h-40 overflow-y-auto rounded-md bg-background p-2 font-mono text-[11px] text-muted-foreground">
                   {log.length === 0 ? 'No log yet.' : log.map((l, i) => <div key={i}>{typeof l === 'string' ? l : JSON.stringify(l)}</div>)}
                   <div className="mt-1 text-right">
-                    <button type="button" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})} className="cursor-pointer text-faint hover:text-danger">clear</button>
+                    <button type="button" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})} className="cursor-pointer text-faint hover:text-destructive">clear</button>
                   </div>
                 </div>
               )}
@@ -202,7 +199,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
         )}
       </div>
 
-      {note && <p className={'mt-3 font-mono text-[12px] ' + (note.cls === 'err' ? 'text-danger' : note.cls === 'ok' ? 'text-accent' : 'text-muted')}>{note.msg}</p>}
+      {note && <p className={'mt-3 font-mono text-[12px] ' + (note.cls === 'err' ? 'text-destructive' : note.cls === 'ok' ? 'text-primary' : 'text-muted-foreground')}>{note.msg}</p>}
     </Modal>
   )
 }
@@ -214,7 +211,7 @@ function MiniBtn({ children, onClick, primary, active }: { children: React.React
       onClick={onClick}
       className={
         'cursor-pointer rounded-md px-2 py-1 font-mono text-[11px] font-[600] ' +
-        (primary ? 'bg-accent text-white hover:brightness-[1.06]' : active ? 'bg-accent-weak text-accent' : 'bg-bg text-muted hover:text-text')
+        (primary ? 'bg-primary text-white hover:brightness-[1.06]' : active ? 'bg-accent text-primary' : 'bg-background text-muted-foreground hover:text-foreground')
       }
     >
       {children}
@@ -226,11 +223,11 @@ function SizeEditor({ w, h, onSave, onCancel }: { w: number; h: number; onSave: 
   const [ww, setWw] = useState(String(w))
   const [hh, setHh] = useState(String(h))
   return (
-    <div className="mt-2 flex items-center gap-2 rounded-md bg-bg p-2">
+    <div className="mt-2 flex items-center gap-2 rounded-md bg-background p-2">
       <span className="font-mono text-[11px] text-faint">Roll size</span>
-      <input type="number" min={5} max={120} value={ww} onChange={(e) => setWw(e.target.value)} aria-label="Width mm" className="w-16 rounded border border-border bg-surface px-2 py-1 font-mono text-[12px]" />
+      <input type="number" min={5} max={120} value={ww} onChange={(e) => setWw(e.target.value)} aria-label="Width mm" className="w-16 rounded border border-border bg-card px-2 py-1 font-mono text-[12px]" />
       <span className="text-faint">×</span>
-      <input type="number" min={5} max={300} value={hh} onChange={(e) => setHh(e.target.value)} aria-label="Length mm" className="w-16 rounded border border-border bg-surface px-2 py-1 font-mono text-[12px]" />
+      <input type="number" min={5} max={300} value={hh} onChange={(e) => setHh(e.target.value)} aria-label="Length mm" className="w-16 rounded border border-border bg-card px-2 py-1 font-mono text-[12px]" />
       <span className="font-mono text-[11px] text-faint">mm</span>
       <MiniBtn primary onClick={() => onSave(parseFloat(ww), parseFloat(hh))}>Save</MiniBtn>
       <MiniBtn onClick={onCancel}>Cancel</MiniBtn>

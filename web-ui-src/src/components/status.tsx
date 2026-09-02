@@ -34,12 +34,12 @@ export function StatusLed() {
   return (
     <span
       data-state={state}
-      className="flex flex-none items-center gap-[7px] self-start pt-1 font-mono text-xs leading-none text-muted"
+      className="flex flex-none items-center gap-[7px] self-start pt-1 font-mono text-xs leading-none text-muted-foreground"
     >
       <span
         className={
           'h-[7px] w-[7px] rounded-full ' +
-          (state === 'error' ? 'bg-danger' : 'bg-accent ') +
+          (state === 'error' ? 'bg-destructive' : 'bg-primary ') +
           (state === 'busy' ? ' [animation:pulse_1.2s_ease-in-out_infinite]' : '')
         }
       />

@@ -155,14 +155,14 @@ export function PrintTab() {
   const multiPage = (doc?.pages ?? 1) > 1
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
       {queues.length >= 2 && (
         <label className="mb-4 flex flex-col gap-[6px]">
           <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">Printer</span>
           <select
             value={queue}
             onChange={(e) => setQueue(e.target.value)}
-            className="rounded-[9px] border border-border bg-bg px-3 py-[10px] font-mono text-[13px] text-text focus:border-accent focus:outline-none"
+            className="rounded-[9px] border border-border bg-background px-3 py-[10px] font-mono text-[13px] text-foreground focus:border-primary focus:outline-none"
           >
             {queues.map((q) => (
               <option key={q.queue} value={q.queue}>
@@ -185,7 +185,7 @@ export function PrintTab() {
         }}
         className={
           'flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-colors ' +
-          (dragOver ? 'border-accent bg-accent-weak' : 'border-border hover:border-accent')
+          (dragOver ? 'border-primary bg-accent' : 'border-border hover:border-primary')
         }
       >
         <input
@@ -197,20 +197,20 @@ export function PrintTab() {
         />
         {doc ? (
           <div className="flex items-center gap-2">
-            <span className="break-all font-mono text-[13px] text-text">{doc.filename}</span>
+            <span className="break-all font-mono text-[13px] text-foreground">{doc.filename}</span>
             <button
               type="button"
               onClick={(e) => { e.preventDefault(); clearFile() }}
               aria-label="Remove file"
-              className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-danger text-white"
+              className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-destructive text-white"
             >
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M6 6 18 18M18 6 6 18" /></svg>
             </button>
           </div>
         ) : (
           <>
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-muted"><path d="M12 15V4M8 8l4-4 4 4" /><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
-            <div className="text-[14px] text-text">Drop a file, or <span className="text-accent">choose one</span></div>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M12 15V4M8 8l4-4 4 4" /><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
+            <div className="text-[14px] text-foreground">Drop a file, or <span className="text-primary">choose one</span></div>
             <div className="font-mono text-xs text-faint">PDF, image, or text — drag, choose, or paste an image</div>
           </>
         )}
@@ -221,7 +221,7 @@ export function PrintTab() {
         <div className="mt-4">
           <div className="mb-2 flex items-baseline justify-between">
             <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">Pages to print</span>
-            <span className="font-mono text-xs tabular-nums text-muted">
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
               {range.from}–{range.to} <span className="text-faint">of {doc.pages}</span>
             </span>
           </div>
@@ -245,7 +245,7 @@ export function PrintTab() {
           className="mt-4 flex w-full items-center justify-between"
         >
           <span className="text-[14px]">Double-sided</span>
-          <span className={'relative h-[26px] w-[46px] rounded-full transition-colors ' + (sides === 'two' ? 'bg-accent' : 'bg-border')}>
+          <span className={'relative h-[26px] w-[46px] rounded-full transition-colors ' + (sides === 'two' ? 'bg-primary' : 'bg-border')}>
             <span className={'absolute top-[3px] h-5 w-5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.28)] transition-transform ' + (sides === 'two' ? 'translate-x-[23px]' : 'translate-x-[3px]')} />
           </span>
         </button>
@@ -253,21 +253,21 @@ export function PrintTab() {
 
       {/* Guided manual-duplex flip step */}
       {flip && (
-        <div className="mt-4 rounded-xl border border-border bg-bg p-4">
-          <p className="m-0 mb-3 text-[13px] leading-[1.5] text-text">{flip.instruction}</p>
+        <div className="mt-4 rounded-xl border border-border bg-background p-4">
+          <p className="m-0 mb-3 text-[13px] leading-[1.5] text-foreground">{flip.instruction}</p>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={doContinue}
               disabled={busy}
-              className="cursor-pointer rounded-xl bg-primary px-4 py-[10px] text-[14px] font-[640] text-primary-ink hover:brightness-110 disabled:opacity-70"
+              className="cursor-pointer rounded-xl bg-primary px-4 py-[10px] text-[14px] font-[640] text-primary-foreground hover:brightness-110 disabled:opacity-70"
             >
               {busy ? 'Printing…' : 'Continue'}
             </button>
             <button
               type="button"
               onClick={doCancel}
-              className="cursor-pointer rounded-xl border border-border bg-surface px-4 py-[10px] text-[14px] font-[600] text-muted hover:text-text"
+              className="cursor-pointer rounded-xl border border-border bg-card px-4 py-[10px] text-[14px] font-[600] text-muted-foreground hover:text-foreground"
             >
               Cancel
             </button>
@@ -282,7 +282,7 @@ export function PrintTab() {
             type="button"
             onClick={print}
             disabled={!doc || busy}
-            className="w-full cursor-pointer rounded-xl bg-primary px-4 py-[14px] text-[15px] font-[640] text-primary-ink transition-[filter] hover:brightness-110 disabled:cursor-default disabled:opacity-50"
+            className="w-full cursor-pointer rounded-xl bg-primary px-4 py-[14px] text-[15px] font-[640] text-primary-foreground transition-[filter] hover:brightness-110 disabled:cursor-default disabled:opacity-50"
           >
             {busy ? 'Printing…' : 'Print'}
           </button>

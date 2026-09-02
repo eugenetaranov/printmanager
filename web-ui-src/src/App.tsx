@@ -35,7 +35,7 @@ function Shell() {
             title="Devices"
             aria-label="Manage devices"
             onClick={() => setDevicesOpen(true)}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-card transition-colors hover:text-text"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
               <path d="M6 9V3h12v6" />
@@ -47,7 +47,7 @@ function Shell() {
         </div>
       </header>
 
-      <nav className="mb-6 inline-flex rounded-xl border border-border bg-surface p-1 shadow-card" role="tablist" aria-label="Tools">
+      <nav className="mb-6 inline-flex rounded-xl border border-border bg-card p-1 shadow-sm" role="tablist" aria-label="Tools">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -56,7 +56,7 @@ function Shell() {
             onClick={() => navigate(t.id)}
             className={
               'cursor-pointer rounded-[9px] px-[18px] py-2 font-sans text-[13.5px] font-[640] tracking-[-0.01em] transition-colors ' +
-              (tab === t.id ? 'bg-accent-weak text-accent' : 'text-muted hover:text-text')
+              (tab === t.id ? 'bg-accent text-primary' : 'text-muted-foreground hover:text-foreground')
             }
           >
             {t.label}

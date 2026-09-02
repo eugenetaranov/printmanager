@@ -49,7 +49,7 @@ export function DualRange({
     <div ref={trackRef} className="relative h-6 touch-none select-none">
       <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-border" />
       <div
-        className="absolute top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-accent"
+        className="absolute top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-primary"
         style={{ left: `${pct(from)}%`, right: `${100 - pct(to)}%` }}
       />
       {(['from', 'to'] as const).map((which) => {
@@ -65,7 +65,7 @@ export function DualRange({
             aria-valuenow={val}
             onPointerDown={startDrag(which)}
             onKeyDown={onKey(which)}
-            className="absolute top-1/2 h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none rounded-full border-2 border-accent bg-surface shadow-[0_1px_3px_rgba(0,0,0,0.28)] active:cursor-grabbing"
+            className="absolute top-1/2 h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none rounded-full border-2 border-primary bg-card shadow-[0_1px_3px_rgba(0,0,0,0.28)] active:cursor-grabbing"
             style={{ left: `${pct(val)}%` }}
           />
         )

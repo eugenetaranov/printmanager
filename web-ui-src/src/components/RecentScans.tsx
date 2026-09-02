@@ -145,7 +145,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             <button
               type="button"
               onClick={openMerge}
-              className="cursor-pointer rounded-[7px] bg-accent px-3 py-[3px] font-mono text-xs font-[600] tracking-[0.02em] text-white hover:brightness-[1.06]"
+              className="cursor-pointer rounded-[7px] bg-primary px-3 py-[3px] font-mono text-xs font-[600] tracking-[0.02em] text-white hover:brightness-[1.06]"
             >
               Merge {nSel}
             </button>
@@ -155,7 +155,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             onClick={onClear}
             className={
               'cursor-pointer rounded-md px-1 py-[2px] font-mono text-xs font-[600] tracking-[0.02em] ' +
-              (clearArmed ? 'bg-danger text-white' : 'text-faint hover:text-danger')
+              (clearArmed ? 'bg-destructive text-white' : 'text-faint hover:text-destructive')
             }
           >
             {clearArmed ? 'Click again to delete all' : 'Clear all'}
@@ -166,7 +166,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       {share && (
         <div className="break-all font-mono text-xs font-medium text-faint">
           Saved to{' '}
-          <a href={share} className="text-accent no-underline hover:underline">{share}</a>
+          <a href={share} className="text-primary no-underline hover:underline">{share}</a>
         </div>
       )}
 
@@ -192,7 +192,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                   checked={allChecked}
                   ref={(el) => { if (el) el.indeterminate = nSel > 0 && !allChecked }}
                   onChange={toggleAll}
-                  className="cursor-pointer align-middle accent-[var(--accent)]"
+                  className="cursor-pointer align-middle accent-[var(--primary)]"
                 />
               </th>
               <th></th>
@@ -215,10 +215,10 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                         aria-label="Select"
                         checked={i >= 0}
                         onChange={() => toggle(s.name)}
-                        className="cursor-pointer align-middle accent-[var(--accent)]"
+                        className="cursor-pointer align-middle accent-[var(--primary)]"
                       />
                       {i >= 0 && (
-                        <span className="absolute left-full ml-[3px] font-mono text-[10px] font-[700] leading-none text-accent">
+                        <span className="absolute left-full ml-[3px] font-mono text-[10px] font-[700] leading-none text-primary">
                           {i + 1}
                         </span>
                       )}
@@ -232,7 +232,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                       onMouseEnter={(e) => setPreview({ src: api.thumbUrl(s.name), x: e.clientX, y: e.clientY })}
                       onMouseMove={(e) => setPreview((p) => (p ? { ...p, x: e.clientX, y: e.clientY } : p))}
                       onMouseLeave={() => setPreview(null)}
-                      className="block h-11 w-[34px] cursor-zoom-in rounded-[3px] border border-border bg-bg object-cover"
+                      className="block h-11 w-[34px] cursor-zoom-in rounded-[3px] border border-border bg-background object-cover"
                     />
                   </td>
                   <td>
@@ -255,13 +255,13 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                       <span className="break-all font-mono text-[13px]">{s.name}</span>
                     )}
                   </td>
-                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-muted">{s.dpi || '—'}</td>
-                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-muted">{fmtSize(s.size)}</td>
+                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">{s.dpi || '—'}</td>
+                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">{fmtSize(s.size)}</td>
                   <td className="whitespace-nowrap font-mono text-xs tabular-nums text-faint">{ago(s.mtime)}</td>
                   <td>
                     <div className="flex justify-end gap-[2px] whitespace-nowrap">
                       <a
-                        className="rounded-md p-[5px] leading-[0] text-muted no-underline hover:bg-bg hover:text-text"
+                        className="rounded-md p-[5px] leading-[0] text-muted-foreground no-underline hover:bg-background hover:text-foreground"
                         href={api.fileUrl(s.name)}
                         download
                         title="Download"
@@ -272,7 +272,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                       <button
                         type="button"
                         onClick={() => setRenaming(s.name)}
-                        className="rounded-md p-[5px] leading-[0] text-muted hover:bg-bg hover:text-text"
+                        className="rounded-md p-[5px] leading-[0] text-muted-foreground hover:bg-background hover:text-foreground"
                         title="Rename"
                         aria-label="Rename"
                       >
@@ -281,7 +281,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                       <button
                         type="button"
                         onClick={() => onRemove(s.name)}
-                        className={'rounded-md p-[5px] leading-[0] ' + (removeArmed === s.name ? 'bg-danger text-white' : 'text-muted hover:bg-bg hover:text-text')}
+                        className={'rounded-md p-[5px] leading-[0] ' + (removeArmed === s.name ? 'bg-destructive text-white' : 'text-muted-foreground hover:bg-background hover:text-foreground')}
                         title={removeArmed === s.name ? 'Click again to delete' : 'Remove'}
                         aria-label="Remove"
                       >
@@ -297,12 +297,12 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       </div>
 
       {scans.length === 0 && (
-        <p className="px-[2px] py-4 text-sm text-muted">No scans yet. Place a page on the glass and press Scan.</p>
+        <p className="px-[2px] py-4 text-sm text-muted-foreground">No scans yet. Place a page on the glass and press Scan.</p>
       )}
 
       {preview && (
         <div
-          className="pointer-events-none fixed z-50 rounded-lg border border-border bg-surface p-1 shadow-pop"
+          className="pointer-events-none fixed z-50 rounded-lg border border-border bg-card p-1 shadow-lg"
           style={{
             left: Math.min(preview.x + 16, window.innerWidth - 316),
             top: Math.min(preview.y + 16, Math.max(8, window.innerHeight - 428)),
@@ -314,7 +314,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
 
       <Modal open={mergeOpen} onClose={() => { if (!mergeBusy) setMergeOpen(false) }} labelledBy="mergeTitle">
         <h3 id="mergeTitle" className="m-0 mb-1 text-[15px] font-[640] tracking-[0.01em]">Merge scans</h3>
-        <p className="m-0 mb-4 text-[12.5px] leading-[1.45] text-muted">
+        <p className="m-0 mb-4 text-[12.5px] leading-[1.45] text-muted-foreground">
           Combining {mergeNames.current.length} scans into one PDF, in the order you selected. The originals are removed after merging.
         </p>
         <label htmlFor="mergeName" className="mb-[6px] block font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">
@@ -333,13 +333,13 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             else if (e.key === 'Escape') { e.preventDefault(); if (!mergeBusy) setMergeOpen(false) }
           }}
           placeholder="auto: merged-YYYYMMDD-HHMMSS"
-          className="w-full rounded-[9px] border border-border bg-bg px-[11px] py-[9px] font-mono text-[13px] text-text focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-weak)] focus:outline-none"
+          className="w-full rounded-[9px] border border-border bg-background px-[11px] py-[9px] font-mono text-[13px] text-foreground focus:border-primary focus:shadow-[0_0_0_3px_var(--accent)] focus:outline-none"
         />
         <div className="mt-[18px] flex justify-end gap-2">
           <button
             type="button"
             onClick={() => { if (!mergeBusy) setMergeOpen(false) }}
-            className="cursor-pointer rounded-[9px] border border-border bg-surface px-[14px] py-2 font-mono text-xs font-[600] tracking-[0.02em] text-muted hover:bg-bg hover:text-text"
+            className="cursor-pointer rounded-[9px] border border-border bg-card px-[14px] py-2 font-mono text-xs font-[600] tracking-[0.02em] text-muted-foreground hover:bg-background hover:text-foreground"
           >
             Cancel
           </button>
@@ -347,7 +347,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             type="button"
             onClick={doMerge}
             disabled={mergeBusy}
-            className="cursor-pointer rounded-[9px] bg-accent px-4 py-2 font-mono text-xs font-[600] tracking-[0.02em] text-white hover:brightness-[1.06] disabled:cursor-default disabled:opacity-50"
+            className="cursor-pointer rounded-[9px] bg-primary px-4 py-2 font-mono text-xs font-[600] tracking-[0.02em] text-white hover:brightness-[1.06] disabled:cursor-default disabled:opacity-50"
           >
             {mergeBusy ? 'Merging…' : 'Merge'}
           </button>
@@ -381,7 +381,7 @@ function RenameField({ name, onCommit, onDone }: { name: string; onCommit: (to: 
         else if (e.key === 'Escape') { commit(false) }
       }}
       onBlur={() => commit(true)}
-      className="w-full min-w-[160px] rounded-md border border-accent bg-bg px-[6px] py-1 font-mono text-[13px] text-text"
+      className="w-full min-w-[160px] rounded-md border border-primary bg-background px-[6px] py-1 font-mono text-[13px] text-foreground"
     />
   )
 }

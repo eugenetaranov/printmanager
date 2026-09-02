@@ -56,27 +56,26 @@ export function ManageLabels({
     <Modal open={open} onClose={onClose} labelledBy="mlTitle" wide>
       <div className="mb-3 flex items-center justify-between">
         <h3 id="mlTitle" className="m-0 text-[15px] font-[640]">Manage A4 label sheets</h3>
-        <button type="button" onClick={onClose} aria-label="Close" className="cursor-pointer rounded-md px-2 py-1 text-muted hover:text-text">✕</button>
       </div>
 
       {draft ? (
         <div>
           <label className="mb-3 flex flex-col gap-[6px]">
             <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">Name</span>
-            <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="rounded-[9px] border border-border bg-bg px-3 py-2 font-mono text-[13px]" />
+            <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="rounded-[9px] border border-border bg-background px-3 py-2 font-mono text-[13px]" />
           </label>
           <div className="grid grid-cols-2 gap-3">
             {FIELDS.map((f) => (
               <label key={f.key} className="flex flex-col gap-[4px]">
                 <span className="font-mono text-[10px] uppercase tracking-[0.04em] text-faint">{f.label}</span>
-                <input type="number" step={f.step ?? 1} value={draft.vals[f.key]} onChange={(e) => setDraft({ ...draft, vals: { ...draft.vals, [f.key]: e.target.value } })} className="rounded-md border border-border bg-bg px-2 py-1 font-mono text-[13px]" />
+                <input type="number" step={f.step ?? 1} value={draft.vals[f.key]} onChange={(e) => setDraft({ ...draft, vals: { ...draft.vals, [f.key]: e.target.value } })} className="rounded-md border border-border bg-background px-2 py-1 font-mono text-[13px]" />
               </label>
             ))}
           </div>
-          {err && <p className="mt-2 font-mono text-[12px] text-danger">{err}</p>}
+          {err && <p className="mt-2 font-mono text-[12px] text-destructive">{err}</p>}
           <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={() => setDraft(null)} className="cursor-pointer rounded-[9px] border border-border bg-surface px-4 py-2 font-mono text-xs font-[600] text-muted hover:text-text">Cancel</button>
-            <button type="button" onClick={save} disabled={!draft.name.trim()} className="cursor-pointer rounded-[9px] bg-accent px-4 py-2 font-mono text-xs font-[600] text-white hover:brightness-[1.06] disabled:opacity-50">Save</button>
+            <button type="button" onClick={() => setDraft(null)} className="cursor-pointer rounded-[9px] border border-border bg-card px-4 py-2 font-mono text-xs font-[600] text-muted-foreground hover:text-foreground">Cancel</button>
+            <button type="button" onClick={save} disabled={!draft.name.trim()} className="cursor-pointer rounded-[9px] bg-primary px-4 py-2 font-mono text-xs font-[600] text-white hover:brightness-[1.06] disabled:opacity-50">Save</button>
           </div>
         </div>
       ) : (
@@ -87,12 +86,12 @@ export function ManageLabels({
                 <div className="truncate text-[13px]">{t.name}</div>
                 <div className="font-mono text-[11px] text-faint">{t.cols}×{t.rows} · {Math.round(Number(t.cell_w))}×{Math.round(Number(t.cell_h))} mm{t.builtin ? ' · built-in' : ''}</div>
               </div>
-              <button type="button" onClick={() => setDraft(draftFrom(t))} className="cursor-pointer rounded-md bg-bg px-2 py-1 font-mono text-[11px] text-muted hover:text-text">Edit</button>
-              <button type="button" onClick={() => remove(t.id)} className={'cursor-pointer rounded-md px-2 py-1 font-mono text-[11px] ' + (armed === t.id ? 'bg-danger text-white' : 'bg-bg text-muted hover:text-danger')}>{armed === t.id ? 'Confirm' : 'Delete'}</button>
+              <button type="button" onClick={() => setDraft(draftFrom(t))} className="cursor-pointer rounded-md bg-background px-2 py-1 font-mono text-[11px] text-muted-foreground hover:text-foreground">Edit</button>
+              <button type="button" onClick={() => remove(t.id)} className={'cursor-pointer rounded-md px-2 py-1 font-mono text-[11px] ' + (armed === t.id ? 'bg-destructive text-white' : 'bg-background text-muted-foreground hover:text-destructive')}>{armed === t.id ? 'Confirm' : 'Delete'}</button>
             </div>
           ))}
-          {err && <p className="mt-2 font-mono text-[12px] text-danger">{err}</p>}
-          <button type="button" onClick={() => setDraft(draftFrom())} className="mt-3 w-full cursor-pointer rounded-[9px] border border-dashed border-border py-2 font-mono text-[12px] font-[600] text-muted hover:border-accent hover:text-accent">
+          {err && <p className="mt-2 font-mono text-[12px] text-destructive">{err}</p>}
+          <button type="button" onClick={() => setDraft(draftFrom())} className="mt-3 w-full cursor-pointer rounded-[9px] border border-dashed border-border py-2 font-mono text-[12px] font-[600] text-muted-foreground hover:border-primary hover:text-primary">
             + New label sheet
           </button>
         </div>
