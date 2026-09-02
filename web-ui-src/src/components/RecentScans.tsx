@@ -203,7 +203,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             <col className="w-[52px]" />
             <col className="w-[66px]" />
             <col className="w-[74px]" />
-            <col className="w-[136px]" />
+            <col className="w-[168px]" />
           </colgroup>
           <thead>
             <tr className="[&>th]:border-b [&>th]:border-base-300 [&>th]:px-[10px] [&>th]:pb-2 [&>th]:text-left [&>th]:font-mono [&>th]:text-[11px] [&>th]:font-[600] [&>th]:uppercase [&>th]:tracking-[0.04em] [&>th]:text-base-content/45">
@@ -297,6 +297,9 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                   <td className="whitespace-nowrap font-mono text-xs tabular-nums text-base-content/45">{ago(s.mtime)}</td>
                   <td>
                     <div className="flex justify-end gap-[2px] whitespace-nowrap">
+                      <a className="btn btn-ghost btn-xs btn-square" href={api.fileUrl(s.name)} target="_blank" rel="noopener" title="Open in new tab" aria-label="Open">
+                        <IconOpen />
+                      </a>
                       <button type="button" onClick={() => onPrint(s.name)} disabled={printing === s.name} className="btn btn-ghost btn-xs btn-square" title="Print" aria-label="Print">
                         {printing === s.name ? <span className="loading loading-spinner loading-xs" /> : <IconPrint />}
                       </button>
@@ -426,6 +429,11 @@ function RenameField({ name, onCommit, onDone }: { name: string; onCommit: (to: 
   )
 }
 
+function IconOpen() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+  )
+}
 function IconPrint() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7" /><path d="M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" rx="1" /></svg>
