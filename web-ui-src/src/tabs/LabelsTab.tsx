@@ -80,7 +80,7 @@ export function LabelsTab() {
                 {opts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
               </select>
             </label>
-            <button type="button" onClick={() => setManageOpen(true)} title="Add, edit or delete A4 label sizes" className="btn btn-outline btn-sm">
+            <button type="button" onClick={() => setManageOpen(true)} title="Add, edit or delete A4 label sizes" className="btn btn-outline">
               Manage labels
             </button>
           </div>
