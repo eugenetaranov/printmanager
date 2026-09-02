@@ -1590,8 +1590,25 @@ textarea.txt{min-height:74px;line-height:1.4;resize:vertical;display:block}
 .merge:hover{filter:brightness(1.06)}
 .merge:disabled{opacity:.5;cursor:default;filter:none}
 .merge:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.mergeName{display:inline-flex;align-items:center;gap:6px}
-.mergeName input{width:150px;padding:4px 8px;font:500 12px var(--mono);color:var(--text);background:var(--bg);border:1px solid var(--accent);border-radius:7px}
+.modal{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
+  padding:20px;background:rgba(20,20,16,.38);backdrop-filter:blur(2px);animation:mfade .16s ease both}
+.modal-card{width:100%;max-width:340px;background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;box-shadow:var(--pop);padding:20px;animation:mpop .18s cubic-bezier(.2,.9,.3,1.2) both}
+@keyframes mfade{from{opacity:0}to{opacity:1}}
+@keyframes mpop{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}
+.modal-title{margin:0 0 4px;font-size:15px;font-weight:640;letter-spacing:.01em}
+.modal-hint{margin:0 0 16px;font-size:12.5px;line-height:1.45;color:var(--muted)}
+.modal-label{display:block;font:600 11px var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.modal-label .opt{text-transform:none;letter-spacing:0;font-weight:500;color:var(--faint);opacity:.7}
+.modal-input{width:100%;padding:9px 11px;font:500 13px var(--mono);color:var(--text);background:var(--bg);
+  border:1px solid var(--border);border-radius:9px;transition:border-color .15s}
+.modal-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-weak)}
+.modal-acts{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.modal-acts .merge{padding:8px 16px}
+.btn-ghost{border:1px solid var(--border);background:var(--surface);cursor:pointer;padding:8px 14px;border-radius:9px;
+  font:600 12px var(--mono);letter-spacing:.02em;color:var(--muted)}
+.btn-ghost:hover{color:var(--text);background:var(--bg)}
+.btn-ghost:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .tablewrap{margin-top:14px;overflow-x:auto}
 table.scans{width:100%;border-collapse:collapse;font-size:13px}
 table.scans th{text-align:left;font:600 11px var(--mono);letter-spacing:.04em;text-transform:uppercase;
@@ -2202,6 +2219,19 @@ input[type=number]{font-variant-numeric:tabular-nums}
 </div>
 <div class="preview" id="preview" hidden><img id="previewImg" alt=""></div>
 
+<div class="modal" id="mergeModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="mergeTitle">
+    <h3 class="modal-title" id="mergeTitle">Merge scans</h3>
+    <p class="modal-hint" id="mergeHint"></p>
+    <label class="modal-label" for="mergeName">Name <span class="opt">optional</span></label>
+    <input class="modal-input" id="mergeName" type="text" maxlength="80" autocomplete="off" placeholder="auto: merged-YYYYMMDD-HHMMSS">
+    <div class="modal-acts">
+      <button type="button" class="btn-ghost" id="mergeCancel">Cancel</button>
+      <button type="button" class="merge" id="mergeGo">Merge</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   // Reveal the composer matching the saved format synchronously, before the
@@ -2382,7 +2412,7 @@ input[type=number]{font-variant-numeric:tabular-nums}
       if(i>=0) nSel++;
     });
     if(selAll){ selAll.checked = rows.length>0 && nSel===rows.length; selAll.indeterminate = nSel>0 && nSel<rows.length; }
-    if(mergeBtn && !mergeBtn.classList.contains('naming')){
+    if(mergeBtn){
       mergeBtn.hidden = nSel<2; mergeBtn.disabled = nSel<2;
       mergeBtn.textContent = nSel>=2 ? ('Merge '+nSel) : 'Merge';
     }
@@ -2400,40 +2430,40 @@ input[type=number]{font-variant-numeric:tabular-nums}
     syncSel();
   });
 
-  // Merge -> inline name prompt -> POST /merge. Sources are deleted server-side on success.
-  function startMerge(){
-    if(selected.length<2 || mergeBtn.classList.contains('naming')) return;
-    var names=selected.slice(), n=names.length;
-    mergeBtn.classList.add('naming'); mergeBtn.hidden=true;
-    var wrap=document.createElement('span'); wrap.className='mergeName';
-    var inp=document.createElement('input'); inp.type='text'; inp.placeholder='name (optional)'; inp.maxLength=80;
-    var go=document.createElement('button'); go.type='button'; go.className='merge'; go.textContent='Merge '+n;
-    wrap.appendChild(inp); wrap.appendChild(go);
-    mergeBtn.parentNode.insertBefore(wrap, mergeBtn); inp.focus();
-    var closed=false;
-    function restore(){ wrap.remove(); mergeBtn.classList.remove('naming'); mergeBtn.hidden=false; }
-    function cancel(){ if(closed) return; closed=true; restore(); syncSel(); }
-    function submit(){
-      if(closed) return; closed=true;   // one-shot: mousedown-submit then click/blur are ignored
-      var to=inp.value.trim();
-      go.disabled=true; go.textContent='Merging…';
-      fetch('/merge',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({names:names, to:to})})
-        .then(function(r){return r.json();})
-        .then(function(d){
-          restore();
-          if(d.ok){ note.className='note ok'; note.textContent='Merged '+n+' scans → '+d.file+'.'; selected=[]; return refresh(d.file); }
-          note.className='note err'; note.textContent=d.error||'Merge failed.'; syncSel();
-        })
-        .catch(function(){ restore(); note.className='note err'; note.textContent='Could not reach the merge service.'; syncSel(); });
-    }
-    // preventDefault on mousedown keeps focus off the button, so the input's blur (=cancel)
-    // never races ahead of the click (cf. the double-submit fix in startRename).
-    go.addEventListener('mousedown',function(ev){ ev.preventDefault(); submit(); });
-    inp.addEventListener('keydown',function(ev){ if(ev.key==='Enter'){ev.preventDefault();submit();} else if(ev.key==='Escape'){ev.preventDefault();cancel();} });
-    inp.addEventListener('blur',cancel);
+  // Merge -> modal name prompt -> POST /merge. Sources are deleted server-side on success.
+  var mergeModal=document.getElementById('mergeModal'), mergeHint=document.getElementById('mergeHint'),
+      mergeName=document.getElementById('mergeName'), mergeGo=document.getElementById('mergeGo'),
+      mergeCancel=document.getElementById('mergeCancel'), mergeNames=[], mergeBusy=false;
+
+  function openMerge(){
+    if(selected.length<2) return;
+    mergeNames=selected.slice();
+    mergeHint.textContent='Combining '+mergeNames.length+' scans into one PDF, in the order you selected. The originals are removed after merging.';
+    mergeName.value=''; mergeGo.disabled=false; mergeGo.textContent='Merge'; mergeBusy=false;
+    mergeModal.hidden=false;
+    setTimeout(function(){ mergeName.focus(); },0);
   }
-  mergeBtn.addEventListener('click',startMerge);
+  function closeMerge(){ if(mergeBusy) return; mergeModal.hidden=true; mergeName.value=''; }
+  function doMerge(){
+    if(mergeBusy || mergeNames.length<2) return;
+    mergeBusy=true; mergeGo.disabled=true; mergeGo.textContent='Merging…';
+    var n=mergeNames.length, to=mergeName.value.trim();
+    fetch('/merge',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({names:mergeNames, to:to})})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        mergeBusy=false; mergeModal.hidden=true;
+        if(d.ok){ note.className='note ok'; note.textContent='Merged '+n+' scans → '+d.file+'.'; selected=[]; return refresh(d.file); }
+        note.className='note err'; note.textContent=d.error||'Merge failed.'; syncSel();
+      })
+      .catch(function(){ mergeBusy=false; mergeModal.hidden=true; note.className='note err'; note.textContent='Could not reach the merge service.'; syncSel(); });
+  }
+  mergeBtn.addEventListener('click',openMerge);
+  mergeGo.addEventListener('click',doMerge);
+  mergeCancel.addEventListener('click',closeMerge);
+  mergeModal.addEventListener('mousedown',function(e){ if(e.target===mergeModal) closeMerge(); });   // click backdrop to dismiss
+  mergeName.addEventListener('keydown',function(ev){ if(ev.key==='Enter'){ev.preventDefault();doMerge();} else if(ev.key==='Escape'){ev.preventDefault();closeMerge();} });
+  document.addEventListener('keydown',function(ev){ if(ev.key==='Escape' && !mergeModal.hidden) closeMerge(); });
 
   // --- print / labels ---
   var TEMPLATES=__TEMPLATES_JSON__, TBYID={};
