@@ -192,9 +192,11 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
         </div>
       )}
 
-      <div className="mt-[14px] overflow-x-auto">
+      <div className="mt-[14px]">
         {/* table-fixed + colgroup: column widths are pinned, so content changing
-            (e.g. the order badge showing/hiding) can never reflow the layout. */}
+            (e.g. the order badge showing/hiding) can never reflow the layout.
+            No overflow wrapper — it would let tooltip bubbles create a horizontal
+            scrollbar; the fixed-layout table always fits its container. */}
         <table className="table table-sm w-full table-fixed text-[13px]">
           <colgroup>
             <col className="w-10" />
