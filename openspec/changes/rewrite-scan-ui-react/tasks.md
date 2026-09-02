@@ -62,12 +62,12 @@
 
 ## 8. Provisioning (web-ui tack role)
 
-- [ ] 8.1 Add a pinned Node LTS install step to `roles/web-ui/tasks/main.yaml`.
-- [ ] 8.2 Ship `web-ui-src/` to the Pi and run `npm ci && npm run build` into the server's
+- [x] 8.1 Add a pinned Node LTS install step to `roles/web-ui/tasks/main.yaml`.
+- [x] 8.2 Ship `web-ui-src/` to the Pi and run `npm ci && npm run build` into the server's
   static root (e.g. `/usr/local/lib/scan-web/webui-dist`); notify Restart scan-web.
 - [ ] 8.3 Build-headroom smoke test on the target Pi (RAM/time); if it can't build reliably,
   switch to a committed/CI-built bundle per the design's D3 alternatives.
-- [ ] 8.4 Decide and implement `node_modules` retention vs prune after a successful build.
+- [x] 8.4 Decide and implement `node_modules` retention vs prune after a successful build.
 
 ## 9. Parity verification and cutover
 

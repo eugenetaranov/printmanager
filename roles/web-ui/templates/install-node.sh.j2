@@ -1,0 +1,30 @@
+#!/bin/sh
+# Managed by Tack — roles/web-ui. Installs a pinned Node.js from the official
+# distribution tarball (no third-party apt repo), used only to build the SPA.
+set -eu
+
+VER="{{ .web_ui_node_version }}"
+PREFIX="/opt/node-${VER}"
+
+if [ -x "${PREFIX}/bin/node" ] && [ "$(${PREFIX}/bin/node -v 2>/dev/null)" = "v${VER}" ]; then
+  echo "node v${VER} already present"
+else
+  case "$(uname -m)" in
+    aarch64|arm64) NARCH=arm64 ;;
+    x86_64) NARCH=x64 ;;
+    *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;;
+  esac
+  URL="https://nodejs.org/dist/v${VER}/node-v${VER}-linux-${NARCH}.tar.xz"
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "${TMP}"' EXIT
+  echo "downloading ${URL}"
+  curl -fsSL "${URL}" -o "${TMP}/node.tar.xz"
+  rm -rf "${PREFIX}"
+  mkdir -p "${PREFIX}"
+  tar -xJf "${TMP}/node.tar.xz" -C "${PREFIX}" --strip-components=1
+fi
+
+ln -sf "${PREFIX}/bin/node" /usr/local/bin/node
+ln -sf "${PREFIX}/bin/npm" /usr/local/bin/npm
+ln -sf "${PREFIX}/bin/npx" /usr/local/bin/npx
+echo "node $(/usr/local/bin/node -v), npm $(/usr/local/bin/npm -v)"

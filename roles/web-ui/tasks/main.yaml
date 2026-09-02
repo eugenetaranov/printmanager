@@ -37,6 +37,46 @@
   when: scan_web_enabled
   notify: Restart scan-web
 
+# --- React SPA (built on the target from this repo) -------------------------
+# scan-web.py serves the built SPA from scan_web_ui_dir when present, else the
+# embedded HTML — so a failed/absent build never takes the UI down.
+- name: Install SPA build tooling (curl, xz, git)
+  apt:
+    name: [curl, xz-utils, git, ca-certificates]
+    state: present
+  when: scan_web_enabled and scan_web_spa
+
+- name: Install the Node.js bootstrap script
+  template:
+    src: install-node.sh.j2
+    dest: /usr/local/lib/scan-web/install-node.sh
+    mode: "0755"
+  when: scan_web_enabled and scan_web_spa
+
+- name: Install a pinned Node.js for the build
+  command: /usr/local/lib/scan-web/install-node.sh
+  when: scan_web_enabled and scan_web_spa
+
+- name: Fetch the web-UI source on the target
+  git:
+    repo: "{{ web_ui_repo }}"
+    dest: "{{ web_ui_build_dir }}"
+    version: "{{ web_ui_version }}"
+    force: true
+  when: scan_web_enabled and scan_web_spa
+
+- name: Install the SPA build script
+  template:
+    src: build-webui.sh.j2
+    dest: /usr/local/lib/scan-web/build-webui.sh
+    mode: "0755"
+  when: scan_web_enabled and scan_web_spa
+
+- name: Build the SPA (npm ci && vite build)
+  command: /usr/local/lib/scan-web/build-webui.sh
+  when: scan_web_enabled and scan_web_spa
+  notify: Restart scan-web
+
 # --- Devices tab: Niimbot BLE label printers -------------------------------
 # Installed alongside scan-web.py and imported lazily (like reportlab/Pillow),
 # so the base app is unaffected when the Devices tab is off.

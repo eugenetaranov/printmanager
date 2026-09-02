@@ -1,0 +1,22 @@
+#!/bin/sh
+# Managed by Tack — roles/web-ui. Builds the React SPA on the target and installs
+# the result where scan-web.py serves it. Atomic swap so a failed build never
+# replaces a working bundle.
+set -eu
+
+SRC="{{ .web_ui_build_dir }}/web-ui-src"
+DIST="{{ .scan_web_ui_dir }}"
+export PATH="/usr/local/bin:${PATH}"
+# Cap the heap so the build doesn't OOM on a small-RAM Pi.
+export NODE_OPTIONS="--max-old-space-size=1024"
+
+cd "${SRC}"
+npm ci --no-audit --no-fund
+npm run build
+
+rm -rf "${DIST}.new"
+cp -r "${SRC}/dist" "${DIST}.new"
+rm -rf "${DIST}"
+mv "${DIST}.new" "${DIST}"
+{{ if not .web_ui_keep_node_modules }}rm -rf "${SRC}/node_modules"{{ end }}
+echo "built SPA -> ${DIST}"

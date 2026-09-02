@@ -32,6 +32,24 @@ scan_web_user: scans          # must match scan-share (owns the share) + scan-se
 scan_web_title: printmanager
 scan_web_share: "smb://printmanager.local/scans"
 
+# --- React SPA front-end -----------------------------------------------------
+# The UI is a React SPA built on the target during provisioning (Vite). When
+# scan_web_spa is true the role installs Node, fetches this repo, runs the build,
+# and scan-web.py serves the result from scan_web_ui_dir. When false (or before
+# the first successful build) the server falls back to the embedded HTML.
+scan_web_spa: true
+scan_web_ui_dir: /usr/local/lib/scan-web/webui-dist
+# Pinned Node.js (official linux-arm64/x64 tarball) used only for the build.
+web_ui_node_version: "20.18.1"
+# Source of the SPA: this repo, cloned on the target and built from web-ui-src/.
+# Pin web_ui_version to a tag/SHA for reproducible builds; main tracks latest.
+web_ui_repo: "https://github.com/eugenetaranov/printmanager.git"
+web_ui_version: "main"
+web_ui_build_dir: /usr/local/lib/scan-web/src
+# Keep node_modules after a successful build (faster re-provisions) or prune it
+# to reclaim disk on the Pi (only dist/ is served).
+web_ui_keep_node_modules: false
+
 # Defaults preselected in the Scan tab's Mode/Resolution dropdowns. (Separate
 # from scan-server's scan_mode/scan_resolution, which drive the pipeline itself.)
 scan_web_default_mode: "24bit Color"

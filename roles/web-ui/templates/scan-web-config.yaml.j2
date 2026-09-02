@@ -6,6 +6,9 @@ script: "/usr/local/lib/scan-web/scan-to-share.sh"
 port: {{ .scan_web_port }}
 title: "{{ .scan_web_title }}"
 share: "{{ .scan_web_share }}"
+# Built React SPA (Vite dist/). When this dir has an index.html the server
+# serves the SPA; otherwise it falls back to the embedded HTML in scan-web.py.
+ui_dir: "{{ .scan_web_ui_dir }}"
 default_mode: "{{ .scan_web_default_mode }}"
 default_res: {{ .scan_web_default_res }}
 print_enabled: {{ .scan_web_print_enabled }}
