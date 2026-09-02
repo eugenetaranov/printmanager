@@ -3,6 +3,7 @@ import { StatusProvider, StatusLed } from './components/status'
 import { useRoute, type TabId } from './lib/router'
 import { ScanTab } from './tabs/ScanTab'
 import { PrintTab } from './tabs/PrintTab'
+import { LabelsTab } from './tabs/LabelsTab'
 import { DevicesModal } from './components/DevicesModal'
 
 const TABS: { id: TabId; label: string }[] = [
@@ -64,18 +65,10 @@ function Shell() {
       </nav>
 
       {tab === 'scan' && <ScanTab />}
-      {tab === 'labels' && <Placeholder name="Labels" />}
+      {tab === 'labels' && <LabelsTab />}
       {tab === 'print' && <PrintTab />}
 
       <DevicesModal open={devicesOpen} onClose={() => setDevicesOpen(false)} />
-    </div>
-  )
-}
-
-function Placeholder({ name }: { name: string }) {
-  return (
-    <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
-      <p className="font-mono text-[13px] text-muted">{name} tab — not yet ported.</p>
     </div>
   )
 }

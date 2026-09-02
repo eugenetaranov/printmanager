@@ -40,8 +40,8 @@
 
 ## 5. Labels tab
 
-- [ ] 5.1 Niimbot label composer (text/image/QR content, the schematic preview) → `POST /print`.
-- [ ] 5.2 Label template management: list/create/edit via `/templates`, delete/restore via
+- [x] 5.1 Niimbot label composer (text/image/QR content, the schematic preview) → `POST /print`.
+- [x] 5.2 Label template management: list/create/edit via `/templates`, delete/restore via
   `/templates/delete` and `/templates/restore`.
 
 ## 6. Devices modal (opened from the header icon, not a tab)

@@ -202,9 +202,9 @@ export const niimbot = {
   clearlog: (address?: string) => postJSON<NiimState>('/niimbot/clearlog', { address }),
   select: (address: string) => postJSON<NiimState>('/niimbot/select', { address }),
   labelsize: (address: string, w: number, h: number) => postJSON<NiimState>('/niimbot/labelsize', { address, w, h }),
-  print: (body: { kind: 'text' | 'image'; text?: string; dataB64?: string; address?: string }) =>
+  print: (body: { kind: 'text' | 'image' | 'qr'; text?: string; dataB64?: string; address?: string }) =>
     postJSON<OkResult & Record<string, unknown>>('/niimbot/print', body),
-  preview: (body: { kind: 'text' | 'image'; text?: string; dataB64?: string; model: string; w_mm?: number; h_mm?: number }) =>
+  preview: (body: { kind: 'text' | 'image' | 'qr'; text?: string; dataB64?: string; model: string; w_mm?: number; h_mm?: number }) =>
     postJSON<{ ok: boolean; png: string; w?: number; h?: number; error?: string }>('/niimbot/preview', body),
 }
 
