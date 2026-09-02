@@ -104,8 +104,8 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
       <div className="mb-4 flex items-center justify-between">
         <h3 id="devTitle" className="m-0 text-[15px] font-[640]">Devices</h3>
         <div className="flex gap-2">
-          <IconBtn title="Refresh devices" onClick={refresh} disabled={busy}><Icon.refresh /></IconBtn>
-          <IconBtn title="Close" onClick={onClose}><Icon.close /></IconBtn>
+          <IconBtn title="Refresh devices" tip="bottom" onClick={refresh} disabled={busy}><Icon.refresh /></IconBtn>
+          <IconBtn title="Close" tip="bottom" onClick={onClose}><Icon.close /></IconBtn>
         </div>
       </div>
 
@@ -238,15 +238,15 @@ function MiniBtn({ children, onClick, primary, active }: { children: React.React
 }
 
 // Square icon button with a hover tooltip — keeps the device rows compact.
-function IconBtn({ title, onClick, variant, disabled, children }: { title: string; onClick: () => void; variant?: 'primary' | 'active'; disabled?: boolean; children: React.ReactNode }) {
+function IconBtn({ title, onClick, variant, disabled, tip = 'top', children }: { title: string; onClick: () => void; variant?: 'primary' | 'active'; disabled?: boolean; tip?: 'top' | 'bottom'; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      title={title}
+      data-tip={title}
       aria-label={title}
-      className={'btn btn-square btn-sm ' + (variant === 'primary' ? 'btn-primary' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
+      className={`tooltip tooltip-${tip} btn btn-square btn-sm ` + (variant === 'primary' ? 'btn-primary' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
     >
       {children}
     </button>

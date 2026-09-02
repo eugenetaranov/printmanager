@@ -35,10 +35,10 @@ function Shell() {
           <StatusLed />
           <button
             type="button"
-            title="Devices"
+            data-tip="Devices"
             aria-label="Manage devices"
             onClick={() => setDevicesOpen(true)}
-            className="btn btn-square btn-ghost btn-sm"
+            className="tooltip tooltip-bottom btn btn-square btn-ghost btn-sm"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
               <path d="M6 9V3h12v6" />
