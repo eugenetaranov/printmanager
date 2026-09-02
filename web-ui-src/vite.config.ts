@@ -1,7 +1,21 @@
 import { defineConfig } from 'vite'
 import type { IncomingMessage } from 'node:http'
+import { execSync } from 'node:child_process'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+
+// Baked in at build time (the Pi builds from a fresh git clone, so this reflects
+// the deployed commit). Shows the tag when HEAD is on one, else a short hash;
+// falls back to 'dev' outside a git checkout.
+function gitVersion(): string {
+  try {
+    return execSync('git describe --tags --always --dirty', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString().trim()
+  } catch {
+    return 'dev'
+  }
+}
 
 // In dev the SPA is served by Vite, but the JSON API lives on the Python
 // scan-web server. Forward the API path prefixes to it. Point VITE_API_TARGET
@@ -28,6 +42,9 @@ function htmlNavBypass(req: IncomingMessage): string | undefined {
 }
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(gitVersion()),
+  },
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {

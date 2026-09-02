@@ -70,6 +70,8 @@ function Shell() {
 
       {tab === 'scan' && <ActivityFooter />}
 
+      <div className="mt-8 text-center font-mono text-2xs text-base-content/60">{__APP_VERSION__}</div>
+
       <DevicesModal open={devicesOpen} onClose={() => setDevicesOpen(false)} />
     </div>
   )
