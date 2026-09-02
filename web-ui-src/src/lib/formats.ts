@@ -1,4 +1,4 @@
-import type { Device, NiimPrinter, Template } from '../api/client'
+import type { NiimPrinter, Template } from '../api/client'
 
 export type A4Format = {
   v: string
@@ -27,15 +27,16 @@ export type FormatOption = A4Format | ThermalFormat
 // Build the size-sorted "Label format" list: A4 sheet templates (only when a
 // CUPS printer exists) + one entry per remembered Niimbot. Sorted by perimeter,
 // largest first, area as tiebreak. Mirrors the previous UI's formatOptions().
+// `queues` is the list of CUPS queue ids (from the cached /print/queues seed) —
+// A4 sheets print to the first one.
 export function formatOptions(
   templates: Template[],
   printers: NiimPrinter[],
-  devices: Device[],
+  queues: string[],
 ): FormatOption[] {
   const opts: FormatOption[] = []
-  const cups = devices.filter((d) => d.kind === 'printer' && d.id)
-  if (cups.length) {
-    const queue = cups[0].id
+  if (queues.length) {
+    const queue = queues[0]
     for (const t of templates) {
       const cw = Number(t.cell_w), ch = Number(t.cell_h)
       opts.push({
