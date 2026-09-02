@@ -62,6 +62,7 @@ SCAN_DIR = _cfg("dir", "SCAN_WEB_DIR", "/srv/scans")
 DATA_DIR = _cfg("data", "SCAN_WEB_DATA", "/var/lib/scan-web")
 THUMB_DIR = os.path.join(DATA_DIR, "thumbs")
 META_DIR = os.path.join(DATA_DIR, "meta")
+TRASH_DIR = os.path.join(DATA_DIR, "trash")
 PORT = int(_cfg("port", "SCAN_WEB_PORT", 8080))
 TITLE = _cfg("title", "SCAN_WEB_TITLE", "printmanager")
 # Directory of the built React SPA (Vite `dist/`). When it contains an
@@ -365,6 +366,86 @@ def remove_scan(name):
     return True
 
 
+# --- Trash + undo -----------------------------------------------------------
+# Destructive actions (remove, clear, and a merge's sources) move files into a
+# trash dir keyed by an undo token instead of deleting them, so the UI can offer
+# a real Undo. Tokens are swept after an hour.
+_undo_ops = {}
+_undo_lock = threading.Lock()
+
+
+def _trash_item(name):
+    """Move a scan's pdf+thumb+meta into a fresh trash dir; return a restore handle."""
+    base = name[:-4]
+    d = os.path.join(TRASH_DIR, _new_token())
+    os.makedirs(d, exist_ok=True)
+    moved = {}
+    for src, key in ((os.path.join(SCAN_DIR, name), "pdf"),
+                     (os.path.join(THUMB_DIR, base + ".jpg"), "thumb"),
+                     (os.path.join(META_DIR, base), "meta")):
+        if os.path.isfile(src):
+            try:
+                shutil.move(src, os.path.join(d, key))
+                moved[key] = os.path.join(d, key)
+            except OSError:
+                pass
+    return {"name": name, "dir": d, "moved": moved}
+
+
+def _restore_item(item):
+    name = item["name"]
+    base = name[:-4]
+    targets = {"pdf": os.path.join(SCAN_DIR, name),
+               "thumb": os.path.join(THUMB_DIR, base + ".jpg"),
+               "meta": os.path.join(META_DIR, base)}
+    for key, src in item.get("moved", {}).items():
+        if os.path.isfile(src) and not os.path.exists(targets[key]):
+            try:
+                shutil.move(src, targets[key])
+            except OSError:
+                pass
+    shutil.rmtree(item["dir"], ignore_errors=True)
+
+
+def _sweep_undo():
+    now = time.monotonic()
+    with _undo_lock:
+        for t in [t for t, o in _undo_ops.items() if now - o["ts"] > 3600]:
+            for it in _undo_ops.pop(t).get("items", []):
+                shutil.rmtree(it["dir"], ignore_errors=True)
+
+
+def _register_undo(op):
+    _sweep_undo()
+    token = _new_token()
+    with _undo_lock:
+        _undo_ops[token] = dict(op, ts=time.monotonic())
+    return token
+
+
+def undo_op(token):
+    with _undo_lock:
+        op = _undo_ops.pop(token, None)
+    if not op:
+        raise ValueError("Nothing to undo — it may have expired.")
+    if op.get("type") == "merge":
+        remove_scan(op["merged"])          # discard the merged output
+    for it in op.get("items", []):
+        _restore_item(it)
+    return True
+
+
+def trash_scan(name):
+    """Move a scan to the trash and register a single-item undo op; returns the
+    undo token (or None if the scan was not found)."""
+    if not (NAME_RE.fullmatch(name) and name.lower().endswith(".pdf")):
+        return None
+    item = _trash_item(name)
+    if not item["moved"]:
+        return None
+    return _register_undo({"type": "remove", "items": [item]})
+
+
 def rename_scan(name, newbase):
     if not NAME_RE.fullmatch(name) or not name.lower().endswith(".pdf"):
         return None, "bad name"
@@ -414,17 +495,20 @@ def merge_scans(names, newbase):
         shutil.move(out, dst)          # result now safely in SCAN_DIR
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    for n in names:                    # delete sources only after a successful merge
-        remove_scan(n)
-    return base + ".pdf"
+    # Trash the sources (only after a successful merge) so the merge is undoable.
+    items = [_trash_item(n) for n in names]
+    token = _register_undo({"type": "merge", "merged": base + ".pdf", "items": items})
+    return base + ".pdf", token
 
 
 def clear_scans():
-    removed = 0
+    items = []
     for s in list_scans(10000):
-        if remove_scan(s["name"]):
-            removed += 1
-    return removed
+        name = s["name"]
+        if NAME_RE.fullmatch(name) and name.lower().endswith(".pdf"):
+            items.append(_trash_item(name))
+    token = _register_undo({"type": "clear", "items": items}) if items else None
+    return len(items), token
 
 
 def run_scan(mode, resolution, name=""):
@@ -1445,10 +1529,12 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/devices/") or path.startswith("/niimbot/"):
             return self._devices_post(path)
         if path == "/clear":
-            return self._json(200, {"ok": True, "removed": clear_scans()})
+            removed, undo = clear_scans()
+            return self._json(200, {"ok": True, "removed": removed, "undo": undo})
         if path == "/remove":
             name = self._form().get("name", [""])[0]
-            return self._json(200, {"ok": remove_scan(name)})
+            undo = trash_scan(name)
+            return self._json(200, {"ok": undo is not None, "undo": undo})
         if path == "/rename":
             f = self._form()
             new, err = rename_scan(f.get("name", [""])[0], f.get("to", [""])[0])
@@ -1456,10 +1542,17 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/merge":
             obj = self._json_body()
             try:
-                f = merge_scans(obj.get("names") or [], obj.get("to", ""))
-                return self._json(200, {"ok": True, "file": f})
+                f, undo = merge_scans(obj.get("names") or [], obj.get("to", ""))
+                return self._json(200, {"ok": True, "file": f, "undo": undo})
             except subprocess.TimeoutExpired:
                 return self._json(200, {"ok": False, "error": "Merge timed out."})
+            except Exception as e:
+                return self._json(200, {"ok": False, "error": str(e)})
+        if path == "/undo":
+            token = (self._json_body().get("token") or "")
+            try:
+                undo_op(token)
+                return self._json(200, {"ok": True})
             except Exception as e:
                 return self._json(200, {"ok": False, "error": str(e)})
         if path == "/templates":

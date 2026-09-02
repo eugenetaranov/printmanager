@@ -3,10 +3,12 @@ import { api, type AppConfig } from '../api/client'
 import { useStatus } from '../components/status'
 import { useNote, Note } from '../components/Note'
 import { RecentScans, type RecentScansHandle } from '../components/RecentScans'
+import { useActivityLog } from '../components/ActivityLog'
 
 export function ScanTab() {
   const status = useStatus()
   const { note, ok, err, info, clear } = useNote()
+  const { push } = useActivityLog()
   const recent = useRef<RecentScansHandle>(null)
 
   const [config, setConfig] = useState<AppConfig | null>(null)
@@ -33,11 +35,13 @@ export function ScanTab() {
       .then((d) => {
         if (d.ok && d.file) {
           status.set('idle', 'Ready')
-          ok(
+          const file = d.file
+          push(
             <>
-              Saved {d.file} · {d.seconds}s —{' '}
-              <a href={api.fileUrl(d.file)} target="_blank" rel="noopener" className="text-primary underline">open</a>
+              Saved {file} · {d.seconds}s —{' '}
+              <a href={api.fileUrl(file)} target="_blank" rel="noopener" className="link">open</a>
             </>,
+            async () => { await api.remove(file); recent.current?.refresh() },
           )
           setName('')
           recent.current?.refresh(d.file)

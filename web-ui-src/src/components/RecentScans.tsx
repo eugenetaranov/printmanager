@@ -3,6 +3,7 @@ import {
 } from 'react'
 import { api, type Scan } from '../api/client'
 import { Modal } from './Modal'
+import { useActivityLog } from './ActivityLog'
 
 export interface RecentScansHandle {
   refresh: (newest?: string) => void
@@ -31,6 +32,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
   { share, onNote },
   ref,
 ) {
+  const { push } = useActivityLog()
   const [scans, setScans] = useState<Scan[]>([])
   const [newest, setNewest] = useState<string>('')
   const [selected, setSelected] = useState<string[]>([])
@@ -81,7 +83,12 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       return
     }
     setRemoveArmed('')
-    api.remove(name).then(() => load()).catch(() => {})
+    api.remove(name)
+      .then((r) => {
+        push(`Removed ${name}`, r.undo ? async () => { await api.undo(r.undo!); load() } : undefined)
+        load()
+      })
+      .catch(() => {})
   }
 
   // --- clear all (two-click arm/confirm) ---
@@ -96,7 +103,8 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
     setClearArmed(false)
     api.clear()
       .then((d) => {
-        onNote('', d.removed ? `Removed ${d.removed} scan${d.removed === 1 ? '' : 's'}.` : 'Nothing to remove.')
+        if (d.removed) push(`Removed ${d.removed} scan${d.removed === 1 ? '' : 's'}`, d.undo ? async () => { await api.undo(d.undo!); load() } : undefined)
+        else onNote('', 'Nothing to remove.')
         load()
       })
       .catch(() => onNote('err', 'Could not clear the scans.'))
@@ -119,7 +127,8 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
         setMergeOpen(false)
         setMergeBusy(false)
         if (d.ok && d.file) {
-          onNote('ok', `Merged ${n} scans → ${d.file}.`)
+          const tok = d.undo
+          push(`Merged ${n} scans → ${d.file}`, tok ? async () => { await api.undo(tok); load() } : undefined)
           setSelected([])
           load(d.file)
         } else {
@@ -233,11 +242,15 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                         onDone={() => setRenaming('')}
                         onCommit={(to) => {
                           setRenaming('')
-                          if (!to || to === s.name.replace(/\.pdf$/i, '')) { load(); return }
-                          api.rename(s.name, to)
+                          const from = s.name
+                          const oldBase = from.replace(/\.pdf$/i, '')
+                          if (!to || to === oldBase) { load(); return }
+                          api.rename(from, to)
                             .then((d) => {
-                              if (!d.ok) onNote('err', d.error || 'Rename failed.')
-                              load(d.file ?? undefined)
+                              if (!d.ok) { onNote('err', d.error || 'Rename failed.'); load(); return }
+                              const newName = d.file!
+                              push(`Renamed ${from} → ${newName}`, async () => { await api.rename(newName, oldBase); load() })
+                              load(newName)
                             })
                             .catch(() => load())
                         }}

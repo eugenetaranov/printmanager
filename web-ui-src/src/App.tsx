@@ -5,6 +5,7 @@ import { ScanTab } from './tabs/ScanTab'
 import { PrintTab } from './tabs/PrintTab'
 import { LabelsTab } from './tabs/LabelsTab'
 import { DevicesModal } from './components/DevicesModal'
+import { ActivityLogProvider, ActivityFooter } from './components/ActivityLog'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'scan', label: 'Scan' },
@@ -15,7 +16,9 @@ const TABS: { id: TabId; label: string }[] = [
 export function App() {
   return (
     <StatusProvider>
-      <Shell />
+      <ActivityLogProvider>
+        <Shell />
+      </ActivityLogProvider>
     </StatusProvider>
   )
 }
@@ -64,6 +67,8 @@ function Shell() {
       {tab === 'scan' && <ScanTab />}
       {tab === 'labels' && <LabelsTab />}
       {tab === 'print' && <PrintTab />}
+
+      <ActivityFooter />
 
       <DevicesModal open={devicesOpen} onClose={() => setDevicesOpen(false)} />
     </div>
