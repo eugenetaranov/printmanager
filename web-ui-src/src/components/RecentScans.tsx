@@ -35,6 +35,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
   const { push } = useActivityLog()
   const [scans, setScans] = useState<Scan[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const [newest, setNewest] = useState<string>('')
   const [selected, setSelected] = useState<string[]>([])
   const [renaming, setRenaming] = useState<string>('')
@@ -55,11 +56,16 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
     api.recent().then((s) => {
       setScans(s)
       setLoaded(true)
+      setLoadError(false)
       // Drop selections whose rows are gone.
       const have = new Set(s.map((x) => x.name))
       setSelected((sel) => sel.filter((name) => have.has(name)))
       if (n !== undefined) setNewest(n)
-    }).catch(() => setLoaded(true))
+    }).catch(() => {
+      // Keep any previously-loaded rows; surface the failure instead of an empty state.
+      setLoaded(true)
+      setLoadError(true)
+    })
   }, [])
 
   useImperativeHandle(ref, () => ({ refresh: load }), [load])
@@ -329,7 +335,14 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
         </table>
       </div>
 
-      {loaded && scans.length === 0 && (
+      {loadError && (
+        <div role="alert" className="mt-2 flex items-center justify-between gap-3 rounded-md bg-error/10 px-3 py-2 text-[13px] text-error">
+          <span>Couldn’t reach the scan service.</span>
+          <button type="button" onClick={() => load()} className="btn btn-ghost btn-xs">Retry</button>
+        </div>
+      )}
+
+      {loaded && !loadError && scans.length === 0 && (
         <p className="px-[2px] py-4 text-sm text-base-content/60">No scans yet. Place a page on the glass and press Scan.</p>
       )}
 

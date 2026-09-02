@@ -85,7 +85,7 @@ export function LabelsTab() {
           <div className="skeleton mt-4 h-11 w-full rounded" />
         </div>
       ) : opts.length === 0 ? (
-        <p className="font-mono text-[13px] text-base-content/60">No printers yet. Connect one from the Devices manager (gear icon).</p>
+        <p className="font-mono text-[13px] text-base-content/60">No printers yet. Open the Devices manager (the printer icon, top-right) to connect one.</p>
       ) : (
         <>
           <div className="mb-4 flex items-end gap-2">

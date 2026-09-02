@@ -47,7 +47,7 @@ export function DualRange({
 
   return (
     <div ref={trackRef} className="relative h-6 touch-none select-none">
-      <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-border" />
+      <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-base-300" />
       <div
         className="absolute top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-primary"
         style={{ left: `${pct(from)}%`, right: `${100 - pct(to)}%` }}

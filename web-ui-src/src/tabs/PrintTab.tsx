@@ -130,13 +130,14 @@ export function PrintTab() {
     api.documentContinue(flip.token)
       .then((d) => {
         setBusy(false)
-        setFlip(null)
         if (d.ok) {
+          setFlip(null)
           status.set('idle', 'Ready')
           ok('Done — printed both sides.')
         } else {
+          // Keep the flip step so the user can retry side 2 without reprinting side 1.
           status.set('error', 'Failed')
-          err(d.error || 'Print failed.')
+          err(d.error || 'Print failed — you can try Continue again.')
         }
       })
       .catch(() => {

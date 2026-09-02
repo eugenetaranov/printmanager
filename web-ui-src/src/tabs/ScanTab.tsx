@@ -119,7 +119,7 @@ export function ScanTab() {
         </button>
 
         {scanning && (
-          <div className="mt-3 h-[3px] overflow-hidden rounded-full bg-border" aria-hidden="true">
+          <div className="mt-3 h-[3px] overflow-hidden rounded-full bg-base-300" aria-hidden="true">
             <div className="h-full w-2/5 rounded-full bg-primary [animation:slide_1.1s_ease-in-out_infinite]" />
           </div>
         )}

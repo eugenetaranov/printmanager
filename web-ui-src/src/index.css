@@ -37,3 +37,14 @@ body {
   0% { transform: translateX(-120%); }
   100% { transform: translateX(320%); }
 }
+
+/* Respect users who prefer reduced motion: stop the infinite pulse/slide loops
+   and collapse transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
