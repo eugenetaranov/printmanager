@@ -99,4 +99,45 @@ export const api = {
 
   fileUrl: (name: string) => `/file/${encodeURIComponent(name)}`,
   thumbUrl: (name: string) => `/thumb/${encodeURIComponent(name)}`,
+
+  // --- Document printing --------------------------------------------------
+  queues: () => getJSON<{ queues: Queue[]; default: string }>('/print/queues'),
+
+  documentInfo: (dataB64: string, filename: string) =>
+    postJSON<DocInfoResult>('/document/info', { dataB64, filename }),
+
+  documentPrint: (body: {
+    src_token: string
+    queue: string
+    sides: 'one' | 'two'
+    from?: number
+    to?: number
+  }) => postJSON<DocPrintResult>('/document/print', body),
+
+  documentContinue: (token: string) =>
+    postJSON<DocPrintResult>('/document/continue', { token }),
+
+  documentCancel: (token: string) => postJSON<OkResult>('/document/cancel', { token }),
+}
+
+export interface Queue {
+  queue: string
+  name: string
+  default: boolean
+}
+
+export interface DocInfoResult extends OkResult {
+  pages?: number
+  token?: string
+}
+
+export interface DocPrintResult extends OkResult {
+  queue?: string
+  job?: string
+  pages?: number
+  done?: boolean
+  duplex?: string
+  step?: string
+  token?: string
+  instruction?: string
 }

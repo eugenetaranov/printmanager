@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { StatusProvider, StatusLed } from './components/status'
 import { useRoute, type TabId } from './lib/router'
 import { ScanTab } from './tabs/ScanTab'
+import { PrintTab } from './tabs/PrintTab'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'scan', label: 'Scan' },
@@ -63,7 +64,7 @@ function Shell() {
 
       {tab === 'scan' && <ScanTab />}
       {tab === 'labels' && <Placeholder name="Labels" />}
-      {tab === 'print' && <Placeholder name="Print" />}
+      {tab === 'print' && <PrintTab />}
     </div>
   )
 }

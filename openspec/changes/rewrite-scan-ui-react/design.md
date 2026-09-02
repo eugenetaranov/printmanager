@@ -125,5 +125,16 @@ embedded block. Rollback = revert that commit.
 - Can the specific Pi model reliably run `vite build` (RAM/time)? If not, switch to a
   committed or CI-built bundle (the D3 alternatives) — decide after a build smoke test.
 - Prune `node_modules` after build to reclaim disk, or keep it for faster re-provisions?
-- TypeScript vs JSX-only for the SPA? (Lean TypeScript for the API-shape safety, but confirm.)
-- Confirm dark/light theming is in scope for parity, or defer to a follow-up.
+
+## Resolved during implementation
+
+- **TypeScript**, not JSX-only (chosen for API-shape safety; the client is fully typed).
+- **Light + dark theming is in scope** — both token sets ported and driven by
+  `prefers-color-scheme`, matching the previous UI.
+- **Devices is a modal, not a tab.** The real UI has **three** tabs (Scan; Labels at `/print`;
+  Print at `/document`) plus a Devices modal opened from a header icon. Tasks/specs that said
+  "four tabs" are corrected — see tasks group 6.
+- **A `GET /config` endpoint is required.** The old server injected scan mode/resolution
+  options, defaults, the share URL, and feature flags as template placeholders; the SPA needs
+  them as JSON. Added as task 7.4; the client (`api.config()`) already degrades gracefully when
+  it is absent.

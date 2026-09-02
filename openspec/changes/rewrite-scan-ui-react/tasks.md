@@ -33,10 +33,10 @@
 
 ## 4. Print (document) tab
 
-- [ ] 4.1 File/upload input driving `POST /document/info` (page count, capabilities).
-- [ ] 4.2 Print controls: single/double-sided, page range selector; `POST /document/print`.
-- [ ] 4.3 Guided manual-duplex flow via `/document/continue` and `/document/cancel`.
-- [ ] 4.4 Queue selection from `GET /print/queues`.
+- [x] 4.1 File/upload input driving `POST /document/info` (page count, capabilities).
+- [x] 4.2 Print controls: single/double-sided, page range selector; `POST /document/print`.
+- [x] 4.3 Guided manual-duplex flow via `/document/continue` and `/document/cancel`.
+- [x] 4.4 Queue selection from `GET /print/queues`.
 
 ## 5. Labels tab
 
@@ -44,9 +44,9 @@
 - [ ] 5.2 Label template management: list/create/edit via `/templates`, delete/restore via
   `/templates/delete` and `/templates/restore`.
 
-## 6. Devices tab
+## 6. Devices modal (opened from the header icon, not a tab)
 
-- [ ] 6.1 Hardware inventory from `GET /devices/list` and Niimbot state from `GET /niimbot/state`.
+- [ ] 6.1 Devices modal: hardware inventory from `GET /devices/list` and Niimbot state from `GET /niimbot/state` (the real UI opens this from the header printer icon; there are only 3 tabs).
 - [ ] 6.2 Device actions and connect-on-demand BLE flow via `POST /devices/*`, `/niimbot/*`.
 
 ## 7. Backend: serve the SPA
@@ -56,6 +56,9 @@
 - [ ] 7.2 Add SPA fallback: unknown non-API, non-asset paths return `index.html`; keep all JSON
   endpoints and `NAME_RE` filename validation unchanged.
 - [ ] 7.3 Delete the embedded HTML/CSS/JS string block once serving `dist/` (the cutover edit).
+- [ ] 7.4 Add a `GET /config` JSON endpoint exposing what the old UI injected as template
+  placeholders: scan mode/resolution options + defaults, the SMB share URL, and feature flags
+  (print / document / devices enabled). The SPA reads it on load (`api.config()`).
 
 ## 8. Provisioning (web-ui tack role)
 
