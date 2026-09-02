@@ -7,11 +7,13 @@ export function Modal({
   open,
   onClose,
   labelledBy,
+  wide,
   children,
 }: {
   open: boolean
   onClose: () => void
   labelledBy?: string
+  wide?: boolean
   children: ReactNode
 }) {
   useEffect(() => {
@@ -38,7 +40,10 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
-        className="w-full max-w-[340px] rounded-2xl border border-border bg-surface p-5 shadow-pop [animation:mpop_0.18s_cubic-bezier(0.2,0.9,0.3,1.2)_both]"
+        className={
+          'max-h-[86vh] w-full overflow-y-auto rounded-2xl border border-border bg-surface p-5 shadow-pop [animation:mpop_0.18s_cubic-bezier(0.2,0.9,0.3,1.2)_both] ' +
+          (wide ? 'max-w-[520px]' : 'max-w-[340px]')
+        }
       >
         {children}
       </div>

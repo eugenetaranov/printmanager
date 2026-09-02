@@ -141,3 +141,92 @@ export interface DocPrintResult extends OkResult {
   token?: string
   instruction?: string
 }
+
+// --- Devices / Niimbot / templates ------------------------------------------
+
+export interface Device {
+  kind: 'printer' | 'scanner' | 'usb' | string
+  id: string
+  name: string
+  transport: 'usb' | 'bluetooth' | 'network' | 'cups' | 'sane' | string
+  status: string
+  error?: string
+  detail?: string
+}
+
+export interface NiimPrinter {
+  address: string
+  name: string
+  status: string
+  label_mm?: [number, number]
+  model: string
+  model_label?: string
+}
+
+export interface NiimCandidate {
+  name: string
+  address: string
+  rssi?: number
+}
+
+export interface NiimState extends OkResult {
+  enabled: boolean
+  adapter: boolean
+  printers: NiimPrinter[]
+  active: string | null
+  log: unknown[]
+}
+
+export interface Template {
+  id: string
+  name: string
+  cols: number
+  rows: number
+  [k: string]: unknown
+}
+
+export const devices = {
+  list: () => getJSON<{ devices: Device[] }>('/devices/list').then((d) => d.devices ?? []),
+  refresh: () => postJSON<{ ok: boolean; devices: Device[] }>('/devices/refresh', {}),
+  forget: (kind: string, id: string) => postJSON<{ ok: boolean; devices: Device[] }>('/devices/forget', { kind, id }),
+  testpage: (kind: string, id: string) => postJSON<OkResult>('/devices/testpage', { kind, id }),
+}
+
+export const niimbot = {
+  state: () => getJSON<NiimState>('/niimbot/state'),
+  scan: () => postJSON<{ ok: boolean; candidates: NiimCandidate[]; error?: string }>('/niimbot/scan', {}),
+  connect: (address: string, name?: string) => postJSON<NiimState>('/niimbot/connect', { address, name }),
+  reconnect: (address: string) => postJSON<NiimState>('/niimbot/reconnect', { address }),
+  disconnect: (address: string) => postJSON<NiimState>('/niimbot/disconnect', { address }),
+  forget: (address: string) => postJSON<NiimState>('/niimbot/forget', { address }),
+  clearlog: (address?: string) => postJSON<NiimState>('/niimbot/clearlog', { address }),
+  select: (address: string) => postJSON<NiimState>('/niimbot/select', { address }),
+  labelsize: (address: string, w: number, h: number) => postJSON<NiimState>('/niimbot/labelsize', { address, w, h }),
+  print: (body: { kind: 'text' | 'image'; text?: string; dataB64?: string; address?: string }) =>
+    postJSON<OkResult & Record<string, unknown>>('/niimbot/print', body),
+  preview: (body: { kind: 'text' | 'image'; text?: string; dataB64?: string; model: string; w_mm?: number; h_mm?: number }) =>
+    postJSON<{ ok: boolean; png: string; w?: number; h?: number; error?: string }>('/niimbot/preview', body),
+}
+
+export const templates = {
+  list: () => getJSON<{ templates: Template[] }>('/templates').then((d) => d.templates ?? []),
+  save: (tpl: Partial<Template>) => postJSON<{ ok: boolean; id?: string; templates?: Template[]; error?: string }>('/templates', tpl),
+  remove: (id: string) => postJSON<{ ok: boolean; templates?: Template[]; error?: string }>('/templates/delete', { id }),
+  restore: (id: string) => postJSON<{ ok: boolean; templates?: Template[]; error?: string }>('/templates/restore', { id }),
+}
+
+// A4 label-sheet print. `cells` maps a cell index to its content.
+export interface SheetPrintResult extends OkResult {
+  queue?: string
+  count?: number
+}
+export function printSheet(body: {
+  queue?: string
+  template: string
+  fontScale?: number
+  calX?: number
+  calY?: number
+  cells: Record<string, { mode: 'text' | 'file' | 'qr'; text?: string; dataB64?: string; filename?: string }>
+}) {
+  return postJSON<SheetPrintResult>('/print', body)
+}

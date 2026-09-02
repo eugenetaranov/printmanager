@@ -3,6 +3,7 @@ import { StatusProvider, StatusLed } from './components/status'
 import { useRoute, type TabId } from './lib/router'
 import { ScanTab } from './tabs/ScanTab'
 import { PrintTab } from './tabs/PrintTab'
+import { DevicesModal } from './components/DevicesModal'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'scan', label: 'Scan' },
@@ -20,7 +21,7 @@ export function App() {
 
 function Shell() {
   const [tab, navigate] = useRoute()
-  const [, setDevicesOpen] = useState(false)
+  const [devicesOpen, setDevicesOpen] = useState(false)
 
   return (
     <div className="mx-auto max-w-[640px] px-5 pb-24 pt-[clamp(22px,5vw,44px)]">
@@ -65,6 +66,8 @@ function Shell() {
       {tab === 'scan' && <ScanTab />}
       {tab === 'labels' && <Placeholder name="Labels" />}
       {tab === 'print' && <PrintTab />}
+
+      <DevicesModal open={devicesOpen} onClose={() => setDevicesOpen(false)} />
     </div>
   )
 }

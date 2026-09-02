@@ -46,8 +46,8 @@
 
 ## 6. Devices modal (opened from the header icon, not a tab)
 
-- [ ] 6.1 Devices modal: hardware inventory from `GET /devices/list` and Niimbot state from `GET /niimbot/state` (the real UI opens this from the header printer icon; there are only 3 tabs).
-- [ ] 6.2 Device actions and connect-on-demand BLE flow via `POST /devices/*`, `/niimbot/*`.
+- [x] 6.1 Devices modal: hardware inventory from `GET /devices/list` and Niimbot state from `GET /niimbot/state` (the real UI opens this from the header printer icon; there are only 3 tabs).
+- [x] 6.2 Device actions and connect-on-demand BLE flow via `POST /devices/*`, `/niimbot/*`.
 
 ## 7. Backend: serve the SPA
 
