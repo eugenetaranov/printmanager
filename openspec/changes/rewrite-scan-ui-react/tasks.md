@@ -80,6 +80,6 @@
 
 ## 10. Docs and cleanup
 
-- [ ] 10.1 Update `README.md` and any web-ui role docs to describe the SPA source tree, dev
+- [x] 10.1 Update `README.md` and any web-ui role docs to describe the SPA source tree, dev
   workflow (Vite proxy), and the build-on-Pi provisioning step.
 - [x] 10.2 Add `web-ui-src/` build outputs (`dist/`, `node_modules/`) to `.gitignore`.

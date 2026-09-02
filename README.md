@@ -119,8 +119,25 @@ roles/
   scan-share/        # Samba [scans] share -> /srv/scans
   scan-server/       # selectable backend: driverless eSCL, or brscan4 i386 chroot + AirSane; + OCR
   web-ui/            # scan-web app (:80): Scan / Print / Devices; Niimbot via bleak
-    files/           # plain-Python app: scan-web.py, niimbot.py
+    files/           # plain-Python server: scan-web.py (JSON API), niimbot.py
+web-ui-src/          # React + Vite + Tailwind SPA (the front-end), built on the Pi
 ```
+
+### Front-end (React SPA)
+
+The UI is a **React single-page app** (`web-ui-src/`, Vite + Tailwind v4, TypeScript).
+`scan-web.py` is the JSON API and static host: it serves the built SPA from
+`scan_web_ui_dir` when a build is present, and falls back to the embedded HTML
+otherwise — so the app keeps working before/without a build.
+
+- **Build/deploy:** the `web-ui` role installs a pinned Node.js on the target,
+  clones this repo, runs `npm ci && vite build`, and installs `dist/` where the
+  server serves it (atomic swap; a failed build never replaces a working bundle).
+  Toggle with `scan_web_spa`; pin the source with `web_ui_version`.
+- **Local dev:** `cd web-ui-src && npm install`, then
+  `VITE_API_TARGET=http://printmanager.local npm run dev` — Vite serves the SPA
+  and proxies the JSON API (`/scan`, `/recent`, `/document/*`, `/niimbot/*`, …)
+  to a running backend. `npm run build` produces `dist/`.
 
 ## Running
 
