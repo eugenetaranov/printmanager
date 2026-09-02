@@ -3,6 +3,15 @@
    workgroup = {{ .samba_workgroup }}
    server string = {{ .samba_server_string }}
    security = user
+   # Throughput: this is a LAN-only share (access is already limited by the
+   # hosts allow/deny below), so SMB signing buys little but costs CPU on the Pi
+   # and disables the zero-copy sendfile read path. Turn signing off, enable
+   # sendfile for faster reads (copying files OFF the share), and require SMB2+.
+   server signing = disabled
+   client signing = disabled
+   use sendfile = yes
+   socket options = TCP_NODELAY IPTOS_LOWDELAY
+   server min protocol = SMB2
    # macOS (Finder) interop. Expose AppleDouble metadata and resource forks as
    # xattr streams so Finder/ditto can read a file's metadata stream. Without
    # this, copying a file OFF the share fails with EBADF — surfaced by Finder as
