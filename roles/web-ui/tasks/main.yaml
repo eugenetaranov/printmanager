@@ -92,6 +92,24 @@
     - tsconfig.node.json
   when: scan_web_enabled and scan_web_spa
 
+# Older deploys git-cloned the whole repo into web_ui_build_dir, leaving a stale
+# .git (and repo files) behind. Since the SPA is now built from uploaded files
+# (no checkout), `git describe` during the build walked up into that stale .git
+# and reported a wrong, always-"-dirty" commit. Remove the leftovers so the build
+# dir holds only the uploaded source and the version resolves cleanly to 'dev'.
+# A plain rm (under the play's sudo) rather than file:absent or a `removes`
+# guard: the build-dir leftovers are root-owned, and tack's remote existence
+# check runs as the login user and misreports them absent — which would skip the
+# cleanup. An unguarded `rm -rf` is idempotent (harmless when already gone), so
+# it always runs and reliably clears the stale clone. chdir scopes it to the
+# build dir. Once cleared, `git describe` in the build finds no repo → 'dev'.
+- name: Remove the stale git clone left in the build dir
+  command:
+    cmd: "rm -rf .git roles docs openspec site.yaml README.md .gitignore"
+    chdir: "{{ web_ui_build_dir }}"
+    changed_when: "false"
+  when: scan_web_enabled and scan_web_spa
+
 - name: Install the SPA build script
   template:
     src: build-webui.sh.j2

@@ -4,9 +4,10 @@ import { execSync } from 'node:child_process'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-// Baked in at build time (the Pi builds from a fresh git clone, so this reflects
-// the deployed commit). Shows the tag when HEAD is on one, else a short hash;
-// falls back to 'dev' outside a git checkout.
+// Baked in at build time. Shows the tag when HEAD is on one, else a short hash;
+// falls back to 'dev' outside a git checkout. The Pi builds from uploaded files
+// (no checkout there), so a deployed build reports 'dev'; a local `npm run build`
+// reports the real commit.
 function gitVersion(): string {
   try {
     return execSync('git describe --tags --always --dirty', {

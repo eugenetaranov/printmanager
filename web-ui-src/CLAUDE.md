@@ -20,6 +20,11 @@ and say why — don't silently diverge.
   are uploaded.
 - Always `npm run build` (`tsc -b && vite build`) before committing UI changes — the Pi
   build is strict and a type error there means a failed deploy.
+- **Build version (the `Build:` footer).** `vite.config.ts` bakes `git describe` into
+  `__APP_VERSION__` at build time. The Pi builds from uploaded files (no git checkout), so a
+  **deployed** build shows `dev`; a local `npm run build` shows the real commit. (The web-ui role
+  removes the stale git clone older deploys left in the build dir — otherwise `git describe` there
+  walked into it and reported a wrong, always-`-dirty` commit.)
 
 ## Theming — DaisyUI, not raw colors
 
