@@ -251,17 +251,17 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                   <td className="whitespace-nowrap font-mono text-xs tabular-nums text-base-content/45">{ago(s.mtime)}</td>
                   <td>
                     <div className="flex justify-end gap-[2px] whitespace-nowrap">
-                      <a className="btn btn-ghost btn-xs btn-square" href={api.fileUrl(s.name)} download title="Download" aria-label="Download">
+                      <a className="tooltip tooltip-left btn btn-ghost btn-xs btn-square" href={api.fileUrl(s.name)} download data-tip="Download" aria-label="Download">
                         <IconDownload />
                       </a>
-                      <button type="button" onClick={() => setRenaming(s.name)} className="btn btn-ghost btn-xs btn-square" title="Rename" aria-label="Rename">
+                      <button type="button" onClick={() => setRenaming(s.name)} className="tooltip tooltip-left btn btn-ghost btn-xs btn-square" data-tip="Rename" aria-label="Rename">
                         <IconRename />
                       </button>
                       <button
                         type="button"
                         onClick={() => onRemove(s.name)}
-                        className={'btn btn-xs btn-square ' + (removeArmed === s.name ? 'btn-error' : 'btn-ghost')}
-                        title={removeArmed === s.name ? 'Click again to delete' : 'Remove'}
+                        className={'tooltip tooltip-left btn btn-xs btn-square ' + (removeArmed === s.name ? 'btn-error' : 'btn-ghost')}
+                        data-tip={removeArmed === s.name ? 'Click again to delete' : 'Remove'}
                         aria-label="Remove"
                       >
                         <IconRemove />

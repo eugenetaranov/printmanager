@@ -101,8 +101,8 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
       <div className="mb-4 flex items-center justify-between">
         <h3 id="devTitle" className="m-0 text-[15px] font-[640]">Devices</h3>
         <div className="flex gap-2">
-          <button type="button" onClick={refresh} disabled={busy} className="btn btn-outline btn-xs font-mono">Refresh</button>
-          <button type="button" onClick={onClose} aria-label="Close" className="btn btn-ghost btn-xs btn-square">✕</button>
+          <IconBtn title="Refresh devices" onClick={refresh} disabled={busy}><Icon.refresh /></IconBtn>
+          <IconBtn title="Close" onClick={onClose}><Icon.close /></IconBtn>
         </div>
       </div>
 
@@ -134,9 +134,9 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
       <div className="mt-4">
         <div className="mb-1 flex items-center justify-between">
           <span className="font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-base-content/45">Label printers (Niimbot)</span>
-          <button type="button" onClick={scan} disabled={scanning} className="btn btn-outline btn-xs font-mono">
-            {scanning ? 'Scanning…' : 'Scan for printers'}
-          </button>
+          <IconBtn title="Scan for Bluetooth printers" onClick={scan} disabled={scanning}>
+            {scanning ? <span className="loading loading-spinner loading-xs" /> : <Icon.search />}
+          </IconBtn>
         </div>
         {showAdapterWarn && <p className="mb-2 font-mono text-[11px] text-warning">No Bluetooth adapter detected.</p>}
         {printers.length === 0 && <p className="text-sm text-base-content/60">No Niimbot printers yet. Tap “Scan for printers”.</p>}
@@ -219,15 +219,16 @@ function MiniBtn({ children, onClick, primary, active }: { children: React.React
   )
 }
 
-// Square icon button with a native-title tooltip — keeps the device rows compact.
-function IconBtn({ title, onClick, variant, children }: { title: string; onClick: () => void; variant?: 'primary' | 'active'; children: React.ReactNode }) {
+// Square icon button with a hover tooltip — keeps the device rows compact.
+function IconBtn({ title, onClick, variant, disabled, children }: { title: string; onClick: () => void; variant?: 'primary' | 'active'; disabled?: boolean; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      title={title}
+      disabled={disabled}
+      data-tip={title}
       aria-label={title}
-      className={'btn btn-square btn-sm ' + (variant === 'primary' ? 'btn-primary' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
+      className={'tooltip tooltip-bottom btn btn-square btn-sm ' + (variant === 'primary' ? 'btn-primary' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
     >
       {children}
     </button>
@@ -245,6 +246,9 @@ const Icon = {
   log: svg(<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />),
   forget: svg(<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />),
   connect: svg(<path d="M12 5v14M5 12h14" />),
+  refresh: svg(<><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></>),
+  search: svg(<><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></>),
+  close: svg(<path d="M6 6 18 18M18 6 6 18" />),
 }
 
 function SizeEditor({ w, h, onSave, onCancel }: { w: number; h: number; onSave: (w: number, h: number) => void; onCancel: () => void }) {
