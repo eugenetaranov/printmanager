@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { devices as devApi, niimbot as nb, templates as tplApi, type Device, type NiimState, type Template } from '../api/client'
+import { api, niimbot as nb, templates as tplApi, type NiimState, type Template } from '../api/client'
 import { useNote, Note } from '../components/Note'
 import { Modal } from '../components/Modal'
 import { NiimbotComposer } from '../components/NiimbotComposer'
@@ -12,7 +12,7 @@ const STORE_KEY = 'pm_format'
 export function LabelsTab() {
   const { note, ok, err, info } = useNote()
   const [templates, setTemplates] = useState<Template[]>([])
-  const [devs, setDevs] = useState<Device[]>([])
+  const [queues, setQueues] = useState<string[]>([])
   const [state, setState] = useState<NiimState | null>(null)
   const [formatV, setFormatV] = useState('')
   const [manageOpen, setManageOpen] = useState(false)
@@ -22,14 +22,17 @@ export function LabelsTab() {
   const loadTemplates = () => tplApi.list().then(setTemplates).catch(() => {})
 
   useEffect(() => {
+    // Only the cached CUPS queue list and remembered Niimbots are needed here,
+    // so avoid the full device inventory (uncached lpstat + cold scanimage -L)
+    // and the BLE adapter probe — both add seconds and neither is shown on this tab.
     Promise.allSettled([
       tplApi.list().then(setTemplates),
-      devApi.list().then(setDevs),
-      nb.state().then(setState),
+      api.queues().then((r) => setQueues(r.queues.map((q) => q.queue))),
+      nb.state(false).then(setState),
     ]).then(() => setLoaded(true))
   }, [])
 
-  const opts = useMemo(() => formatOptions(templates, state?.printers ?? [], devs), [templates, state, devs])
+  const opts = useMemo(() => formatOptions(templates, state?.printers ?? [], queues), [templates, state, queues])
 
   // Pick persisted format or the first available, once options are known.
   useEffect(() => {

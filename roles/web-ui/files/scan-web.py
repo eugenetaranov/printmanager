@@ -1533,7 +1533,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"ok": False, "error": str(e)})
 
     def do_GET(self):
-        path = urllib.parse.urlparse(self.path).path
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
         # --- JSON API (GET) ---
         if path == "/recent":
             self._json(200, {"scans": list_scans()})
@@ -1542,8 +1543,12 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/devices/list":
             self._json(200, {"devices": inventory()})
         elif path == "/niimbot/state":
+            # `?adapter=0` skips the BLE adapter probe (a ~seconds-long
+            # BleakScanner.discover) for callers that only need the remembered
+            # printer list — e.g. the Labels tab, which never shows the badge.
+            with_adapter = urllib.parse.parse_qs(parsed.query).get("adapter", ["1"])[0] != "0"
             try:
-                self._json(200, dict(niimbot_state(), ok=True))
+                self._json(200, dict(niimbot_state(with_adapter=with_adapter), ok=True))
             except Exception as e:
                 self._json(200, {"ok": False, "enabled": DEVICES_ENABLED, "error": str(e),
                                  "printers": [], "active": None, "adapter": False})

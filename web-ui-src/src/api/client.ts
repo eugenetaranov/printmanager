@@ -202,7 +202,9 @@ export const devices = {
 }
 
 export const niimbot = {
-  state: () => getJSON<NiimState>('/niimbot/state'),
+  // Pass `withAdapter=false` to skip the BLE adapter probe (~seconds) when the
+  // caller only needs the remembered-printer list, not the adapter badge.
+  state: (withAdapter = true) => getJSON<NiimState>(withAdapter ? '/niimbot/state' : '/niimbot/state?adapter=0'),
   scan: () => postJSON<{ ok: boolean; candidates: NiimCandidate[]; error?: string }>('/niimbot/scan', {}),
   connect: (address: string, name?: string) => postJSON<NiimState>('/niimbot/connect', { address, name }),
   reconnect: (address: string) => postJSON<NiimState>('/niimbot/reconnect', { address }),
