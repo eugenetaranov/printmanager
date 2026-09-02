@@ -102,6 +102,8 @@ export const api = {
 
   undo: (token: string) => postJSON<OkResult>('/undo', { token }),
 
+  printScan: (name: string) => postJSON<OkResult & { queue?: string; job?: string }>('/print/scan', { name }),
+
   fileUrl: (name: string) => `/file/${encodeURIComponent(name)}`,
   thumbUrl: (name: string) => `/thumb/${encodeURIComponent(name)}`,
 

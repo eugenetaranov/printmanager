@@ -40,6 +40,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
   const [renaming, setRenaming] = useState<string>('')
   const [removeArmed, setRemoveArmed] = useState<string>('')
   const [clearArmed, setClearArmed] = useState(false)
+  const [printing, setPrinting] = useState<string>('')
   const [preview, setPreview] = useState<{ src: string; x: number; y: number } | null>(null)
 
   // Merge modal state.
@@ -93,6 +94,19 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
         load()
       })
       .catch(() => {})
+  }
+
+  // --- print a stored scan to the default queue ---
+  const onPrint = (name: string) => {
+    if (printing) return
+    setPrinting(name)
+    api.printScan(name)
+      .then((r) => {
+        if (r.ok) push(`Printed ${name}${r.queue ? ` → ${r.queue}` : ''}`)
+        else onNote('err', r.error || 'Print failed.')
+      })
+      .catch(() => onNote('err', 'Could not reach the print service.'))
+      .finally(() => setPrinting(''))
   }
 
   // --- clear all (two-click arm/confirm) ---
@@ -189,7 +203,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             <col className="w-[52px]" />
             <col className="w-[66px]" />
             <col className="w-[74px]" />
-            <col className="w-[104px]" />
+            <col className="w-[136px]" />
           </colgroup>
           <thead>
             <tr className="[&>th]:border-b [&>th]:border-base-300 [&>th]:px-[10px] [&>th]:pb-2 [&>th]:text-left [&>th]:font-mono [&>th]:text-[11px] [&>th]:font-[600] [&>th]:uppercase [&>th]:tracking-[0.04em] [&>th]:text-base-content/45">
@@ -283,6 +297,9 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                   <td className="whitespace-nowrap font-mono text-xs tabular-nums text-base-content/45">{ago(s.mtime)}</td>
                   <td>
                     <div className="flex justify-end gap-[2px] whitespace-nowrap">
+                      <button type="button" onClick={() => onPrint(s.name)} disabled={printing === s.name} className="btn btn-ghost btn-xs btn-square" title="Print" aria-label="Print">
+                        {printing === s.name ? <span className="loading loading-spinner loading-xs" /> : <IconPrint />}
+                      </button>
                       <a className="btn btn-ghost btn-xs btn-square" href={api.fileUrl(s.name)} download title="Download" aria-label="Download">
                         <IconDownload />
                       </a>
@@ -409,6 +426,11 @@ function RenameField({ name, onCommit, onDone }: { name: string; onCommit: (to: 
   )
 }
 
+function IconPrint() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7" /><path d="M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" rx="1" /></svg>
+  )
+}
 function IconDownload() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><path d="m7 12 5 5 5-5" /><path d="M4 21h16" /></svg>

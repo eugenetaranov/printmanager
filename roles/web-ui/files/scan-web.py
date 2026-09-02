@@ -556,6 +556,18 @@ def clear_scans():
     return len(items), token
 
 
+def print_scan(name):
+    """Submit a stored scan straight to the default print queue (single-sided)."""
+    if not PRINT_ENABLED:
+        raise RuntimeError("Printing is disabled")
+    if not (NAME_RE.fullmatch(name) and name.lower().endswith(".pdf")):
+        raise ValueError("bad name")
+    path = os.path.join(SCAN_DIR, name)
+    if not os.path.isfile(path):
+        raise ValueError("not found")
+    return {"queue": PRINT_QUEUE, "job": _submit_lp(path, PRINT_QUEUE)}
+
+
 def run_scan(mode, resolution, name=""):
     if mode not in MODE_VALUES:
         mode = DEF_MODE
@@ -1603,6 +1615,14 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 undo_op(token)
                 return self._json(200, {"ok": True})
+            except Exception as e:
+                return self._json(200, {"ok": False, "error": str(e)})
+        if path == "/print/scan":
+            try:
+                res = print_scan(self._json_body().get("name", ""))
+                return self._json(200, dict(res, ok=True))
+            except subprocess.TimeoutExpired:
+                return self._json(200, {"ok": False, "error": "The printer did not respond in time."})
             except Exception as e:
                 return self._json(200, {"ok": False, "error": str(e)})
         if path == "/templates":
