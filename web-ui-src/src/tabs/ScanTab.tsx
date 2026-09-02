@@ -101,7 +101,7 @@ export function ScanTab() {
           />
         </label>
 
-        <div>
+        <div className="mt-4">
           <div className="mb-[6px] flex items-baseline justify-between">
             <label htmlFor="scanCap" className="field-label">
               Max size <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
