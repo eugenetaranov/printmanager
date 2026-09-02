@@ -45,6 +45,8 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
   // Merge modal state.
   const [mergeOpen, setMergeOpen] = useState(false)
   const [mergeName, setMergeName] = useState('')
+  const [mergeCap, setMergeCap] = useState('')
+  const [mergeError, setMergeError] = useState('')
   const [mergeBusy, setMergeBusy] = useState(false)
   const mergeNames = useRef<string[]>([])
 
@@ -117,30 +119,35 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
     if (selected.length < 2) return
     mergeNames.current = selected.slice()
     setMergeName('')
+    setMergeCap('')
+    setMergeError('')
     setMergeBusy(false)
     setMergeOpen(true)
   }
   const doMerge = () => {
     if (mergeBusy || mergeNames.current.length < 2) return
     setMergeBusy(true)
+    setMergeError('')
     const n = mergeNames.current.length
-    api.merge(mergeNames.current, mergeName.trim())
+    const cap = parseFloat(mergeCap)
+    api.merge(mergeNames.current, mergeName.trim(), cap > 0 ? cap : undefined)
       .then((d) => {
-        setMergeOpen(false)
         setMergeBusy(false)
         if (d.ok && d.file) {
+          setMergeOpen(false)
           const tok = d.undo
-          push(`Merged ${n} scans → ${d.file}`, tok ? async () => { await api.undo(tok); load() } : undefined)
+          const mb = d.size ? ` (${(d.size / 1048576).toFixed(1)} MB)` : ''
+          push(`Merged ${n} scans → ${d.file}${mb}`, tok ? async () => { await api.undo(tok); load() } : undefined)
           setSelected([])
           load(d.file)
         } else {
-          onNote('err', d.error || 'Merge failed.')
+          // Keep the modal open so the user can raise the cap and retry.
+          setMergeError(d.error || 'Merge failed.')
         }
       })
       .catch(() => {
-        setMergeOpen(false)
         setMergeBusy(false)
-        onNote('err', 'Could not reach the merge service.')
+        setMergeError('Could not reach the merge service.')
       })
   }
 
@@ -340,6 +347,25 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
           placeholder="auto: merged-YYYYMMDD-HHMMSS"
           className="input w-full font-mono"
         />
+
+        <label htmlFor="mergeCap" className="mb-[6px] mt-4 block font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
+          Max size (MB) <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
+        </label>
+        <input
+          id="mergeCap"
+          type="number"
+          min={0.1}
+          step={0.5}
+          inputMode="decimal"
+          value={mergeCap}
+          onChange={(e) => setMergeCap(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); doMerge() } }}
+          placeholder="e.g. 2 — compress to fit"
+          className="input w-full font-mono"
+        />
+
+        {mergeError && <p className="mt-3 font-mono text-[12px] text-error">{mergeError}</p>}
+
         <div className="mt-[18px] flex justify-end gap-2">
           <button type="button" onClick={() => { if (!mergeBusy) setMergeOpen(false) }} className="btn btn-ghost btn-sm">Cancel</button>
           <button type="button" onClick={doMerge} disabled={mergeBusy} className="btn btn-primary btn-sm">

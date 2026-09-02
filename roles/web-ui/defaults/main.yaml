@@ -19,6 +19,7 @@ web_packages:
   - python3-pil
   - python3-yaml
   - poppler-utils
+  - ghostscript          # compress merged PDFs to a target size cap
   - cups-client
   - usbutils
   - bluez

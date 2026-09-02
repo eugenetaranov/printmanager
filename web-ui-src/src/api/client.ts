@@ -28,6 +28,7 @@ export interface RenameResult extends OkResult {
 export interface MergeResult extends OkResult {
   file?: string
   undo?: string | null
+  size?: number
 }
 
 export interface AppConfig {
@@ -96,7 +97,8 @@ export const api = {
 
   clear: () => postJSON<{ ok: boolean; removed: number; undo?: string | null }>('/clear'),
 
-  merge: (names: string[], to: string) => postJSON<MergeResult>('/merge', { names, to }),
+  merge: (names: string[], to: string, maxMb?: number) =>
+    postJSON<MergeResult>('/merge', { names, to, max_mb: maxMb || 0 }),
 
   undo: (token: string) => postJSON<OkResult>('/undo', { token }),
 

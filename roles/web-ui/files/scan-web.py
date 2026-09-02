@@ -471,8 +471,45 @@ def rename_scan(name, newbase):
     return newbase + ".pdf", None
 
 
-def merge_scans(names, newbase):
-    # Concatenate the given scans (in the order supplied) into a single PDF.
+def _gs_compress(src, dst, preset, dpi):
+    """Re-write a PDF through Ghostscript, downsampling images to `dpi`."""
+    subprocess.run(
+        ["gs", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.5",
+         "-dNOPAUSE", "-dBATCH", "-dQUIET", "-dPDFSETTINGS=" + preset,
+         "-dDetectDuplicateImages=true",
+         "-dDownsampleColorImages=true", "-dColorImageResolution=%d" % dpi,
+         "-dDownsampleGrayImages=true", "-dGrayImageResolution=%d" % dpi,
+         "-dDownsampleMonoImages=true", "-dMonoImageResolution=%d" % max(dpi, 300),
+         "-sOutputFile=" + dst, src],
+        check=True, timeout=180)
+
+
+def _compress_to_cap(pdf, tmp, cap_bytes):
+    """Downsample `pdf` toward `cap_bytes`; return the smallest PDF produced
+    (which may still exceed the cap if the images can't shrink enough)."""
+    if os.path.getsize(pdf) <= cap_bytes:
+        return pdf
+    if not shutil.which("gs"):
+        raise RuntimeError("Size cap needs Ghostscript, which isn't installed.")
+    best = pdf
+    # Progressively more aggressive: preset + image DPI.
+    for i, (preset, dpi) in enumerate(
+            (("/ebook", 150), ("/ebook", 110), ("/screen", 72), ("/screen", 50))):
+        out = os.path.join(tmp, "c%d.pdf" % i)
+        try:
+            _gs_compress(pdf, out, preset, dpi)
+        except Exception:
+            continue
+        if os.path.getsize(out) < os.path.getsize(best):
+            best = out
+        if os.path.getsize(out) <= cap_bytes:
+            return out
+    return best
+
+
+def merge_scans(names, newbase, max_mb=0):
+    # Concatenate the given scans (in the order supplied) into a single PDF,
+    # optionally compressed to fit under `max_mb`.
     # Raises ValueError / CalledProcessError / TimeoutExpired for the route to catch.
     srcs = []
     for n in names:
@@ -492,7 +529,15 @@ def merge_scans(names, newbase):
     try:
         out = os.path.join(tmp, base + ".pdf")
         subprocess.run(["pdfunite"] + srcs + [out], check=True, timeout=120)
-        shutil.move(out, dst)          # result now safely in SCAN_DIR
+        final = out
+        if max_mb and max_mb > 0:
+            cap = int(max_mb * 1024 * 1024)
+            if os.path.getsize(out) > cap:
+                final = _compress_to_cap(out, tmp, cap)
+                if os.path.getsize(final) > cap:
+                    raise ValueError("Couldn't get under %g MB — smallest was %.1f MB. Try a higher cap."
+                                     % (max_mb, os.path.getsize(final) / 1048576.0))
+        shutil.move(final, dst)        # move the final result out of tmp
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     # Trash the sources (only after a successful merge) so the merge is undoable.
@@ -1542,8 +1587,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/merge":
             obj = self._json_body()
             try:
-                f, undo = merge_scans(obj.get("names") or [], obj.get("to", ""))
-                return self._json(200, {"ok": True, "file": f, "undo": undo})
+                max_mb = float(obj.get("max_mb") or 0)
+            except (TypeError, ValueError):
+                max_mb = 0
+            try:
+                f, undo = merge_scans(obj.get("names") or [], obj.get("to", ""), max_mb)
+                size = os.path.getsize(os.path.join(SCAN_DIR, f))
+                return self._json(200, {"ok": True, "file": f, "undo": undo, "size": size})
             except subprocess.TimeoutExpired:
                 return self._json(200, {"ok": False, "error": "Merge timed out."})
             except Exception as e:
