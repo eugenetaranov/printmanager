@@ -244,9 +244,9 @@ function IconBtn({ title, onClick, variant, disabled, children }: { title: strin
       type="button"
       onClick={onClick}
       disabled={disabled}
-      data-tip={title}
+      title={title}
       aria-label={title}
-      className={'tooltip tooltip-left btn btn-square btn-sm ' + (variant === 'primary' ? 'btn-primary' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
+      className={'btn btn-square btn-sm ' + (variant === 'primary' ? 'btn-primary' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
     >
       {children}
     </button>
