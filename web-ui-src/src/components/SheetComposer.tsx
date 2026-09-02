@@ -103,7 +103,7 @@ export function SheetComposer({
   return (
     <div>
       <div className="mb-2 flex items-baseline justify-between">
-        <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">
+        <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
           {sel.size ? `${sel.size} cell${sel.size === 1 ? '' : 's'} selected` : 'Tap cells to place your label'}
         </span>
         <span className="flex gap-1">
@@ -113,7 +113,7 @@ export function SheetComposer({
       </div>
 
       <div className="mx-auto max-w-[280px]">
-        <svg viewBox={`0 0 ${g.page_w} ${g.page_h}`} className="w-full rounded-lg border border-border bg-white" role="group" aria-label="Label sheet">
+        <svg viewBox={`0 0 ${g.page_w} ${g.page_h}`} className="w-full rounded-lg border border-base-300 bg-white" role="group" aria-label="Label sheet">
           {Array.from({ length: n }, (_, i) => {
             const { x, y } = cellXY(i)
             const isSel = sel.has(i)
@@ -121,8 +121,8 @@ export function SheetComposer({
             return (
               <g key={i} onClick={() => toggle(i)} style={{ cursor: 'pointer' }}>
                 <rect x={x} y={y} width={g.cell_w} height={g.cell_h} rx={1.5}
-                  fill={isSel ? 'var(--accent-weak)' : cc ? '#fff' : '#fafafa'}
-                  stroke={isSel ? 'var(--accent)' : '#d8d8d2'} strokeWidth={isSel ? 0.7 : 0.3} />
+                  fill={isSel ? 'color-mix(in oklch, var(--color-primary) 15%, transparent)' : cc ? '#fff' : '#fafafa'}
+                  stroke={isSel ? 'var(--color-primary)' : '#d8d8d2'} strokeWidth={isSel ? 0.7 : 0.3} />
                 {cc?.mode === 'file' && (
                   <image href={cc.dataUrl} x={x + 1} y={y + 1} width={g.cell_w - 2} height={g.cell_h - 2} preserveAspectRatio="xMidYMid meet" />
                 )}
@@ -153,7 +153,7 @@ export function SheetComposer({
           <div>
             <input type="file" accept="image/*,application/pdf" className="text-[13px]"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) readImageB64(f).then(({ b64, dataUrl }) => setImg({ b64, url: dataUrl, name: f.name })) }} />
-            {img && <div className="mt-2"><img src={img.url} alt="" className="max-h-24 rounded border border-border" /></div>}
+            {img && <div className="mt-2"><img src={img.url} alt="" className="max-h-24 rounded border border-base-300" /></div>}
           </div>
         )}
       </div>
@@ -163,12 +163,12 @@ export function SheetComposer({
         <button type="button" onClick={erase} disabled={sel.size === 0} className="btn btn-ghost">Erase</button>
       </div>
 
-      <hr className="my-4 border-t border-border" />
+      <hr className="my-4 border-t border-base-300" />
       <button type="button" onClick={print} disabled={!filled || printing} className="btn btn-primary btn-block btn-lg">
         {printing ? 'Printing…' : `Print sheet${filled ? ` (${filled})` : ''}`}
       </button>
       {filled > 0 && (
-        <button type="button" onClick={clearSheet} className="btn btn-ghost btn-sm mt-2 w-full font-mono text-faint hover:text-error">
+        <button type="button" onClick={clearSheet} className="btn btn-ghost btn-sm mt-2 w-full font-mono text-base-content/45 hover:text-error">
           {clearArmed ? 'Click again to clear' : 'Clear sheet'}
         </button>
       )}

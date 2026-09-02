@@ -19,7 +19,7 @@ export function useNote() {
 
 export function Note({ note }: { note: NoteState }) {
   if (!note.content) return null
-  const color = note.kind === 'ok' ? 'text-accent' : note.kind === 'err' ? 'text-danger' : 'text-muted'
+  const color = note.kind === 'ok' ? 'text-primary' : note.kind === 'err' ? 'text-error' : 'text-base-content/60'
   return (
     <p aria-live="polite" className={`mt-3 font-mono text-[13px] ${color}`}>
       {note.content}

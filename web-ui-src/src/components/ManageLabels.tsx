@@ -62,18 +62,18 @@ export function ManageLabels({
       {draft ? (
         <div>
           <label className="mb-3 flex flex-col gap-[6px]">
-            <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">Name</span>
+            <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Name</span>
             <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="input w-full font-mono" />
           </label>
           <div className="grid grid-cols-2 gap-3">
             {FIELDS.map((f) => (
               <label key={f.key} className="flex flex-col gap-[4px]">
-                <span className="font-mono text-[10px] uppercase tracking-[0.04em] text-faint">{f.label}</span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.04em] text-base-content/45">{f.label}</span>
                 <input type="number" step={f.step ?? 1} value={draft.vals[f.key]} onChange={(e) => setDraft({ ...draft, vals: { ...draft.vals, [f.key]: e.target.value } })} className="input input-sm w-full font-mono" />
               </label>
             ))}
           </div>
-          {err && <p className="mt-2 font-mono text-[12px] text-danger">{err}</p>}
+          {err && <p className="mt-2 font-mono text-[12px] text-error">{err}</p>}
           <div className="mt-4 flex justify-end gap-2">
             <button type="button" onClick={() => setDraft(null)} className="btn btn-ghost btn-sm">Cancel</button>
             <button type="button" onClick={save} disabled={!draft.name.trim()} className="btn btn-primary btn-sm">Save</button>
@@ -82,10 +82,10 @@ export function ManageLabels({
       ) : (
         <div>
           {templates.map((t) => (
-            <div key={t.id} className="flex items-center gap-2 border-b border-border py-2 last:border-0">
+            <div key={t.id} className="flex items-center gap-2 border-b border-base-300 py-2 last:border-0">
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[13px]">{t.name}</div>
-                <div className="font-mono text-[11px] text-faint">{t.cols}×{t.rows} · {Math.round(Number(t.cell_w))}×{Math.round(Number(t.cell_h))} mm{t.builtin ? ' · built-in' : ''}</div>
+                <div className="font-mono text-[11px] text-base-content/45">{t.cols}×{t.rows} · {Math.round(Number(t.cell_w))}×{Math.round(Number(t.cell_h))} mm{t.builtin ? ' · built-in' : ''}</div>
               </div>
               <button type="button" onClick={() => setDraft(draftFrom(t))} className="btn btn-ghost btn-sm">Edit</button>
               <button type="button" onClick={() => remove(t.id)} className={'btn btn-sm ' + (armed === t.id ? 'btn-error' : 'btn-ghost')}>{armed === t.id ? 'Confirm' : 'Delete'}</button>

@@ -11,7 +11,7 @@ const GROUPS: { kind: string; label: string }[] = [
 ]
 
 function Dot({ status }: { status: string }) {
-  const cls = status === 'error' ? 'bg-danger' : status === 'connected' ? 'bg-accent' : 'bg-warn'
+  const cls = status === 'error' ? 'bg-error' : status === 'connected' ? 'bg-primary' : 'bg-warn'
   return <span className={'h-[7px] w-[7px] flex-none rounded-full ' + cls} />
 }
 
@@ -112,13 +112,13 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
         if (!rows.length) return null
         return (
           <div key={g.kind} className="mb-3">
-            <div className="mb-1 font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-faint">{g.label}</div>
+            <div className="mb-1 font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-base-content/45">{g.label}</div>
             {rows.map((d) => (
-              <div key={d.kind + d.id + d.name} className="flex items-center gap-2 border-b border-border py-2 last:border-0">
+              <div key={d.kind + d.id + d.name} className="flex items-center gap-2 border-b border-base-300 py-2 last:border-0">
                 <Dot status={d.status} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px]">{d.name}</div>
-                  <div className={'truncate font-mono text-[11px] ' + (d.error ? 'text-danger' : 'text-faint')}>{d.error || d.detail || d.status}</div>
+                  <div className={'truncate font-mono text-[11px] ' + (d.error ? 'text-error' : 'text-base-content/45')}>{d.error || d.detail || d.status}</div>
                 </div>
                 {d.kind === 'printer' && d.id && (
                   <button type="button" onClick={() => testDevice(d)} className="btn btn-ghost btn-xs font-mono">Test</button>
@@ -128,18 +128,18 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
           </div>
         )
       })}
-      {!anyInv && <p className="text-sm text-muted">No devices found.</p>}
+      {!anyInv && <p className="text-sm text-base-content/60">No devices found.</p>}
 
       {/* Niimbot printers */}
       <div className="mt-4">
         <div className="mb-1 flex items-center justify-between">
-          <span className="font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-faint">Label printers (Niimbot)</span>
+          <span className="font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-base-content/45">Label printers (Niimbot)</span>
           <button type="button" onClick={scan} disabled={scanning} className="btn btn-outline btn-xs font-mono">
             {scanning ? 'Scanning…' : 'Scan for printers'}
           </button>
         </div>
         {showAdapterWarn && <p className="mb-2 font-mono text-[11px] text-warn">No Bluetooth adapter detected.</p>}
-        {printers.length === 0 && <p className="text-sm text-muted">No Niimbot printers yet. Tap “Scan for printers”.</p>}
+        {printers.length === 0 && <p className="text-sm text-base-content/60">No Niimbot printers yet. Tap “Scan for printers”.</p>}
 
         {printers.map((p) => {
           const conn = p.status === 'connected'
@@ -147,13 +147,13 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
           const stTxt = ds && ds.msg ? ds.msg : conn ? 'Connected' : 'Disconnected'
           const mm = p.label_mm || [12, 40]
           return (
-            <div key={p.address} className="border-b border-border py-2 last:border-0">
+            <div key={p.address} className="border-b border-base-300 py-2 last:border-0">
               <div className="flex items-center gap-2">
                 <Dot status={p.status} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px]">{p.model_label || p.model}</div>
-                  <div className="truncate font-mono text-[11px] text-faint">
-                    {p.name} · <span className={ds?.cls === 'err' ? 'text-danger' : ds?.cls === 'ok' ? 'text-accent' : ''}>{stTxt}</span>
+                  <div className="truncate font-mono text-[11px] text-base-content/45">
+                    {p.name} · <span className={ds?.cls === 'err' ? 'text-error' : ds?.cls === 'ok' ? 'text-primary' : ''}>{stTxt}</span>
                     {p.label_mm ? ` · ${p.label_mm[0]}×${p.label_mm[1]} mm` : ''}
                   </div>
                 </div>
@@ -173,10 +173,10 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
               </div>
               {editSize === p.address && <SizeEditor w={mm[0]} h={mm[1]} onSave={(w, h) => saveSize(p, w, h)} onCancel={() => setEditSize('')} />}
               {logAddr === p.address && (
-                <div className="mt-2 max-h-40 overflow-y-auto rounded-md bg-bg p-2 font-mono text-[11px] text-muted">
+                <div className="mt-2 max-h-40 overflow-y-auto rounded-md bg-base-200 p-2 font-mono text-[11px] text-base-content/60">
                   {log.length === 0 ? 'No log yet.' : log.map((l, i) => <div key={i}>{typeof l === 'string' ? l : JSON.stringify(l)}</div>)}
                   <div className="mt-1 text-right">
-                    <button type="button" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})} className="btn btn-link btn-xs h-auto min-h-0 p-0 text-faint hover:text-error">clear</button>
+                    <button type="button" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})} className="btn btn-link btn-xs h-auto min-h-0 p-0 text-base-content/45 hover:text-error">clear</button>
                   </div>
                 </div>
               )}
@@ -187,13 +187,13 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
         {/* Scan candidates */}
         {candidates.length > 0 && (
           <div className="mt-3">
-            <div className="mb-1 font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-faint">Found</div>
+            <div className="mb-1 font-mono text-[10px] font-[700] uppercase tracking-[0.06em] text-base-content/45">Found</div>
             {candidates.map((c) => (
-              <div key={c.address} className="flex items-center gap-2 border-b border-border py-2 last:border-0">
+              <div key={c.address} className="flex items-center gap-2 border-b border-base-300 py-2 last:border-0">
                 <span className="h-[7px] w-[7px] flex-none rounded-full bg-warn" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px]">{c.name}</div>
-                  <div className="truncate font-mono text-[11px] text-faint">{c.address}{c.rssi != null ? ` · ${c.rssi} dBm` : ''}</div>
+                  <div className="truncate font-mono text-[11px] text-base-content/45">{c.address}{c.rssi != null ? ` · ${c.rssi} dBm` : ''}</div>
                 </div>
                 <MiniBtn primary onClick={() => connect(c)}>Connect</MiniBtn>
               </div>
@@ -202,7 +202,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
         )}
       </div>
 
-      {note && <p className={'mt-3 font-mono text-[12px] ' + (note.cls === 'err' ? 'text-danger' : note.cls === 'ok' ? 'text-accent' : 'text-muted')}>{note.msg}</p>}
+      {note && <p className={'mt-3 font-mono text-[12px] ' + (note.cls === 'err' ? 'text-error' : note.cls === 'ok' ? 'text-primary' : 'text-base-content/60')}>{note.msg}</p>}
     </Modal>
   )
 }
@@ -223,12 +223,12 @@ function SizeEditor({ w, h, onSave, onCancel }: { w: number; h: number; onSave: 
   const [ww, setWw] = useState(String(w))
   const [hh, setHh] = useState(String(h))
   return (
-    <div className="mt-2 flex items-center gap-2 rounded-md bg-bg p-2">
-      <span className="font-mono text-[11px] text-faint">Roll size</span>
+    <div className="mt-2 flex items-center gap-2 rounded-md bg-base-200 p-2">
+      <span className="font-mono text-[11px] text-base-content/45">Roll size</span>
       <input type="number" min={5} max={120} value={ww} onChange={(e) => setWw(e.target.value)} aria-label="Width mm" className="input input-sm w-16 font-mono" />
-      <span className="text-faint">×</span>
+      <span className="text-base-content/45">×</span>
       <input type="number" min={5} max={300} value={hh} onChange={(e) => setHh(e.target.value)} aria-label="Length mm" className="input input-sm w-16 font-mono" />
-      <span className="font-mono text-[11px] text-faint">mm</span>
+      <span className="font-mono text-[11px] text-base-content/45">mm</span>
       <MiniBtn primary onClick={() => onSave(parseFloat(ww), parseFloat(hh))}>Save</MiniBtn>
       <MiniBtn onClick={onCancel}>Cancel</MiniBtn>
     </div>

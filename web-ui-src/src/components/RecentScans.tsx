@@ -147,7 +147,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
           <button
             type="button"
             onClick={onClear}
-            className={'btn btn-sm font-mono ' + (clearArmed ? 'btn-error' : 'btn-ghost text-faint')}
+            className={'btn btn-sm font-mono ' + (clearArmed ? 'btn-error' : 'btn-ghost text-base-content/45')}
           >
             {clearArmed ? 'Click again to delete all' : 'Clear all'}
           </button>
@@ -155,9 +155,9 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       </div>
 
       {share && (
-        <div className="break-all font-mono text-xs font-medium text-faint">
+        <div className="break-all font-mono text-xs font-medium text-base-content/45">
           Saved to{' '}
-          <a href={share} className="text-accent no-underline hover:underline">{share}</a>
+          <a href={share} className="text-primary no-underline hover:underline">{share}</a>
         </div>
       )}
 
@@ -175,7 +175,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             <col className="w-[104px]" />
           </colgroup>
           <thead>
-            <tr className="[&>th]:border-b [&>th]:border-border [&>th]:px-[10px] [&>th]:pb-2 [&>th]:text-left [&>th]:font-mono [&>th]:text-[11px] [&>th]:font-[600] [&>th]:uppercase [&>th]:tracking-[0.04em] [&>th]:text-faint">
+            <tr className="[&>th]:border-b [&>th]:border-base-300 [&>th]:px-[10px] [&>th]:pb-2 [&>th]:text-left [&>th]:font-mono [&>th]:text-[11px] [&>th]:font-[600] [&>th]:uppercase [&>th]:tracking-[0.04em] [&>th]:text-base-content/45">
               <th className="text-center">
                 <input
                   type="checkbox"
@@ -198,7 +198,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             {scans.map((s) => {
               const i = selected.indexOf(s.name)
               return (
-                <tr key={s.name} className={'[&>td]:border-b [&>td]:border-border [&>td]:px-[10px] [&>td]:py-2 [&>td]:align-middle ' + (s.name === newest ? '[&>td]:[animation:rowin_0.35s_ease_both]' : '')}>
+                <tr key={s.name} className={'[&>td]:border-b [&>td]:border-base-300 [&>td]:px-[10px] [&>td]:py-2 [&>td]:align-middle ' + (s.name === newest ? '[&>td]:[animation:rowin_0.35s_ease_both]' : '')}>
                   <td className="whitespace-nowrap text-center">
                     <span className="relative inline-flex items-center justify-center">
                       <input
@@ -209,7 +209,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                         className="checkbox checkbox-sm align-middle"
                       />
                       {i >= 0 && (
-                        <span className="absolute left-full ml-[3px] font-mono text-[10px] font-[700] leading-none text-accent">
+                        <span className="absolute left-full ml-[3px] font-mono text-[10px] font-[700] leading-none text-primary">
                           {i + 1}
                         </span>
                       )}
@@ -223,7 +223,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                       onMouseEnter={(e) => setPreview({ src: api.thumbUrl(s.name), x: e.clientX, y: e.clientY })}
                       onMouseMove={(e) => setPreview((p) => (p ? { ...p, x: e.clientX, y: e.clientY } : p))}
                       onMouseLeave={() => setPreview(null)}
-                      className="block h-11 w-[34px] cursor-zoom-in rounded-[3px] border border-border bg-bg object-cover"
+                      className="block h-11 w-[34px] cursor-zoom-in rounded-[3px] border border-base-300 bg-base-200 object-cover"
                     />
                   </td>
                   <td>
@@ -246,9 +246,9 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                       <span className="break-all font-mono text-[13px]">{s.name}</span>
                     )}
                   </td>
-                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-muted">{s.dpi || '—'}</td>
-                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-muted">{fmtSize(s.size)}</td>
-                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-faint">{ago(s.mtime)}</td>
+                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-base-content/60">{s.dpi || '—'}</td>
+                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-base-content/60">{fmtSize(s.size)}</td>
+                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-base-content/45">{ago(s.mtime)}</td>
                   <td>
                     <div className="flex justify-end gap-[2px] whitespace-nowrap">
                       <a className="btn btn-ghost btn-xs btn-square" href={api.fileUrl(s.name)} download title="Download" aria-label="Download">
@@ -276,12 +276,12 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       </div>
 
       {scans.length === 0 && (
-        <p className="px-[2px] py-4 text-sm text-muted">No scans yet. Place a page on the glass and press Scan.</p>
+        <p className="px-[2px] py-4 text-sm text-base-content/60">No scans yet. Place a page on the glass and press Scan.</p>
       )}
 
       {preview && (
         <div
-          className="pointer-events-none fixed z-50 rounded-lg border border-border bg-surface p-1 shadow-pop"
+          className="pointer-events-none fixed z-50 rounded-lg border border-base-300 bg-base-100 p-1 shadow-xl"
           style={{
             left: Math.min(preview.x + 16, window.innerWidth - 316),
             top: Math.min(preview.y + 16, Math.max(8, window.innerHeight - 428)),
@@ -293,10 +293,10 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
 
       <Modal open={mergeOpen} onClose={() => { if (!mergeBusy) setMergeOpen(false) }} labelledBy="mergeTitle">
         <h3 id="mergeTitle" className="m-0 mb-1 text-[15px] font-[640] tracking-[0.01em]">Merge scans</h3>
-        <p className="m-0 mb-4 text-[12.5px] leading-[1.45] text-muted">
+        <p className="m-0 mb-4 text-[12.5px] leading-[1.45] text-base-content/60">
           Combining {mergeNames.current.length} scans into one PDF, in the order you selected. The originals are removed after merging.
         </p>
-        <label htmlFor="mergeName" className="mb-[6px] block font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">
+        <label htmlFor="mergeName" className="mb-[6px] block font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
           Name <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
         </label>
         <input

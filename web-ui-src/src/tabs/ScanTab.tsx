@@ -36,7 +36,7 @@ export function ScanTab() {
           ok(
             <>
               Saved {d.file} · {d.seconds}s —{' '}
-              <a href={api.fileUrl(d.file)} target="_blank" rel="noopener" className="text-accent underline">open</a>
+              <a href={api.fileUrl(d.file)} target="_blank" rel="noopener" className="text-primary underline">open</a>
             </>,
           )
           setName('')
@@ -63,13 +63,13 @@ export function ScanTab() {
           <div className="mb-4 grid grid-cols-2 gap-3">
             {hasModes && (
               <label className="flex flex-col gap-[6px]">
-                <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">Mode</span>
+                <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Mode</span>
                 <Select value={mode} onChange={setMode} options={config!.modes.map((m) => ({ value: m.value, label: m.label }))} />
               </label>
             )}
             {hasRes && (
               <label className="flex flex-col gap-[6px]">
-                <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">Resolution</span>
+                <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Resolution</span>
                 <Select value={resolution} onChange={setResolution} options={config!.resolutions.map((r) => ({ value: r, label: r }))} />
               </label>
             )}
@@ -77,7 +77,7 @@ export function ScanTab() {
         )}
 
         <label className="flex flex-col gap-[6px]">
-          <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">
+          <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">
             Name <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
           </span>
           <input
@@ -97,7 +97,7 @@ export function ScanTab() {
 
         {scanning && (
           <div className="mt-3 h-[3px] overflow-hidden rounded-full bg-border" aria-hidden="true">
-            <div className="h-full w-2/5 rounded-full bg-accent [animation:slide_1.1s_ease-in-out_infinite]" />
+            <div className="h-full w-2/5 rounded-full bg-primary [animation:slide_1.1s_ease-in-out_infinite]" />
           </div>
         )}
 

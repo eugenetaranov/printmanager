@@ -158,7 +158,7 @@ export function PrintTab() {
     <div className="card border border-base-300 bg-base-100 p-5 shadow-sm">
       {queues.length >= 2 && (
         <label className="mb-4 flex flex-col gap-[6px]">
-          <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">Printer</span>
+          <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Printer</span>
           <select
             value={queue}
             onChange={(e) => setQueue(e.target.value)}
@@ -185,7 +185,7 @@ export function PrintTab() {
         }}
         className={
           'flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-colors ' +
-          (dragOver ? 'border-accent bg-accent-weak' : 'border-border hover:border-accent')
+          (dragOver ? 'border-primary bg-primary/10' : 'border-base-300 hover:border-primary')
         }
       >
         <input
@@ -197,21 +197,21 @@ export function PrintTab() {
         />
         {doc ? (
           <div className="flex items-center gap-2">
-            <span className="break-all font-mono text-[13px] text-text">{doc.filename}</span>
+            <span className="break-all font-mono text-[13px] text-base-content">{doc.filename}</span>
             <button
               type="button"
               onClick={(e) => { e.preventDefault(); clearFile() }}
               aria-label="Remove file"
-              className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-danger text-white"
+              className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-error text-white"
             >
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M6 6 18 18M18 6 6 18" /></svg>
             </button>
           </div>
         ) : (
           <>
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-muted"><path d="M12 15V4M8 8l4-4 4 4" /><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
-            <div className="text-[14px] text-text">Drop a file, or <span className="text-accent">choose one</span></div>
-            <div className="font-mono text-xs text-faint">PDF, image, or text — drag, choose, or paste an image</div>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-base-content/60"><path d="M12 15V4M8 8l4-4 4 4" /><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
+            <div className="text-[14px] text-base-content">Drop a file, or <span className="text-primary">choose one</span></div>
+            <div className="font-mono text-xs text-base-content/45">PDF, image, or text — drag, choose, or paste an image</div>
           </>
         )}
       </label>
@@ -220,9 +220,9 @@ export function PrintTab() {
       {doc && multiPage && (
         <div className="mt-4">
           <div className="mb-2 flex items-baseline justify-between">
-            <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-faint">Pages to print</span>
-            <span className="font-mono text-xs tabular-nums text-muted">
-              {range.from}–{range.to} <span className="text-faint">of {doc.pages}</span>
+            <span className="font-mono text-[11px] font-[600] uppercase tracking-[0.04em] text-base-content/45">Pages to print</span>
+            <span className="font-mono text-xs tabular-nums text-base-content/60">
+              {range.from}–{range.to} <span className="text-base-content/45">of {doc.pages}</span>
             </span>
           </div>
           <DualRange
@@ -258,7 +258,7 @@ export function PrintTab() {
 
       {!flip && (
         <>
-          <hr className="my-4 border-t border-border" />
+          <hr className="my-4 border-t border-base-300" />
           <button type="button" onClick={print} disabled={!doc || busy} className="btn btn-primary btn-block btn-lg">
             {busy ? 'Printing…' : 'Print'}
           </button>

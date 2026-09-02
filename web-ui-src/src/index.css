@@ -1,120 +1,14 @@
 @import 'tailwindcss';
 @plugin "daisyui" {
-  themes: pm-light --default, pm-dark --prefersdark;
+  themes: corporate --default, business --prefersdark;
   logs: false;
 }
-/* Custom DaisyUI themes matching this app's identity: brand green as primary,
-   the neutral paper palette, and automatic light/dark via prefers-color-scheme. */
-@plugin "daisyui/theme" {
-  name: "pm-light";
-  default: true;
-  color-scheme: light;
-  --color-base-100: #ffffff;
-  --color-base-200: #fbfbf9;
-  --color-base-300: #e7e6e1;
-  --color-base-content: #1b1b18;
-  --color-primary: #0f7a63;
-  --color-primary-content: #ffffff;
-  --color-secondary: #f2f1ec;
-  --color-secondary-content: #1b1b18;
-  --color-accent: #0f7a63;
-  --color-accent-content: #ffffff;
-  --color-neutral: #1b1b18;
-  --color-neutral-content: #ffffff;
-  --color-success: #0f7a63;
-  --color-warning: #c07d16;
-  --color-error: #b03a2c;
-  --radius-selector: 0.5rem;
-  --radius-field: 0.625rem;
-  --radius-box: 1rem;
-  --border: 1px;
-}
-@plugin "daisyui/theme" {
-  name: "pm-dark";
-  color-scheme: dark;
-  --color-base-100: #1e1e22;
-  --color-base-200: #151518;
-  --color-base-300: #2e2e34;
-  --color-base-content: #eceae6;
-  --color-primary: #43c3a4;
-  --color-primary-content: #10221d;
-  --color-secondary: #26262c;
-  --color-secondary-content: #eceae6;
-  --color-accent: #43c3a4;
-  --color-accent-content: #10221d;
-  --color-neutral: #eceae6;
-  --color-neutral-content: #151518;
-  --color-success: #43c3a4;
-  --color-warning: #d69a3c;
-  --color-error: #e2745f;
-  --radius-selector: 0.5rem;
-  --radius-field: 0.625rem;
-  --radius-box: 1rem;
-  --border: 1px;
-}
 
-/* Design tokens ported verbatim from the previous UI (scan-web.py :root), so
-   components reproduce the original bespoke look rather than a framework skin.
-   Kept as CSS variables here (with a dark-mode override) and exposed to Tailwind
-   via `@theme inline` below, so utilities like `bg-surface` / `text-muted` /
-   `border-border` resolve to these variables and follow prefers-color-scheme. */
-:root {
-  --bg: #fbfbf9;
-  --surface: #ffffff;
-  --border: #e7e6e1;
-  --text: #1b1b18;
-  --muted: #6f6e67;
-  --faint: #9c9b92;
-  --accent: #0f7a63;
-  --accent-weak: #e8f3ef;
-  --primary: #1b1b18;
-  --primary-ink: #ffffff;
-  --danger: #b03a2c;
-  --warn: #c07d16;
-  --shadow: 0 1px 2px rgba(20, 20, 16, 0.05), 0 8px 24px -14px rgba(20, 20, 16, 0.2);
-  --pop: 0 8px 30px -8px rgba(20, 20, 16, 0.35);
-  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, Helvetica, Arial, sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #151518;
-    --surface: #1e1e22;
-    --border: #2e2e34;
-    --text: #eceae6;
-    --muted: #9d9c96;
-    --faint: #6d6c66;
-    --accent: #43c3a4;
-    --accent-weak: #16302a;
-    --primary: #eceae6;
-    --primary-ink: #151518;
-    --danger: #e2745f;
-    --warn: #d69a3c;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px -16px rgba(0, 0, 0, 0.6);
-    --pop: 0 10px 34px -6px rgba(0, 0, 0, 0.7);
-  }
-}
-
-@theme inline {
-  --color-bg: var(--bg);
-  --color-surface: var(--surface);
-  --color-border: var(--border);
-  --color-text: var(--text);
-  --color-muted: var(--muted);
-  --color-faint: var(--faint);
-  --color-accent: var(--accent);
-  --color-accent-weak: var(--accent-weak);
-  --color-primary: var(--primary);
-  --color-primary-ink: var(--primary-ink);
-  --color-danger: var(--danger);
-  --color-warn: var(--warn);
-
-  --font-mono: var(--mono);
-  --font-sans: var(--sans);
-
-  --shadow-card: var(--shadow);
-  --shadow-pop: var(--pop);
+/* Only app-specific additions; all colours come from the DaisyUI theme
+   (corporate in light, business in dark, switched by prefers-color-scheme). */
+@theme {
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, Helvetica, Arial, sans-serif;
 }
 
 html {
@@ -124,11 +18,9 @@ html {
 }
 
 body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--sans);
-  line-height: 1.5;
+  background: var(--color-base-200);
+  color: var(--color-base-content);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -137,22 +29,10 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
-
-@keyframes mfade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes mpop {
-  from { opacity: 0; transform: translateY(8px) scale(0.97); }
-  to { opacity: 1; transform: none; }
-}
-
 @keyframes rowin {
   from { opacity: 0; transform: translateY(-5px); }
   to { opacity: 1; transform: none; }
 }
-
 @keyframes slide {
   0% { transform: translateX(-120%); }
   100% { transform: translateX(320%); }
