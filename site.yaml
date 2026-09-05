@@ -1,5 +1,5 @@
 name: Provision printmanager server
-hosts: [192.168.1.111]
+hosts: [192.168.0.29]
 connection: ssh
 sudo: true
 
