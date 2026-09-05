@@ -21,7 +21,9 @@ export function NiimbotComposer({
   const [imgUrl, setImgUrl] = useState('')
   const [previewPng, setPreviewPng] = useState('')
   const [busy, setBusy] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const abort = useRef<AbortController | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
 
   const hasContent = kind === 'image' ? !!imgB64 : !!text.trim()
 
@@ -44,9 +46,21 @@ export function NiimbotComposer({
   }, [kind, text, imgB64, format.model, format.w, format.h, hasContent])
 
   const loadImage = (f?: File | null) => {
-    if (!f) { setImgB64(''); setImgUrl(''); return }
+    if (!f) { setImgB64(''); setImgUrl(''); if (fileInput.current) fileInput.current.value = ''; return }
     readImageB64(f).then(({ b64, dataUrl }) => { setImgB64(b64); setImgUrl(dataUrl); setKind('image') })
   }
+
+  // Paste an image (screenshot) while composing a thermal label.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const item = Array.from(e.clipboardData?.items ?? []).find((it) => it.type.startsWith('image/'))
+      const f = item?.getAsFile()
+      if (f) { e.preventDefault(); loadImage(f) }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const doPrint = () => {
     setBusy(true)
@@ -93,16 +107,47 @@ export function NiimbotComposer({
         </label>
       ) : (
         <div className="mt-3">
-          <input type="file" accept="image/*" onChange={(e) => loadImage(e.target.files?.[0])} className="text-body" />
-          {imgUrl && (
-            <div className="relative mt-2 inline-block">
-              <img src={imgUrl} alt="" className="max-h-32 rounded border border-base-300" />
-              <button type="button" onClick={() => loadImage(null)} aria-label="Remove image" className="btn btn-circle btn-error btn-xs absolute -right-2 -top-2">
-                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M6 6 18 18M18 6 6 18" /></svg>
-              </button>
-            </div>
-          )}
-          <div className="mt-1 text-2xs text-base-content/60">Tip: paste an image with ⌘V / Ctrl+V</div>
+          <label
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragOver(false)
+              const f = e.dataTransfer.files?.[0]
+              if (f) loadImage(f)
+            }}
+            className={
+              'flex min-h-[128px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-colors ' +
+              (dragOver ? 'border-primary bg-primary/10' : 'border-base-300 hover:border-primary')
+            }
+          >
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => loadImage(e.target.files?.[0])}
+            />
+            {imgUrl ? (
+              <div className="relative inline-block">
+                <img src={imgUrl} alt="" className="max-h-32 rounded border border-base-300" />
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); loadImage(null) }}
+                  aria-label="Remove image"
+                  className="btn btn-circle btn-error btn-xs absolute -right-2 -top-2"
+                >
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M6 6 18 18M18 6 6 18" /></svg>
+                </button>
+              </div>
+            ) : (
+              <>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-base-content/60"><path d="M12 15V4M8 8l4-4 4 4" /><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
+                <div className="text-body text-base-content">Drop an image, or <span className="text-primary">choose one</span></div>
+                <div className="text-xs text-base-content/60">PNG or JPG — drag, choose, or paste an image</div>
+              </>
+            )}
+          </label>
         </div>
       )}
 
