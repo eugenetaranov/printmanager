@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { printSheet, type Template } from '../api/client'
 import { useStatus } from './status'
 import { readImageB64, type A4Format } from '../lib/formats'
@@ -50,7 +50,26 @@ export function SheetComposer({
   const [printing, setPrinting] = useState(false)
   const [clearArmed, setClearArmed] = useState(false)
   const [focusIdx, setFocusIdx] = useState<number | null>(null)
+  const [dragOver, setDragOver] = useState(false)
   const svgRef = useRef<SVGSVGElement>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  const loadFile = (f?: File | null) => {
+    if (!f) { setImg(null); if (fileInput.current) fileInput.current.value = ''; return }
+    readImageB64(f).then(({ b64, dataUrl }) => { setImg({ b64, url: dataUrl, name: f.name || 'pasted image' }); setPmode('file') })
+  }
+
+  // Paste an image (screenshot) while the Image / PDF mode is active.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const item = Array.from(e.clipboardData?.items ?? []).find((it) => it.type.startsWith('image/'))
+      const f = item?.getAsFile()
+      if (f) { e.preventDefault(); loadFile(f) }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Keyboard: Enter/Space toggles a cell; arrows move focus across the grid.
   const onCellKey = (e: React.KeyboardEvent, i: number) => {
@@ -192,11 +211,47 @@ export function SheetComposer({
             placeholder="e.g. https://example.com or any text" className="textarea w-full font-mono" />
         )}
         {pmode === 'file' && (
-          <div>
-            <input type="file" accept="image/*,application/pdf" className="text-body"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) readImageB64(f).then(({ b64, dataUrl }) => setImg({ b64, url: dataUrl, name: f.name })) }} />
-            {img && <div className="mt-2"><img src={img.url} alt="" className="max-h-24 rounded border border-base-300" /></div>}
-          </div>
+          <label
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragOver(false)
+              const f = e.dataTransfer.files?.[0]
+              if (f) loadFile(f)
+            }}
+            className={
+              'flex min-h-[112px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-5 text-center transition-colors ' +
+              (dragOver ? 'border-primary bg-primary/10' : 'border-base-300 hover:border-primary')
+            }
+          >
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={(e) => loadFile(e.target.files?.[0])}
+            />
+            {img ? (
+              <div className="flex items-center gap-2">
+                <span className="break-all font-mono text-body text-base-content">{img.name}</span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); loadFile(null) }}
+                  aria-label="Remove file"
+                  className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-error text-white"
+                >
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M6 6 18 18M18 6 6 18" /></svg>
+                </button>
+              </div>
+            ) : (
+              <>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-base-content/60"><path d="M12 15V4M8 8l4-4 4 4" /><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
+                <div className="text-body text-base-content">Drop a file, or <span className="text-primary">choose one</span></div>
+                <div className="text-xs text-base-content/60">Image or PDF — drag, choose, or paste an image</div>
+              </>
+            )}
+          </label>
         )}
       </div>
 

@@ -18,7 +18,7 @@ export function NiimbotComposer({
   const [kind, setKind] = useState<Kind>('text')
   const [text, setText] = useState('')
   const [imgB64, setImgB64] = useState('')
-  const [imgUrl, setImgUrl] = useState('')
+  const [imgName, setImgName] = useState('')
   const [previewPng, setPreviewPng] = useState('')
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -46,8 +46,8 @@ export function NiimbotComposer({
   }, [kind, text, imgB64, format.model, format.w, format.h, hasContent])
 
   const loadImage = (f?: File | null) => {
-    if (!f) { setImgB64(''); setImgUrl(''); if (fileInput.current) fileInput.current.value = ''; return }
-    readImageB64(f).then(({ b64, dataUrl }) => { setImgB64(b64); setImgUrl(dataUrl); setKind('image') })
+    if (!f) { setImgB64(''); setImgName(''); if (fileInput.current) fileInput.current.value = ''; return }
+    readImageB64(f).then(({ b64 }) => { setImgB64(b64); setImgName(f.name || 'pasted image'); setKind('image') })
   }
 
   // Paste an image (screenshot) while composing a thermal label.
@@ -128,16 +128,16 @@ export function NiimbotComposer({
               className="hidden"
               onChange={(e) => loadImage(e.target.files?.[0])}
             />
-            {imgUrl ? (
-              <div className="relative inline-block">
-                <img src={imgUrl} alt="" className="max-h-32 rounded border border-base-300" />
+            {imgName ? (
+              <div className="flex items-center gap-2">
+                <span className="break-all font-mono text-body text-base-content">{imgName}</span>
                 <button
                   type="button"
                   onClick={(e) => { e.preventDefault(); loadImage(null) }}
                   aria-label="Remove image"
-                  className="btn btn-circle btn-error btn-xs absolute -right-2 -top-2"
+                  className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-error text-white"
                 >
-                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M6 6 18 18M18 6 6 18" /></svg>
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M6 6 18 18M18 6 6 18" /></svg>
                 </button>
               </div>
             ) : (
