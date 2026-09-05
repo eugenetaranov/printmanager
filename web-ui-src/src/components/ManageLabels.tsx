@@ -87,8 +87,18 @@ export function ManageLabels({
                 <div className="truncate text-body">{t.name}</div>
                 <div className="font-mono text-2xs text-base-content/60">{t.cols}×{t.rows} · {Math.round(Number(t.cell_w))}×{Math.round(Number(t.cell_h))} mm{t.builtin ? ' · built-in' : ''}</div>
               </div>
-              <button type="button" onClick={() => setDraft(draftFrom(t))} className="btn btn-ghost btn-sm">Edit</button>
-              <button type="button" onClick={() => remove(t.id)} className={'btn btn-sm ' + (armed === t.id ? 'btn-error' : 'btn-ghost')}>{armed === t.id ? 'Confirm' : 'Delete'}</button>
+              <button type="button" onClick={() => setDraft(draftFrom(t))} className="tooltip tooltip-top btn btn-ghost btn-square btn-sm" data-tip="Edit" aria-label="Edit">
+                <IconEdit />
+              </button>
+              <button
+                type="button"
+                onClick={() => remove(t.id)}
+                className={'tooltip tooltip-top btn btn-square btn-sm ' + (armed === t.id ? 'btn-error' : 'btn-ghost')}
+                data-tip={armed === t.id ? 'Click again to delete' : 'Delete'}
+                aria-label="Delete"
+              >
+                <IconTrash />
+              </button>
             </div>
           ))}
           {err && <p className="mt-2 text-xs text-error">{err}</p>}
@@ -98,5 +108,19 @@ export function ManageLabels({
         </div>
       )}
     </Modal>
+  )
+}
+
+// Match the Devices modal icon treatment: 15px, strokeWidth 1.7. Pencil = edit,
+// trash (the Devices "forget" glyph) = delete.
+function IconEdit() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+  )
+}
+
+function IconTrash() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
   )
 }
