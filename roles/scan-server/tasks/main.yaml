@@ -173,11 +173,10 @@
   when: scan_brscan4_enabled and airsane_enabled
 
 # Inserted above the base default-deny DROP (see the base role).
-- name: Open the firewall for AirSane (eSCL) from the LAN
+- name: Open the firewall for AirSane (eSCL) from any network
   iptables:
     chain: INPUT
     protocol: tcp
-    source: "{{ facts.default_ipv4_subnet }}"
     destination_port: "{{ airsane_port }}"
     jump: ACCEPT
     action: insert

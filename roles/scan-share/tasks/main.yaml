@@ -54,11 +54,10 @@
     - nmbd
 
 # Inserted above the base default-deny DROP (see the base role).
-- name: Open the firewall for SMB from the LAN
+- name: Open the firewall for SMB from any network
   iptables:
     chain: INPUT
     protocol: tcp
-    source: "{{ facts.default_ipv4_subnet }}"
     destination_port: "{{ item }}"
     jump: ACCEPT
     action: insert

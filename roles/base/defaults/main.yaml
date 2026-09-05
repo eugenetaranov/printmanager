@@ -1,10 +1,10 @@
-# The LAN subnet permitted to reach the print/scan/share services is discovered,
-# not hardcoded: tack gathers the default interface's network CIDR as the fact
-# `default_ipv4_subnet` (e.g. 192.168.1.0/24). Firewall rules and task values use
-# it as `{{ facts.default_ipv4_subnet }}`; templates (.j2, Go text/template) use
-# `{{ .facts.default_ipv4_subnet }}` (leading dot, `facts` sub-map). There is no
-# local_subnet var — a var whose value is itself a template wouldn't expand
-# (single-pass render), so the fact is referenced directly everywhere.
+# Services (SMB, CUPS/IPP, AirSane eSCL, web UI) are reachable from ANY network,
+# not just the LAN subnet — the host roams across wifis and clients connect from
+# whatever network they're on. Firewall openings and app ACLs (Samba hosts allow,
+# cupsd Allow) are unscoped; access is gated by service auth, not source IP.
+# (tack still gathers the default interface CIDR as the `default_ipv4_subnet`
+# fact — referenced in templates as `{{ .facts.default_ipv4_subnet }}` — but no
+# role scopes to it anymore. Reintroduce that source filter to re-restrict.)
 
 # Packages shared across roles. usbutils gives lsusb for identifying the
 # Brother's USB VID/PID; iptables-persistent restores the rules the firewall

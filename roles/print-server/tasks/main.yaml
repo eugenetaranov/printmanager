@@ -56,22 +56,20 @@
 # so a loop item like "{{ cups_listen_port }}/tcp" would reach iptables unrendered.
 # action: insert places these ACCEPTs above the default-deny DROP the base role
 # appends to INPUT, regardless of role run order.
-- name: Open the firewall for IPP (CUPS) from the LAN
+- name: Open the firewall for IPP (CUPS) from any network
   iptables:
     chain: INPUT
     protocol: tcp
-    source: "{{ facts.default_ipv4_subnet }}"
     destination_port: "{{ cups_listen_port }}"
     jump: ACCEPT
     action: insert
     comment: "print: cups ipp"
     persist: true
 
-- name: Open the firewall for mDNS from the LAN
+- name: Open the firewall for mDNS from any network
   iptables:
     chain: INPUT
     protocol: udp
-    source: "{{ facts.default_ipv4_subnet }}"
     destination_port: 5353
     jump: ACCEPT
     action: insert

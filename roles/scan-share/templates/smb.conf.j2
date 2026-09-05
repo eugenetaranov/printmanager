@@ -33,10 +33,9 @@
 {{- else }}
    map to guest = never
 {{- end }}
-   # Restrict all access to the LAN subnet; deny everything else. The subnet is
-   # the tack-gathered network CIDR of the default interface (e.g. 192.168.1.0/24).
-   hosts allow = {{ .facts.default_ipv4_subnet }} 127.
-   hosts deny = 0.0.0.0/0
+   # Reachable from any network (roaming across wifis) — access is gated by the
+   # firewall and, when auth is enabled, Samba credentials, not by source subnet.
+   hosts allow = ALL
    log file = /var/log/samba/log.%m
    max log size = 1000
    logging = file
