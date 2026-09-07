@@ -153,7 +153,7 @@ export function NiimbotComposer({
 
       {previewPng && (
         <div className="mt-4">
-          <span className="field-label">Preview</span>
+          <span className="field-label block">Preview</span>
           <div className="mt-[6px] inline-block rounded-lg border border-base-300 bg-white p-[7px] shadow-sm">
             <img src={previewPng} alt="Label preview" className="block max-w-full" />
           </div>
