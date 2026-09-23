@@ -29,6 +29,15 @@ STORE = os.path.join(DATA_DIR, "niimbot-devices.json")
 
 DPMM = 8  # 203 dpi ≈ 8 px/mm
 
+# BlueZ allows only one active discovery session per D-Bus client. All BLE
+# discovery (adapter_ok's probe, scan(), and Transport.connect's not-found
+# fallback) runs on the same background loop/connection, so two overlapping
+# BleakScanner.discover()/find_device_by_address() calls collide with
+# "org.bluez.Error.InProgress" — and the loser's scan comes back empty, which
+# previously surfaced as a false "Printer not found" during a connect retry.
+# Serialize every discovery call through this lock to prevent that race.
+_ble_scan_lock = asyncio.Lock()
+
 
 # --- Packet framing:  55 55 <type> <len> <data...> <xor> AA AA ---------------
 class Packet:
@@ -254,7 +263,8 @@ class Transport:
                     scanned = True
                     self.log("scanning for %s…" % address)
                     try:
-                        dev = await BleakScanner.find_device_by_address(address, timeout=10.0)
+                        async with _ble_scan_lock:
+                            dev = await BleakScanner.find_device_by_address(address, timeout=10.0)
                     except Exception as se:
                         self.log("scan error: %r" % se)
                         dev = None
@@ -263,7 +273,8 @@ class Transport:
                         # BlueZ state) and scan once more before giving up.
                         await _bluez_clear(address, self.log, remove=True)
                         try:
-                            dev = await BleakScanner.find_device_by_address(address, timeout=8.0)
+                            async with _ble_scan_lock:
+                                dev = await BleakScanner.find_device_by_address(address, timeout=8.0)
                         except Exception:
                             dev = None
                     if dev is None:
@@ -707,7 +718,8 @@ class PrinterManager:
     async def adapter_ok(self):
         try:
             from bleak import BleakScanner
-            await BleakScanner.discover(timeout=0.1)
+            async with _ble_scan_lock:
+                await BleakScanner.discover(timeout=0.1)
             return True
         except Exception as e:
             self.log("adapter check failed: %s" % e)
@@ -717,7 +729,8 @@ class PrinterManager:
     async def scan(self, timeout=6.0):
         from bleak import BleakScanner
         found = {}
-        devs = await BleakScanner.discover(timeout=timeout, return_adv=True)
+        async with _ble_scan_lock:
+            devs = await BleakScanner.discover(timeout=timeout, return_adv=True)
         for address, (dev, adv) in devs.items():
             name = dev.name or (adv.local_name if adv else "") or ""
             svcs = [u.lower() for u in (adv.service_uuids if adv else [])]
@@ -770,11 +783,47 @@ class PrinterManager:
     async def connect(self, address, name=None):
         return await self._open(address, name or address)
 
+    async def _resolve_by_name(self, name):
+        """Find a device currently advertising under `name`, regardless of
+        address — used when a remembered address goes stale (see reconnect)."""
+        try:
+            found = await self.scan(timeout=6.0)
+        except Exception:
+            return None
+        for c in found:
+            if c["name"] == name:
+                return c["address"]
+        return None
+
+    def _rekey(self, old, new):
+        r = self.remembered.pop(old, None)
+        if r:
+            r["address"] = new
+            self.remembered[new] = r
+            self._persist()
+        if self.active == old:
+            self.active = new
+
     async def reconnect(self, address):
         r = self.remembered.get(address)
         if not r:
             raise RuntimeError("not a remembered printer")
-        return await self._open(address, r["name"], r.get("model"), r.get("label_mm"))
+        try:
+            return await self._open(address, r["name"], r.get("model"), r.get("label_mm"))
+        except Exception as e:
+            # The D110 rotates its BLE address across sleep/wake cycles (same
+            # advertised name, new MAC), which strands the address we saved
+            # last time. If a plain "not found" reconnect fails, do one
+            # broader by-name scan and, if the printer shows up under a new
+            # address, adopt it and retry instead of surfacing a dead end.
+            if "not found" not in str(e).lower():
+                raise
+            new_addr = await self._resolve_by_name(r["name"])
+            if not new_addr or new_addr == address:
+                raise
+            self.log("[%s] found as %s (BLE address changed)" % (address, new_addr))
+            self._rekey(address, new_addr)
+            return await self._open(new_addr, r["name"], r.get("model"), r.get("label_mm"))
 
     async def disconnect(self, address):
         mp = self.printers.get(address)
@@ -840,7 +889,10 @@ class PrinterManager:
         run_coro(self.connect(address, name), timeout=30)
 
     def sync_reconnect(self, address):
-        run_coro(self.reconnect(address), timeout=30)
+        # Generous timeout: a stale-address reconnect first burns through the
+        # normal connect+scan retry chain before falling back to a by-name
+        # rescan (see PrinterManager.reconnect), which can add another ~15s.
+        run_coro(self.reconnect(address), timeout=60)
 
     def sync_disconnect(self, address):
         run_coro(self.disconnect(address), timeout=15)
