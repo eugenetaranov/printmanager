@@ -4,6 +4,10 @@ import {
 import { api, type Scan } from '../api/client'
 import { Modal } from './Modal'
 import { useActivityLog } from './ActivityLog'
+import { Seg } from './NiimbotComposer'
+import { OnePageMerge, type OnePageState } from './OnePageMerge'
+
+const MODE_KEY = 'pm_merge_mode'
 
 export interface RecentScansHandle {
   refresh: (newest?: string) => void
@@ -51,6 +55,14 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
   const [mergeError, setMergeError] = useState('')
   const [mergeBusy, setMergeBusy] = useState(false)
   const mergeNames = useRef<string[]>([])
+  const [mergeMode, setMergeMode] = useState<'pages' | 'one'>(() => {
+    try { return localStorage.getItem(MODE_KEY) === 'one' ? 'one' : 'pages' } catch { return 'pages' }
+  })
+  const [onePage, setOnePage] = useState<OnePageState | null>(null)
+  const pickMode = (m: 'pages' | 'one') => {
+    setMergeMode(m)
+    try { localStorage.setItem(MODE_KEY, m) } catch { /* ignore */ }
+  }
 
   const load = useCallback((n?: string) => {
     api.recent().then((s) => {
@@ -142,21 +154,25 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
     setMergeCap(0)
     setMergeError('')
     setMergeBusy(false)
+    setOnePage(null)
     setMergeOpen(true)
   }
+  const one = mergeMode === 'one'
   const doMerge = () => {
     if (mergeBusy || mergeNames.current.length < 2) return
+    if (one && !onePage?.ready) return
     setMergeBusy(true)
     setMergeError('')
     const n = mergeNames.current.length
-    api.merge(mergeNames.current, mergeName.trim(), mergeCap > 0 ? mergeCap : undefined)
+    api.merge(mergeNames.current, mergeName.trim(), mergeCap > 0 ? mergeCap : undefined,
+      one && onePage ? { token: onePage.token, items: onePage.choices } : undefined)
       .then((d) => {
         setMergeBusy(false)
         if (d.ok && d.file) {
           setMergeOpen(false)
           const tok = d.undo
           const mb = d.size ? ` (${(d.size / 1048576).toFixed(1)} MB)` : ''
-          push(`Merged ${n} scans → ${d.file}${mb}`, tok ? async () => { await api.undo(tok); load() } : undefined)
+          push(`Merged ${n} scans${one ? ' onto one page' : ''} → ${d.file}${mb}`, tok ? async () => { await api.undo(tok); load() } : undefined)
           setSelected([])
           load(d.file)
         } else {
@@ -370,11 +386,19 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
         </div>
       )}
 
-      <Modal open={mergeOpen} onClose={() => { if (!mergeBusy) setMergeOpen(false) }} labelledBy="mergeTitle">
-        <h3 id="mergeTitle" className="m-0 mb-1 text-title font-[640] tracking-[0.01em]">Merge scans</h3>
-        <p className="m-0 mb-4 text-body leading-[1.45] text-base-content/60">
-          Combining {mergeNames.current.length} scans into one PDF, in the order you selected. The originals are removed after merging.
+      <Modal open={mergeOpen} onClose={() => { if (!mergeBusy) setMergeOpen(false) }} labelledBy="mergeTitle" wide={one}>
+        <h3 id="mergeTitle" className="m-0 text-title font-[640] tracking-[0.01em]">Merge scans</h3>
+        <Seg value={mergeMode} onChange={pickMode} options={[['pages', 'Separate pages'], ['one', 'One page']]} />
+        <p className="m-0 mt-3 mb-4 text-body leading-[1.45] text-base-content/60">
+          {one
+            ? <>Finds what’s on each of the {mergeNames.current.length} scans and lays them out on one A4 page, in this order. The scans used are removed after merging.</>
+            : <>Combining {mergeNames.current.length} scans into one PDF, in the order you selected. The originals are removed after merging.</>}
         </p>
+        {one && (
+          <div className="mb-4">
+            <OnePageMerge names={mergeNames.current} onState={setOnePage} />
+          </div>
+        )}
         <label htmlFor="mergeName" className="mb-[6px] block field-label">
           Name <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
         </label>
@@ -390,7 +414,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             if (e.key === 'Enter') { e.preventDefault(); doMerge() }
             else if (e.key === 'Escape') { e.preventDefault(); if (!mergeBusy) setMergeOpen(false) }
           }}
-          placeholder="auto: merged-YYYYMMDD-HHMMSS"
+          placeholder={one ? 'auto: onepage-YYYYMMDD-HHMMSS' : 'auto: merged-YYYYMMDD-HHMMSS'}
           className="input w-full font-mono"
         />
 
@@ -418,7 +442,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
 
         <div className="mt-[18px] flex justify-end gap-2">
           <button type="button" onClick={() => { if (!mergeBusy) setMergeOpen(false) }} className="btn btn-ghost btn-sm">Cancel</button>
-          <button type="button" onClick={doMerge} disabled={mergeBusy} className="btn btn-primary btn-sm">
+          <button type="button" onClick={doMerge} disabled={mergeBusy || (one && !onePage?.ready)} className="btn btn-primary btn-sm">
             {mergeBusy ? 'Merging…' : 'Merge'}
           </button>
         </div>

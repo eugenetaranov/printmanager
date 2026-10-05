@@ -99,8 +99,13 @@ export const api = {
 
   clear: () => postJSON<{ ok: boolean; removed: number; undo?: string | null }>('/clear'),
 
-  merge: (names: string[], to: string, maxMb?: number) =>
-    postJSON<MergeResult>('/merge', { names, to, max_mb: maxMb || 0 }),
+  merge: (names: string[], to: string, maxMb?: number, onePage?: { token: string; items: OnePageChoice[] }) =>
+    postJSON<MergeResult>('/merge', { names, to, max_mb: maxMb || 0, ...(onePage ? { one_page: onePage } : {}) }),
+
+  // Detect the object on each page and preview them laid out on one A4 page.
+  // Pass the returned token back so tweaks don't re-read the scans.
+  onePagePreview: (names: string[], token?: string, items?: OnePageChoice[]) =>
+    postJSON<OnePagePreview>('/merge/onepage', { names, token, items }),
 
   undo: (token: string) => postJSON<OkResult>('/undo', { token }),
 
@@ -127,6 +132,29 @@ export const api = {
     postJSON<DocPrintResult>('/document/continue', { token }),
 
   documentCancel: (token: string) => postJSON<OkResult>('/document/cancel', { token }),
+}
+
+export interface OnePageChoice {
+  id: string
+  whole?: boolean
+  skip?: boolean
+}
+
+export interface OnePageItem {
+  id: string
+  name: string
+  page: number
+  found: boolean
+  w_mm: number
+  h_mm: number
+  thumb: string
+}
+
+export interface OnePagePreview extends OkResult {
+  token?: string
+  items?: OnePageItem[]
+  png?: string
+  scale?: number
 }
 
 export interface Queue {

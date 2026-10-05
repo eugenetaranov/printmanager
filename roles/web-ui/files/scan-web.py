@@ -507,7 +507,317 @@ def _compress_to_cap(pdf, tmp, cap_bytes):
     return best
 
 
-def merge_scans(names, newbase, max_mb=0):
+# --- Merge onto one page -----------------------------------------------------
+# Small items (receipts, cards) scanned one per page: find the object on each
+# page, crop it, and lay the crops out on a single A4 page in merge order —
+# left to right, wrapping into rows — at real size when they fit, otherwise
+# all scaled by the same factor. The Merge dialog previews this first
+# (/merge/onepage); the analysis is cached under a token so the preview, every
+# reorder/fallback tweak and the final merge reuse it without re-rendering.
+ONEPAGE_MAX = 12
+ONEPAGE_PAD_MM = 5         # white space kept around each detected item
+ONEPAGE_MARGIN_MM = 10     # page margin (clear of the printer's unprintable edge)
+ONEPAGE_GAP_MM = 6         # between items
+_onepage = {}                      # token -> {"dir", "names", "dpi", "gray", "items", "ts"}
+_onepage_lock = threading.Lock()
+
+
+def _sweep_onepage():
+    now = time.monotonic()
+    with _onepage_lock:
+        for t in [t for t, j in _onepage.items() if now - j["ts"] > 1800]:
+            shutil.rmtree(_onepage.pop(t)["dir"], ignore_errors=True)
+
+
+def find_object_box(img, dpi):
+    """Bounding box (l, t, r, b) of what's printed/placed on a scanned page, or
+    None if it looks blank. Pure Pillow. Content is anything clearly darker or
+    brighter than the page's own background level (so a grey lid works), plus
+    edges (white cards on white) and coloured pixels. Lid shadows along the
+    edges, dust and hairs are dropped. Several objects -> their union, so two
+    cards side by side stay side by side."""
+    from PIL import Image, ImageChops, ImageFilter
+    mm = dpi / 25.4
+    g = img.convert("L")
+    w, h = g.size
+    hist = g.histogram()
+    bg = max(range(256), key=lambda v: hist[v])          # the lid/paper level
+    dark = g.point(lambda v: 255 if v < bg - 22 else 0)
+    light = g.point(lambda v: 255 if v > bg + 12 else 0)  # white paper on a grey lid
+    edges = (g.filter(ImageFilter.GaussianBlur(1)).filter(ImageFilter.FIND_EDGES)
+             .point(lambda v: 255 if v > 14 else 0))
+    f = int(2 * mm)                                       # the image border is an "edge" too
+    framed = Image.new("L", (w, h), 0)
+    framed.paste(edges.crop((f, f, w - f, h - f)), (f, f))
+    if img.mode == "RGB":
+        hsv = img.convert("HSV").split()
+        colour = ImageChops.multiply(hsv[1].point(lambda v: 255 if v > 45 else 0),
+                                     hsv[2].point(lambda v: 255 if v < 250 else 0))
+        framed = ImageChops.lighter(framed, colour)
+    mask = ImageChops.lighter(ImageChops.lighter(dark, light), framed)
+    # 1 mm grid: a cell is content when >4% of its pixels are.
+    gw, gh = max(1, int(w / mm)), max(1, int(h / mm))
+    raw = mask.resize((gw, gh), Image.BOX).point(lambda v: 255 if v > 10 else 0)
+    rp = raw.load()
+
+    def band(cells):            # leading rows/cols (≤15 mm) that are mostly content = shadow
+        k = 0
+        while k < 15 and sum(1 for v in cells(k) if v) > 0.5 * len(cells(k)):
+            k += 1
+        return k
+    top = band(lambda k: [rp[x, k] for x in range(gw)])
+    bot = band(lambda k: [rp[x, gh - 1 - k] for x in range(gw)])
+    lef = band(lambda k: [rp[k, y] for y in range(gh)])
+    rig = band(lambda k: [rp[gw - 1 - k, y] for y in range(gh)])
+    if top or bot or lef or rig:
+        clean = Image.new("L", (gw, gh), 0)
+        clean.paste(raw.crop((lef + 1, top + 1, gw - rig - 1, gh - bot - 1)), (lef + 1, top + 1))
+        raw = clean
+        rp = raw.load()
+    px = raw.filter(ImageFilter.MaxFilter(5)).load()     # dilate ~2 mm: letters -> blocks
+    seen, boxes = set(), []
+    for y0 in range(gh):
+        for x0 in range(gw):
+            if not px[x0, y0] or (x0, y0) in seen:
+                continue
+            stack = [(x0, y0)]
+            seen.add((x0, y0))
+            l = r = x0
+            t = b = y0
+            n, rl, rt, rr, rb = 0, gw, gh, -1, -1
+            while stack:
+                x, y = stack.pop()
+                if rp[x, y]:                              # measure on the undilated grid
+                    n += 1
+                    rl, rt, rr, rb = min(rl, x), min(rt, y), max(rr, x), max(rb, y)
+                l, t, r, b = min(l, x), min(t, y), max(r, x), max(b, y)
+                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                    if 0 <= nx < gw and 0 <= ny < gh and px[nx, ny] and (nx, ny) not in seen:
+                        seen.add((nx, ny))
+                        stack.append((nx, ny))
+            bw, bh = r - l + 1, b - t + 1
+            if n < 30 or min(rr - rl + 1, rb - rt + 1) < 8:
+                continue                                  # dust, a hair
+            touches = l <= 2 or t <= 2 or r >= gw - 3 or b >= gh - 3
+            if touches and min(bw, bh) < 14 and max(bw, bh) > 0.4 * (gw if bw > bh else gh):
+                continue                                  # a leftover shadow strip
+            # Keep the undilated extent: the padding is added once, explicitly, below.
+            boxes.append((rl, rt, rr + 1, rb + 1, (rr - rl + 1) * (rb - rt + 1)))
+    if not boxes:
+        return None
+    big = max(bx[4] for bx in boxes)
+    boxes = [bx for bx in boxes if bx[4] >= 0.03 * big]   # scraps far smaller than the object
+    pad = ONEPAGE_PAD_MM * mm
+    return (max(0, int(min(bx[0] for bx in boxes) * mm - pad)),
+            max(0, int(min(bx[1] for bx in boxes) * mm - pad)),
+            min(w, int(max(bx[2] for bx in boxes) * mm + pad)),
+            min(h, int(max(bx[3] for bx in boxes) * mm + pad)))
+
+
+def layout_rows(sizes, avail_w, avail_h, gap):
+    """Place (w, h) boxes left to right, wrapping into rows, in order. Returns
+    (scale, [(x, y)]) for the largest scale ≤ 1 at which everything fits;
+    each row is centred horizontally."""
+    def place(s):
+        rows, row, row_w = [], [], 0.0
+        for k, (w, h) in enumerate(sizes):
+            w, h = w * s, h * s
+            if row and row_w + gap + w > avail_w:
+                rows.append(row)
+                row, row_w = [], 0.0
+            row_w += (gap if row else 0) + w
+            row.append((k, w, h))
+        rows.append(row)
+        pos, y = [None] * len(sizes), 0.0
+        for row in rows:
+            x = (avail_w - (sum(w for _, w, _ in row) + gap * (len(row) - 1))) / 2
+            for k, w, _ in row:
+                pos[k] = (x, y)
+                x += w + gap
+            y += max(h for _, _, h in row) + gap
+        return y - gap, pos
+    hi = min(1.0, min(avail_w / float(w) for w, _ in sizes))
+    total, pos = place(hi)
+    if total <= avail_h:
+        return hi, pos
+    lo = 0.02
+    for _ in range(25):                                   # binary search the scale
+        mid = (lo + hi) / 2
+        if place(mid)[0] <= avail_h:
+            lo = mid
+        else:
+            hi = mid
+    return lo, place(lo)[1]
+
+
+def _ocr_langs():
+    """OCR languages from the scan pipeline itself (single source of truth),
+    or '' when it doesn't OCR."""
+    try:
+        with open(SCRIPT) as f:
+            src = f.read()
+    except OSError:
+        return ""
+    if not re.search(r"if \[ 'true' = 'true' \] && command -v ocrmypdf", src):
+        return ""
+    m = re.search(r"ocrmypdf -l '([^']+)'", src)
+    return m.group(1) if (m and shutil.which("ocrmypdf")) else ""
+
+
+def onepage_analyze(names):
+    """Render every page of the named scans (in order), detect the object on
+    each, and cache the pages under a token."""
+    if not 2 <= len(names) <= 50:
+        raise ValueError("select at least two scans")
+    srcs, dpis, gray = [], [], True
+    for n in names:
+        if not (NAME_RE.fullmatch(n) and n.lower().endswith(".pdf")):
+            raise ValueError("bad name")
+        path = os.path.join(SCAN_DIR, n)
+        if not os.path.isfile(path):
+            raise ValueError("%s not found" % n)
+        dpi, mode = meta_for(n[:-4])
+        dpis.append(int(dpi) if str(dpi).isdigit() else 0)
+        gray = gray and mode in ("True Gray", "Black & White")
+        srcs.append(path)
+    # One canvas DPI for all, so real sizes line up: the sources' own (≤300).
+    dpi = min(300, max(dpis) or 200)
+    pages = [(n, p, k) for k, (n, path) in enumerate(zip(names, srcs))
+             for p in range(1, max(1, _pdf_page_count(path)) + 1)]
+    if len(pages) > ONEPAGE_MAX:
+        raise ValueError("Too many pages for one sheet (%d, max %d). Use Separate pages."
+                         % (len(pages), ONEPAGE_MAX))
+    from PIL import Image
+    tmp = tempfile.mkdtemp(prefix="onepage-")
+    items = []
+    try:
+        for n, p, k in pages:
+            # One page at a time, so a dozen 300 dpi pages never sit in memory together.
+            prefix = os.path.join(tmp, "r")
+            subprocess.run(["pdftoppm", "-r", str(dpi), "-f", str(p), "-l", str(p),
+                            "-singlefile", "-png"] + (["-gray"] if gray else []) + [srcs[k], prefix],
+                           check=True, timeout=120)
+            img = Image.open(prefix + ".png")
+            img.load()
+            os.unlink(prefix + ".png")
+            img = img.convert("L" if gray else "RGB")
+            box = find_object_box(img, dpi)
+            # The lid/paper colour (per-channel mode), so the page behind the
+            # crops matches them instead of showing pale boxes on pure white.
+            bg = tuple(max(range(256), key=lambda v, hh=ch.histogram(): hh[v]) for ch in img.split())
+            iid = "%d-%d" % (k, p)
+            img.save(os.path.join(tmp, iid + ".png"))   # lossless: cropped again at merge time
+            items.append({"id": iid, "name": n, "page": p, "box": box, "bg": bg if len(bg) > 1 else bg[0],
+                          "full": (0, 0, img.width, img.height)})
+            img.close()
+    except Exception:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    _sweep_onepage()
+    token = _new_token()
+    with _onepage_lock:
+        _onepage[token] = {"dir": tmp, "names": list(names), "dpi": dpi, "gray": gray,
+                           "items": items, "ts": time.monotonic()}
+    return token
+
+
+def _onepage_job(token, names):
+    with _onepage_lock:
+        job = _onepage.get(token or "")
+    if not job or job["names"] != list(names):
+        return None
+    job["ts"] = time.monotonic()
+    return job
+
+
+def onepage_compose(job, choices, dpi):
+    """Lay out the chosen items. `choices` = [{id, whole, skip}] in the wanted
+    order (missing items keep the analysed order). Returns (PIL page, scale,
+    used items) with the page rendered at `dpi`."""
+    from PIL import Image
+    by_id = {it["id"]: it for it in job["items"]}
+    order = [c for c in (choices or []) if c.get("id") in by_id]
+    order += [{"id": i} for i in by_id if i not in {c["id"] for c in order}]
+    used = []
+    for c in order:
+        it = by_id[c["id"]]
+        box = it["full"] if c.get("whole") else it["box"]
+        if c.get("skip") or not box:
+            continue
+        used.append((it, box))
+    if not used:
+        raise ValueError("Nothing to put on the page — use Whole page for a scan, or Separate pages")
+    k = dpi / float(job["dpi"])                           # source px -> output px
+    mm = dpi / 25.4
+    W, H = int(round(210 * mm)), int(round(297 * mm))
+    margin, gap = int(ONEPAGE_MARGIN_MM * mm), int(ONEPAGE_GAP_MM * mm)
+    sizes = [((b[2] - b[0]) * k, (b[3] - b[1]) * k) for _, b in used]
+    scale, pos = layout_rows(sizes, W - 2 * margin, H - 2 * margin, gap)
+    page = Image.new("L" if job["gray"] else "RGB", (W, H), used[0][0].get("bg", 255))
+    for (it, box), (w, h), (x, y) in zip(used, sizes, pos):
+        with Image.open(os.path.join(job["dir"], it["id"] + ".png")) as src:
+            crop = src.crop(box).resize((max(1, int(w * scale)), max(1, int(h * scale))),
+                                        Image.LANCZOS)
+        page.paste(crop, (margin + int(x), margin + int(y)))
+    return page, scale, [it for it, _ in used]
+
+
+def do_onepage_preview(obj):
+    """Analyse (or reuse the token's analysis) and return a small preview of the
+    composed page, the per-item detection and the scale."""
+    names = obj.get("names") or []
+    token = obj.get("token") or ""
+    job = _onepage_job(token, names)
+    if not job:
+        token = onepage_analyze(names)
+        job = _onepage_job(token, names)
+    from PIL import Image
+    try:
+        page, scale, used = onepage_compose(job, obj.get("items"), 48)
+        buf = io.BytesIO()
+        page.save(buf, format="PNG", optimize=True)
+        png, err = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode(), ""
+    except ValueError as e:
+        png, scale, err = "", 0, str(e)
+    items = []
+    mm = job["dpi"] / 25.4
+    for it in job["items"]:
+        b = it["box"]
+        thumb = ""
+        with Image.open(os.path.join(job["dir"], it["id"] + ".png")) as src:
+            t = src.crop(b or it["full"])
+            t.thumbnail((96, 96))
+            buf = io.BytesIO()
+            t.convert("L" if job["gray"] else "RGB").save(buf, format="JPEG", quality=70)
+            thumb = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+        items.append({"id": it["id"], "name": it["name"], "page": it["page"], "found": bool(b),
+                      "w_mm": round((b[2] - b[0]) / mm) if b else 0,
+                      "h_mm": round((b[3] - b[1]) / mm) if b else 0, "thumb": thumb})
+    return {"token": token, "items": items, "png": png, "scale": round(scale, 3), "error": err}
+
+
+def _merge_one_page(names, obj, tmp, out):
+    """Final merge: compose at the analysis DPI, OCR if the scan pipeline does.
+    Returns the names actually used (only those get trashed)."""
+    job = _onepage_job(obj.get("token"), names)
+    if not job:
+        job = _onepage_job(onepage_analyze(names), names)
+    page, _, used = onepage_compose(job, obj.get("items"), job["dpi"])
+    jpg = os.path.join(tmp, "onepage.jpg")
+    page.save(jpg, "JPEG", quality=85, subsampling=0, dpi=(job["dpi"], job["dpi"]))
+    img_pdf = os.path.join(tmp, "img.pdf")
+    subprocess.run(["img2pdf", "--pagesize", "A4", jpg, "-o", img_pdf], check=True, timeout=60)
+    langs = _ocr_langs()
+    ok = False
+    if langs:
+        ok = subprocess.run(["ocrmypdf", "-l", langs, "--output-type", "pdf", "--optimize", "0",
+                             "--quiet", img_pdf, out], capture_output=True, timeout=300).returncode == 0
+    if not ok:
+        shutil.copy(img_pdf, out)
+    return [n for n in names if any(it["name"] == n for it in used)]
+
+
+def merge_scans(names, newbase, max_mb=0, one_page=None):
     # Concatenate the given scans (in the order supplied) into a single PDF,
     # optionally compressed to fit under `max_mb`.
     # Raises ValueError / CalledProcessError / TimeoutExpired for the route to catch.
@@ -521,14 +831,18 @@ def merge_scans(names, newbase, max_mb=0):
         srcs.append(p)
     if len(srcs) < 2:
         raise ValueError("select at least two scans")
-    base = sanitize(newbase) or time.strftime("merged-%Y%m%d-%H%M%S")
+    base = sanitize(newbase) or time.strftime(("onepage" if one_page else "merged") + "-%Y%m%d-%H%M%S")
     dst = os.path.join(SCAN_DIR, base + ".pdf")
     if os.path.exists(dst):
         raise ValueError("a scan with that name already exists")
     tmp = tempfile.mkdtemp()
     try:
         out = os.path.join(tmp, base + ".pdf")
-        subprocess.run(["pdfunite"] + srcs + [out], check=True, timeout=120)
+        used = names
+        if one_page is not None:      # {"token", "items"} from the preview
+            used = _merge_one_page(names, one_page, tmp, out)
+        else:
+            subprocess.run(["pdfunite"] + srcs + [out], check=True, timeout=120)
         final = out
         if max_mb and max_mb > 0:
             cap = int(max_mb * 1024 * 1024)
@@ -541,7 +855,7 @@ def merge_scans(names, newbase, max_mb=0):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     # Trash the sources (only after a successful merge) so the merge is undoable.
-    items = [_trash_item(n) for n in names]
+    items = [_trash_item(n) for n in used]
     token = _register_undo({"type": "merge", "merged": base + ".pdf", "items": items})
     return base + ".pdf", token
 
@@ -2110,11 +2424,20 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 max_mb = 0
             try:
-                f, undo = merge_scans(obj.get("names") or [], obj.get("to", ""), max_mb)
+                one_page = obj.get("one_page")
+                f, undo = merge_scans(obj.get("names") or [], obj.get("to", ""), max_mb,
+                                      one_page=one_page if isinstance(one_page, dict) else None)
                 size = os.path.getsize(os.path.join(SCAN_DIR, f))
                 return self._json(200, {"ok": True, "file": f, "undo": undo, "size": size})
             except subprocess.TimeoutExpired:
                 return self._json(200, {"ok": False, "error": "Merge timed out."})
+            except Exception as e:
+                return self._json(200, {"ok": False, "error": str(e)})
+        if path == "/merge/onepage":
+            try:
+                return self._json(200, dict(do_onepage_preview(self._json_body()), ok=True))
+            except subprocess.TimeoutExpired:
+                return self._json(200, {"ok": False, "error": "Reading the scans timed out."})
             except Exception as e:
                 return self._json(200, {"ok": False, "error": str(e)})
         if path == "/undo":
