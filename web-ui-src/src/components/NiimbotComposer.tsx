@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { niimbot as nb } from '../api/client'
+import { niimbot as nb, printQueue } from '../api/client'
+import { useQueue } from './QueueContext'
 import { useStatus } from './status'
 import { readImageB64, type ThermalFormat } from '../lib/formats'
 
@@ -21,6 +22,8 @@ export function NiimbotComposer({
   const [imgName, setImgName] = useState('')
   const [previewPng, setPreviewPng] = useState('')
   const [busy, setBusy] = useState(false)
+  const [queueing, setQueueing] = useState(false)
+  const { refresh: refreshQueue } = useQueue()
   const [dragOver, setDragOver] = useState(false)
   const abort = useRef<AbortController | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -77,6 +80,21 @@ export function NiimbotComposer({
       })
       .catch(() => { status.set('error', 'Failed'); onNote('err', 'Print failed.') })
       .finally(() => setBusy(false))
+  }
+
+  // Text labels can be staged for later (e.g. while the printer is off).
+  const canQueue = kind === 'text' && !!text.trim()
+  const addToQueue = () => {
+    if (!canQueue || queueing) return
+    setQueueing(true)
+    onNote('', '')
+    printQueue.addText(text, { type: 'label', address: format.address })
+      .then((r) => {
+        if (r.ok) { setText(''); onNote('ok', `Added ${r.added} to the queue.`); refreshQueue() }
+        else onNote('err', r.error || 'Could not add to the queue.')
+      })
+      .catch(() => onNote('err', 'Could not reach the print service.'))
+      .finally(() => setQueueing(false))
   }
 
   const onPrint = () => {
@@ -161,9 +179,28 @@ export function NiimbotComposer({
       )}
 
       <hr className="my-4 border-t border-base-300" />
-      <button type="button" onClick={onPrint} disabled={busy || !hasContent} className="btn btn-primary btn-block btn-lg">
-        {busy ? 'Printing…' : 'Print label'}
-      </button>
+      {/* Printer not connected: queueing is the likelier intent, so it leads. */}
+      {kind === 'text' && !format.connected ? (
+        <>
+          <button type="button" onClick={addToQueue} disabled={!canQueue || queueing} className="btn btn-primary btn-block btn-lg">
+            {queueing ? 'Adding…' : 'Add to queue'}
+          </button>
+          <button type="button" onClick={onPrint} disabled={busy || !hasContent} className="btn btn-outline btn-block mt-2 h-11">
+            {busy ? 'Printing…' : 'Connect and print now'}
+          </button>
+        </>
+      ) : (
+        <>
+          <button type="button" onClick={onPrint} disabled={busy || !hasContent} className="btn btn-primary btn-block btn-lg">
+            {busy ? 'Printing…' : 'Print label'}
+          </button>
+          {kind === 'text' && (
+            <button type="button" onClick={addToQueue} disabled={!canQueue || queueing} className="btn btn-outline btn-block mt-2 h-11">
+              {queueing ? 'Adding…' : 'Add to queue'}
+            </button>
+          )}
+        </>
+      )}
     </div>
   )
 }

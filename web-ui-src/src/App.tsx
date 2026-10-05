@@ -6,18 +6,23 @@ import { PrintTab } from './tabs/PrintTab'
 import { LabelsTab } from './tabs/LabelsTab'
 import { DevicesModal } from './components/DevicesModal'
 import { ActivityLogProvider, ActivityFooter } from './components/ActivityLog'
+import { QueueTab } from './tabs/QueueTab'
+import { QueueProvider, useQueue } from './components/QueueContext'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'scan', label: 'Scan' },
   { id: 'labels', label: 'Labels' },
   { id: 'print', label: 'Print' },
+  { id: 'queue', label: 'Queue' },
 ]
 
 export function App() {
   return (
     <StatusProvider>
       <ActivityLogProvider>
-        <Shell />
+        <QueueProvider>
+          <Shell />
+        </QueueProvider>
       </ActivityLogProvider>
     </StatusProvider>
   )
@@ -26,6 +31,9 @@ export function App() {
 function Shell() {
   const [tab, navigate] = useRoute()
   const [devicesOpen, setDevicesOpen] = useState(false)
+  const { state: queue } = useQueue()
+  const queued = queue.items.length
+  const queueFailed = queue.items.some((i) => i.state === 'failed')
 
   return (
     <div className="mx-auto flex min-h-[100dvh] max-w-[900px] flex-col px-5 pb-24 pt-[clamp(22px,5vw,44px)]">
@@ -33,6 +41,25 @@ function Shell() {
         <div className="text-hero font-[640] tracking-[-0.01em]">Print / Scan</div>
         <div className="flex items-center gap-3">
           <StatusLed />
+          {queued > 0 && tab !== 'queue' && (
+            <div className="indicator">
+              <span className={'indicator-item badge badge-xs translate-x-[-4px] translate-y-[4px] font-mono tabular-nums ' + (queueFailed ? 'badge-error' : 'badge-primary')}>{queued}</span>
+              <button
+                type="button"
+                data-tip="Queue"
+                aria-label={`Print queue, ${queued} waiting`}
+                onClick={() => navigate('queue')}
+                className="tooltip tooltip-bottom btn btn-square btn-ghost btn-sm"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="4" y="3" width="13" height="5" rx="1" />
+                  <rect x="4" y="10" width="13" height="5" rx="1" />
+                  <path d="M4 19.5h13" />
+                  <path d="M20 6v12" />
+                </svg>
+              </button>
+            </div>
+          )}
           <button
             type="button"
             data-tip="Devices"
@@ -57,9 +84,12 @@ function Shell() {
             role="tab"
             aria-selected={tab === t.id}
             onClick={() => navigate(t.id)}
-            className={'tab font-[640] ' + (tab === t.id ? 'tab-active' : '')}
+            className={'tab gap-[6px] font-[640] ' + (tab === t.id ? 'tab-active' : '')}
           >
             {t.label}
+            {t.id === 'queue' && queued > 0 && (
+              <span className={'badge badge-xs font-mono tabular-nums ' + (queueFailed ? 'badge-error' : 'badge-primary')}>{queued}</span>
+            )}
           </button>
         ))}
       </div>
@@ -67,6 +97,7 @@ function Shell() {
       {tab === 'scan' && <ScanTab />}
       {tab === 'labels' && <LabelsTab />}
       {tab === 'print' && <PrintTab />}
+      {tab === 'queue' && <QueueTab />}
 
       {tab === 'scan' && <ActivityFooter />}
 

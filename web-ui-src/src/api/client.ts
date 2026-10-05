@@ -141,6 +141,7 @@ export interface DocInfoResult extends OkResult {
 }
 
 export interface DocPrintResult extends OkResult {
+  offline?: boolean
   queue?: string
   job?: string
   pages?: number
@@ -240,4 +241,51 @@ export function printSheet(body: {
   cells: Record<string, { mode: 'text' | 'file' | 'qr'; text?: string; dataB64?: string; filename?: string }>
 }) {
   return postJSON<SheetPrintResult>('/print', body)
+}
+
+// --- Print queue --------------------------------------------------------------
+
+export type QueueTarget =
+  | { type: 'label'; address: string; name?: string }
+  | { type: 'a4'; queue: string }
+
+export interface QueueItem {
+  id: string
+  kind: 'text' | 'file'
+  text?: string
+  filename?: string
+  pages?: number
+  target: QueueTarget
+  copies: number
+  barcode: boolean
+  state: 'waiting' | 'printing' | 'failed'
+  error: string
+  created: number
+}
+
+export interface QueueTargetState {
+  type: 'label' | 'a4'
+  id: string
+  name: string
+  ready: boolean
+}
+
+export interface QueueState {
+  items: QueueItem[]
+  running: boolean
+  message: string
+  targets: QueueTargetState[]
+}
+
+export const printQueue = {
+  state: () => getJSON<QueueState>('/queue/state'),
+  addText: (text: string, target?: QueueTarget) =>
+    postJSON<OkResult & { added?: number }>('/queue/add', { text, target }),
+  addFile: (dataB64: string, filename: string) =>
+    postJSON<OkResult & { added?: number }>('/queue/add', { dataB64, filename }),
+  update: (id: string, patch: { target?: QueueTarget; copies?: number; barcode?: boolean }) =>
+    postJSON<OkResult>('/queue/update', { id, ...patch }),
+  remove: (id: string) => postJSON<OkResult>('/queue/remove', { id }),
+  release: () => postJSON<OkResult>('/queue/release', {}),
+  stop: () => postJSON<OkResult>('/queue/stop', {}),
 }

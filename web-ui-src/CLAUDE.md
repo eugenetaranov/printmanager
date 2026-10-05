@@ -96,8 +96,15 @@ arbitrary `text-[Npx]` values — pick the nearest token:
   hand-roll another dialog.
 - **Loading**: show `skeleton` rows/fields (not a blocking spinner) for anything that can
   arrive late; reserve the final height so content doesn't jump (CLS).
-- **Tab route path must equal the tab name** (Scan → `/scan`, Labels → `/labels`) — see
-  `src/lib/router.ts`. A path that disagrees with its tab label is a bug.
+- **Tab route path must equal the tab name** (Scan → `/scan`, Labels → `/labels`, Queue →
+  `/queue`) — see `src/lib/router.ts`. A path that disagrees with its tab label is a bug. The
+  SPA owns those paths, so a JSON endpoint must never sit on one (the queue API is
+  `/queue/state`, not `GET /queue`).
+- **Print queue** (`src/tabs/QueueTab.tsx`, `src/components/QueueContext.tsx`): items live on
+  the Pi; `QueueProvider` polls `/queue/state` every 3 s while the page is visible, which also
+  feeds the header queue button/tab count and is the heartbeat a waiting release worker needs.
+  Composers offer **Add to queue** as a secondary action, and promote it to the primary button
+  when the target printer is off/not connected.
 
 ## Interaction & UX principles
 
@@ -110,9 +117,11 @@ arbitrary `text-[Npx]` values — pick the nearest token:
 - **Two-click arm/confirm** for immediate destructive buttons (Remove, Clear all): first
   click arms + relabels ("Click again to delete all") and disarms after a few seconds.
   Use this instead of a confirm dialog for low-stakes single actions; use the Undo path for
-  recoverability.
+  recoverability. Exception: queue items. Removing one is two-click only, and printed items
+  are deleted outright — there is nothing meaningful to undo once a label is on paper.
 - **Prefer sliders to fiddly numeric inputs** for coarse settings. Size caps use a
-  `range range-sm`, integer MB `0–10`, `0 = "No limit"` — no decimals.
+  `range range-sm`, integer MB `0–10`, `0 = "No limit"` — no decimals. Small counts
+  (copies, 1–20) use a `join` −/value/+ stepper with 44px buttons instead.
 - **One primary CTA per view** (`btn-primary btn-block btn-lg` for the main action);
   secondary actions are `btn-ghost`/`btn-outline` and visually subordinate.
 - **Respect `prefers-reduced-motion`** — the global rule in `index.css` neutralizes the

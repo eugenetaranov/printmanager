@@ -604,6 +604,39 @@ def _render_landscape_qr(payload, lw, lh):
     return canvas
 
 
+def _render_landscape_barcode(text, lw, lh):
+    """Code 128 with the text underneath. Integer module widths and no dither,
+    so the bars stay crisp enough to scan. reportlab does the encoding:
+    decompose() yields one letter per bar/space, upper = bar, lower = space,
+    A/a = 1 module, B/b = 2, ..."""
+    from PIL import Image, ImageDraw
+    from reportlab.graphics.barcode import code128
+    bc = code128.Code128(text)
+    bc.validate()
+    bc.encode()
+    runs = [(ch.isupper(), ord(ch.lower()) - ord("a") + 1) for ch in bc.decompose()]
+    modules = sum(n for _, n in runs) + 20          # 10-module quiet zone each side
+    mod = lw // modules
+    if mod < 1:
+        raise RuntimeError("Too long for a barcode on this label — print it as text")
+    img = Image.new("L", (lw, lh), 255)
+    draw = ImageDraw.Draw(img)
+    margin = max(2, round(lh * 0.06))
+    # Size the digits first (usually width-bound), then give the bars the rest.
+    font, _ = _fit_font(draw, text, lw - 2 * margin, max(10, round(lh * 0.28)))
+    box = draw.textbbox((0, 0), text, font=font)
+    text_h, gap = box[3], max(2, round(lh * 0.04))
+    bar_h = lh - 2 * margin - text_h - gap
+    x = (lw - (modules - 20) * mod) // 2
+    for is_bar, n in runs:
+        if is_bar:
+            draw.rectangle([x, margin, x + n * mod - 1, margin + bar_h - 1], fill=0)
+        x += n * mod
+    w = draw.textlength(text, font=font)
+    draw.text(((lw - w) / 2, margin + bar_h + gap), text, fill=0, font=font)
+    return img
+
+
 def _render_landscape_image(raw, lw, lh):
     from PIL import Image, ImageOps
     import io
@@ -624,6 +657,8 @@ def render_label_image(kind, payload, model, label_mm):
     lw, lh = (height, width) if portrait else (width, height)
     if kind == "qr":
         img = _render_landscape_qr(payload, lw, lh)
+    elif kind == "barcode":
+        img = _render_landscape_barcode(str(payload), lw, lh)
     elif kind == "image":
         img = _render_landscape_image(payload, lw, lh)
     else:

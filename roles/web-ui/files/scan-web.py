@@ -802,8 +802,44 @@ def _draw_text(c, text, bx, by, bw, bh, pad, scale):
             c.drawCentredString(cx, cy + ((n - 1) / 2.0 - i) * leading - 0.35 * size, ln)
 
 
-def _submit_lp(pdf_path, queue=None, duplex=False, rotate180=False):
-    cmd = ["lp", "-d", queue or PRINT_QUEUE, "-o", "media=A4", "-o", "fit-to-page=false"]
+class PrinterOffline(RuntimeError):
+    """A USB printer that isn't plugged in / powered on. Raised instead of
+    handing the job to CUPS, whose usb backend would hold it indefinitely and
+    print it whenever the printer next appears."""
+
+
+def _queue_uri(queue):
+    for r in _cups_seed():
+        if r.get("id") == queue:
+            return r.get("detail") or ""
+    return ""
+
+
+def usb_present(queue):
+    """False only when the queue is a usb:// printer and no attached USB device
+    carries its brand (e.g. 'Brother') as manufacturer. Anything we can't tell
+    (non-USB queue, cold cache, no sysfs) counts as present — the old behaviour."""
+    m = re.match(r"usb://([^/]+)/", _queue_uri(queue))
+    if not m or not os.path.isdir("/sys/bus/usb/devices"):
+        return True
+    brand = urllib.parse.unquote(m.group(1)).strip().lower()
+    for dev in os.listdir("/sys/bus/usb/devices"):
+        try:
+            with open(os.path.join("/sys/bus/usb/devices", dev, "manufacturer")) as f:
+                if brand in f.read().lower():
+                    return True
+        except OSError:
+            continue
+    return False
+
+
+def _submit_lp(pdf_path, queue=None, duplex=False, rotate180=False, copies=1):
+    queue = queue or PRINT_QUEUE
+    if not usb_present(queue):
+        raise PrinterOffline("The printer is off — switch it on, or add this to the Queue and print it later.")
+    cmd = ["lp", "-d", queue, "-o", "media=A4", "-o", "fit-to-page=false"]
+    if copies > 1:
+        cmd += ["-n", str(copies)]
     if duplex:
         cmd += ["-o", "sides=two-sided-long-edge"]
     if rotate180:                       # reverse-portrait: flips the page 180°
@@ -1085,6 +1121,389 @@ def do_document_cancel(obj):
     if job:
         shutil.rmtree(job["dir"], ignore_errors=True)
     return {"ok": True}
+
+
+# --- Print queue -------------------------------------------------------------
+# Items staged for later printing (e.g. shipment numbers pasted on the phone
+# while the printers are off), released together with "Print all". Stored on the
+# Pi so every device sees the same queue. Printed items are deleted at once.
+QUEUE_DIR = os.path.join(DATA_DIR, "queue")
+QUEUE_FILE = os.path.join(QUEUE_DIR, "queue.json")
+QUEUE_MAX = 20
+QUEUE_TTL = 7 * 24 * 3600
+QUEUE_HEARTBEAT = 30          # a waiting worker gives up after this long unwatched
+QUEUE_JOB_TIMEOUT = 180       # an A4 job that hasn't completed by then fails
+_queue_lock = threading.RLock()
+_queue_run = {"gen": 0, "active": False, "message": "", "seen": 0.0}
+
+
+def _q_load():
+    try:
+        with open(QUEUE_FILE) as f:
+            items = json.load(f)
+        return items if isinstance(items, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def _q_save(items):
+    os.makedirs(QUEUE_DIR, exist_ok=True)
+    tmp = QUEUE_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(items, f, indent=1)
+    os.replace(tmp, QUEUE_FILE)
+
+
+def _q_pdf(item_id):
+    return os.path.join(QUEUE_DIR, item_id + ".pdf")
+
+
+def _q_drop_files(item):
+    if item.get("kind") == "file":
+        _rm(_q_pdf(item["id"]))
+
+
+def _q_items():
+    """Load the queue, sweeping expired items."""
+    with _queue_lock:
+        items = _q_load()
+        now = time.time()
+        keep = [i for i in items if now - i.get("created", now) < QUEUE_TTL]
+        # An item left "printing" by a restart or a dead worker is just waiting.
+        stale = not _queue_run["active"] and any(i.get("state") == "printing" for i in keep)
+        for i in keep:
+            if stale and i.get("state") == "printing":
+                i["state"] = "waiting"
+        if len(keep) != len(items) or stale:
+            for i in items:
+                if i not in keep:
+                    _q_drop_files(i)
+            _q_save(keep)
+        return keep
+
+
+def _q_update(item_id, **patch):
+    with _queue_lock:
+        items = _q_load()
+        for i in items:
+            if i["id"] == item_id:
+                i.update(patch)
+        _q_save(items)
+
+
+def _label_printers():
+    try:
+        return _niimbot().manager.state()
+    except Exception:
+        return []
+
+
+def _q_target(raw, kind):
+    """Validate a requested target, or pick the default: label text goes to the
+    active label printer, files (and text when there's no label printer) to the
+    default A4 queue."""
+    raw = raw if isinstance(raw, dict) else {}
+    if raw.get("type") == "label" and kind == "text":
+        for p in _label_printers():
+            if p["address"] == raw.get("address"):
+                return {"type": "label", "address": p["address"], "name": p["name"]}
+        raise RuntimeError("Unknown label printer")
+    if raw.get("type") == "a4":
+        q = raw.get("queue") or PRINT_QUEUE
+        if q != PRINT_QUEUE and q not in set(print_queues()):
+            raise RuntimeError("Unknown printer: %s" % q)
+        return {"type": "a4", "queue": q}
+    if kind == "text":
+        # The active printer = the one that last printed a label (any device).
+        printers = _label_printers()
+        active = next((p for p in printers if p.get("active")), printers[0] if printers else None)
+        if active:
+            return {"type": "label", "address": active["address"], "name": active["name"]}
+    return {"type": "a4", "queue": PRINT_QUEUE}
+
+
+def queue_add(obj):
+    _queue_run["message"] = ""          # a finished run's "Printed N" is stale now
+    items = _q_items()
+    new = []
+    text = obj.get("text")
+    if text is not None:
+        lines = [ln.strip() for ln in str(text).splitlines() if ln.strip()]
+        if not lines:
+            raise RuntimeError("Nothing to add — paste a number or some text first")
+        for ln in lines:
+            new.append({"kind": "text", "text": ln[:200],
+                        "target": _q_target(obj.get("target"), "text")})
+    else:
+        new.append({"kind": "file", "filename": os.path.basename(obj.get("filename") or "file")[:120],
+                    "target": _q_target(obj.get("target"), "file")})
+    if len(items) + len(new) > QUEUE_MAX:
+        raise RuntimeError("The queue is full (max %d items) — print or remove some first" % QUEUE_MAX)
+    now = time.time()
+    for n, it in enumerate(new):
+        it.update(id=_new_token(), copies=1, barcode=False, state="waiting", error="",
+                  created=now + n * 1e-3)
+        if it["kind"] == "file":
+            tmp = tempfile.mkdtemp(prefix="qadd-")
+            try:
+                pdf, pages = _to_pdf(obj, tmp)
+                os.makedirs(QUEUE_DIR, exist_ok=True)
+                shutil.move(pdf, _q_pdf(it["id"]))
+                it["pages"] = pages
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+    with _queue_lock:
+        _q_save(_q_load() + new)
+    return {"added": len(new)}
+
+
+def queue_update(obj):
+    item_id = obj.get("id") or ""
+    item = next((i for i in _q_items() if i["id"] == item_id), None)
+    if not item:
+        raise RuntimeError("That item is no longer in the queue")
+    if item.get("state") == "printing":
+        raise RuntimeError("That item is printing right now")
+    patch = {}
+    if "target" in obj:
+        patch["target"] = _q_target(obj["target"], item["kind"])
+    if "copies" in obj:
+        try:
+            patch["copies"] = max(1, min(20, int(obj["copies"])))
+        except (TypeError, ValueError):
+            raise RuntimeError("Copies must be a number")
+    if "barcode" in obj:
+        patch["barcode"] = bool(obj["barcode"])
+    _q_update(item_id, **patch)
+    return {}
+
+
+def queue_remove(obj):
+    item_id = obj.get("id") or ""
+    with _queue_lock:
+        items = _q_load()
+        item = next((i for i in items if i["id"] == item_id), None)
+        if item and item.get("state") == "printing":
+            raise RuntimeError("That item is printing right now")
+        if item:
+            _q_drop_files(item)
+            _q_save([i for i in items if i["id"] != item_id])
+    return {}
+
+
+def _target_ready(t, printers):
+    if t["type"] == "label":
+        # Fall back to the name: a D110 rotates its BLE address, and a reconnect
+        # re-keys it, while queued items still carry the old address.
+        p = (next((p for p in printers if p["address"] == t["address"]), None)
+             or next((p for p in printers if p["name"] == t.get("name")), None))
+        return bool(p) and p["status"] == "connected"
+    return usb_present(t["queue"])
+
+
+def queue_state():
+    """Items + worker state + readiness of every printer the queue needs. Each
+    call is also the heartbeat that keeps a waiting worker alive."""
+    _queue_run["seen"] = time.monotonic()
+    items = _q_items()
+    printers = _label_printers()
+    names = {q["queue"]: q["name"] for q in queue_list()}
+    targets, seen = [], set()
+    for i in items:
+        t = i["target"]
+        if t["type"] == "label":
+            # Report the printer's current address (it may have been re-keyed
+            # since the item was queued) so the tab's Connect hits a live entry.
+            p = (next((p for p in printers if p["address"] == t["address"]), None)
+                 or next((p for p in printers if p["name"] == t.get("name")), None))
+            tid, name = (p["address"], p["name"]) if p else (t["address"], t.get("name") or "Label printer")
+        else:
+            tid, name = t["queue"], names.get(t["queue"], t["queue"])
+        if (t["type"], tid) in seen:
+            continue
+        seen.add((t["type"], tid))
+        targets.append({"type": t["type"], "id": tid, "name": name,
+                        "ready": _target_ready(t, printers)})
+    return {"items": items, "running": _queue_run["active"],
+            "message": _queue_run["message"], "targets": targets}
+
+
+# Each release gets a generation number. Stop bumps it and frees the queue at
+# once, even while the worker is stuck in a BLE reconnect (up to ~60s); the
+# abandoned worker then sees it's stale and touches nothing (except removing an
+# item it did manage to print, so it can't print twice).
+# Items physically being sent to a printer right now, possibly by an abandoned
+# worker. A new run skips them so a Stop + Print all can't print one twice.
+_inflight = set()
+
+
+def _current(gen):
+    return _queue_run["gen"] == gen
+
+
+def _say(gen, msg):
+    if _current(gen):
+        _queue_run["message"] = msg
+
+
+def _wait_watched(gen, cond, what):
+    """Poll cond() every 2s until true; stop if asked to or nobody is watching."""
+    while not cond():
+        if not _current(gen):
+            raise InterruptedError("Stopped")
+        if time.monotonic() - _queue_run["seen"] > QUEUE_HEARTBEAT:
+            raise InterruptedError("Stopped while waiting for %s — the page was closed" % what)
+        time.sleep(2)
+
+
+def _cups_job_pending(queue, job):
+    rc, out, _ = _run(["lpstat", "-o", queue], timeout=20)
+    return rc == 0 and any(line.split()[:1] == [job] for line in out.splitlines())
+
+
+def _print_item(gen, item):
+    t, copies = item["target"], int(item.get("copies") or 1)
+    if t["type"] == "label":
+        nb = _niimbot()
+        state = nb.manager.state()
+        p = (next((p for p in state if p["address"] == t["address"]), None)
+             or next((p for p in state if p["name"] == t.get("name")), None))
+        if not p:
+            raise RuntimeError("Label printer not found — choose another for this item")
+        if p["status"] != "connected":
+            _say(gen, "Connecting to %s…" % p["name"])
+            try:
+                nb.manager.sync_reconnect(p["address"])
+            except Exception as e:
+                raise RuntimeError("Couldn't connect to %s — is it on and in range? (%s)"
+                                   % (p["name"], str(e) or type(e).__name__))
+            p = next((x for x in nb.manager.state() if x["name"] == p["name"]), p)
+        kind = "barcode" if item.get("barcode") else "text"
+        _inflight.add(item["id"])
+        try:
+            for _ in range(copies):
+                if not _current(gen):
+                    raise InterruptedError("Stopped")
+                _say(gen, "Printing…")
+                nb.manager.sync_print(kind, item["text"], p["address"])
+            nb.manager.select(p["address"])
+        finally:
+            _inflight.discard(item["id"])
+        return
+    queue = t["queue"]
+    if not usb_present(queue):
+        _say(gen, "Waiting for the printer — switch it on")
+        _wait_watched(gen, lambda: usb_present(queue), "the printer")
+    if not _current(gen):
+        raise InterruptedError("Stopped")
+    _say(gen, "Printing…")
+    _inflight.add(item["id"])
+    try:
+        _print_a4(item, queue, copies)
+    finally:
+        _inflight.discard(item["id"])
+
+
+def _print_a4(item, queue, copies):
+    tmp = tempfile.mkdtemp(prefix="qprint-")
+    try:
+        if item["kind"] == "file":
+            pdf = _q_pdf(item["id"])
+        else:
+            pdf = os.path.join(tmp, "text.pdf")
+            _big_text_pdf(item["text"], item.get("barcode"), pdf)
+        with _print_lock:
+            job = _submit_lp(pdf, queue, copies=copies)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if not job:
+        return
+    deadline = time.monotonic() + QUEUE_JOB_TIMEOUT
+    while _cups_job_pending(queue, job):
+        if time.monotonic() > deadline:
+            # Cancel, or CUPS would print it on its own whenever it recovers.
+            _run(["cancel", job])
+            raise RuntimeError("The printer didn't finish — check paper and that it's on, then Resume")
+        time.sleep(3)
+
+
+def _queue_worker(gen):
+    printed = 0
+    try:
+        while _current(gen):
+            item = next((i for i in _q_items() if i.get("state") in ("waiting", "failed")
+                         and i["id"] not in _inflight), None)
+            if not item:
+                _say(gen, "Printed %d item%s." % (printed, "" if printed == 1 else "s") if printed else "")
+                return
+            _q_update(item["id"], state="printing", error="")
+            try:
+                _print_item(gen, item)
+            except InterruptedError as e:
+                if _current(gen):
+                    _q_update(item["id"], state="waiting")
+                    _say(gen, str(e))
+                return
+            except Exception as e:
+                if _current(gen):
+                    _q_update(item["id"], state="failed", error=str(e) or "Print failed")
+                    _say(gen, "Paused — fix the problem, then Resume")
+                return
+            with _queue_lock:            # printed: remove it even if we were stopped meanwhile
+                _q_drop_files(item)
+                _q_save([i for i in _q_load() if i["id"] != item["id"]])
+            printed += 1
+    finally:
+        with _queue_lock:
+            if _current(gen):
+                _queue_run["active"] = False
+
+
+def queue_release(obj):
+    with _queue_lock:
+        if _queue_run["active"]:
+            return {}
+        if not any(i.get("state") in ("waiting", "failed") for i in _q_items()):
+            raise RuntimeError("Nothing to print")
+        gen = _queue_run["gen"] + 1
+        _queue_run.update(gen=gen, active=True, message="Starting…", seen=time.monotonic())
+    threading.Thread(target=_queue_worker, args=(gen,), daemon=True).start()
+    return {}
+
+
+def queue_stop(obj):
+    """Stop now: abandon the running worker and put its item back to waiting."""
+    with _queue_lock:
+        if not _queue_run["active"]:
+            return {}
+        _queue_run.update(gen=_queue_run["gen"] + 1, active=False, message="Stopped.")
+        items = _q_load()
+        for i in items:
+            if i.get("state") == "printing":
+                i["state"] = "waiting"
+        _q_save(items)
+    return {}
+
+
+def _big_text_pdf(text, barcode, out):
+    """One A4 page: the text large at the top (and a Code 128 under it when
+    asked), so a number printed on A4 can be cut out and taped to a parcel."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    W, H = A4
+    margin = 42
+    c = canvas.Canvas(out, pagesize=A4)
+    size = 36
+    while size > 10 and c.stringWidth(text, "Helvetica-Bold", size) > W - 2 * margin:
+        size -= 1
+    c.setFont("Helvetica-Bold", size)
+    c.drawString(margin, H - margin - size, text)
+    if barcode:
+        from reportlab.graphics.barcode import code128
+        bc = code128.Code128(text, barHeight=60, barWidth=1.4, quiet=False)
+        bc.drawOn(c, margin, H - margin - size - 90)
+    c.showPage()
+    c.save()
 
 
 def mode_options(default):
@@ -1557,6 +1976,9 @@ class Handler(BaseHTTPRequestHandler):
                     if not payload:
                         raise RuntimeError("Nothing to print")
                 res = nb.manager.sync_print(kind, payload, obj.get("address"))
+                # The printer that last printed is the default for queued labels.
+                if obj.get("address"):
+                    nb.manager.select(obj.get("address"))
                 return self._json(200, dict(res, ok=True))
             elif path == "/niimbot/preview":
                 # WYSIWYG label preview — renders the exact bitmap the printer
@@ -1614,6 +2036,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"templates": LABEL_TEMPLATES})
         elif path == "/print/queues":
             self._json(200, {"queues": queue_list(), "default": PRINT_QUEUE})
+        elif path == "/queue/state":   # not /queue: that's the SPA tab route
+            self._json(200, queue_state())
         elif path.startswith("/file/"):
             self._serve_pdf(urllib.parse.unquote(path[len("/file/"):]))
         elif path.startswith("/thumb/"):
@@ -1738,6 +2162,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"ok": False, "error": "The printer did not respond in time."})
             except Exception as e:
                 return self._json(200, {"ok": False, "error": str(e)})
+        if path in ("/queue/add", "/queue/update", "/queue/remove", "/queue/release", "/queue/stop"):
+            fn = {"/queue/add": queue_add, "/queue/update": queue_update, "/queue/remove": queue_remove,
+                  "/queue/release": queue_release, "/queue/stop": queue_stop}[path]
+            try:
+                return self._json(200, dict(fn(self._json_body()), ok=True))
+            except Exception as e:
+                return self._json(200, {"ok": False, "error": str(e)})
         if path in ("/document/info", "/document/print", "/document/continue", "/document/cancel"):
             obj = self._json_body()
             fn = {"/document/info": do_document_info, "/document/print": do_document,
@@ -1747,7 +2178,8 @@ class Handler(BaseHTTPRequestHandler):
             except subprocess.TimeoutExpired:
                 return self._json(200, {"ok": False, "error": "The printer did not respond in time."})
             except Exception as e:
-                return self._json(200, {"ok": False, "error": str(e)})
+                return self._json(200, {"ok": False, "error": str(e),
+                                        "offline": isinstance(e, PrinterOffline)})
         if path != "/scan":
             return self._send(404, "Not found", "text/plain")
         f = self._form()

@@ -1,18 +1,20 @@
 import { useSyncExternalStore, useCallback } from 'react'
 
-// Three tabs; the URL path matches the tab name (scan / labels / print).
-export type TabId = 'scan' | 'labels' | 'print'
+// Four tabs; the URL path matches the tab name (scan / labels / print / queue).
+export type TabId = 'scan' | 'labels' | 'print' | 'queue'
 
 const TAB_TO_PATH: Record<TabId, string> = {
   scan: '/scan',
   labels: '/labels',
   print: '/print',
+  queue: '/queue',
 }
 
 export function pathToTab(pathname: string): TabId {
   const p = pathname.replace(/\/+$/, '')
   if (p === '/labels') return 'labels'
   if (p === '/print') return 'print'
+  if (p === '/queue') return 'queue'
   return 'scan'
 }
 

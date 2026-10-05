@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, type Queue } from '../api/client'
+import { api, printQueue, type Queue } from '../api/client'
 import { useStatus } from '../components/status'
 import { useNote, Note } from '../components/Note'
 import { DualRange } from '../components/DualRange'
+import { useQueue } from '../components/QueueContext'
 
 interface Doc {
   filename: string
@@ -32,6 +33,12 @@ export function PrintTab() {
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const file = useRef<File | null>(null)
+  // Set when Print was refused because the printer is off: Add to queue then
+  // becomes the main action.
+  const [offline, setOffline] = useState(false)
+  const [queueing, setQueueing] = useState(false)
+  const { refresh: refreshQueue } = useQueue()
 
   useEffect(() => {
     api.queues()
@@ -42,15 +49,17 @@ export function PrintTab() {
       .catch(() => {})
   }, [])
 
-  const loadFile = (file: File) => {
+  const loadFile = (f: File) => {
     clear()
+    setOffline(false)
     status.set('busy', 'Reading')
-    readAsBase64(file)
-      .then((b64) => api.documentInfo(b64, file.name))
+    readAsBase64(f)
+      .then((b64) => api.documentInfo(b64, f.name))
       .then((d) => {
         status.set('idle', 'Ready')
         if (d.ok && d.token && d.pages) {
-          setDoc({ filename: file.name, token: d.token, pages: d.pages })
+          setDoc({ filename: f.name, token: d.token, pages: d.pages })
+          file.current = f
           setRange({ from: 1, to: d.pages })
           if (d.pages <= 1) setSides('one')
         } else {
@@ -69,8 +78,25 @@ export function PrintTab() {
     setDoc(null)
     setSides('one')
     setFlip(null)
+    setOffline(false)
+    file.current = null
     clear()
     if (fileInput.current) fileInput.current.value = ''
+  }
+
+  const addToQueue = () => {
+    const f = file.current
+    if (!f || queueing) return
+    setQueueing(true)
+    clear()
+    readAsBase64(f)
+      .then((b64) => printQueue.addFile(b64, f.name))
+      .then((r) => {
+        if (r.ok) { ok(`Added ${f.name} to the queue.`); setOffline(false); refreshQueue() }
+        else err(r.error || 'Could not add to the queue.')
+      })
+      .catch(() => err('Could not reach the print service.'))
+      .finally(() => setQueueing(false))
   }
 
   // Paste an image (screenshot) while the Print tab is open.
@@ -105,6 +131,7 @@ export function PrintTab() {
         if (!d.ok) {
           status.set('error', 'Failed')
           err(d.error || 'Print failed.')
+          if (d.offline) setOffline(true)
           return
         }
         if (d.step === 'flip' && d.token) {
@@ -260,9 +287,27 @@ export function PrintTab() {
       {!flip && (
         <>
           <hr className="my-4 border-t border-base-300" />
-          <button type="button" onClick={print} disabled={!doc || busy} className="btn btn-primary btn-block btn-lg">
-            {busy ? 'Printing…' : 'Print'}
-          </button>
+          {offline ? (
+            <>
+              <button type="button" onClick={addToQueue} disabled={!doc || queueing} className="btn btn-primary btn-block btn-lg">
+                {queueing ? 'Adding…' : 'Add to queue'}
+              </button>
+              <button type="button" onClick={print} disabled={!doc || busy} className="btn btn-outline btn-block mt-2 h-11">
+                {busy ? 'Printing…' : 'Try printing again'}
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={print} disabled={!doc || busy} className="btn btn-primary btn-block btn-lg">
+                {busy ? 'Printing…' : 'Print'}
+              </button>
+              {doc && (
+                <button type="button" onClick={addToQueue} disabled={queueing} className="btn btn-outline btn-block mt-2 h-11">
+                  {queueing ? 'Adding…' : 'Add to queue'}
+                </button>
+              )}
+            </>
+          )}
         </>
       )}
 
