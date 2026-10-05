@@ -515,9 +515,13 @@ def _compress_to_cap(pdf, tmp, cap_bytes):
 # (/merge/onepage); the analysis is cached under a token so the preview, every
 # reorder/fallback tweak and the final merge reuse it without re-rendering.
 ONEPAGE_MAX = 12
-ONEPAGE_PAD_MM = 5         # white space kept around each detected item
-ONEPAGE_MARGIN_MM = 10     # page margin (clear of the printer's unprintable edge)
-ONEPAGE_GAP_MM = 6         # between items
+# Space around each detected item (room to cut it out). It doubles as the page
+# margin and the gap: crops are padded, then laid almost edge to edge, so items
+# end up ≥8 mm from the page edge and ~16 mm apart. 8 (not 10) so a card's
+# front and back (2 × 85.6 mm) still share a row on A4 at real size.
+ONEPAGE_PAD_MM = 8
+ONEPAGE_MARGIN_MM = 1      # extra, for crops clamped at the scan edge
+ONEPAGE_GAP_MM = 1
 _onepage = {}                      # token -> {"dir", "names", "dpi", "gray", "items", "ts"}
 _onepage_lock = threading.Lock()
 
@@ -616,38 +620,55 @@ def find_object_box(img, dpi):
 
 def layout_rows(sizes, avail_w, avail_h, gap):
     """Place (w, h) boxes left to right, wrapping into rows, in order. Returns
-    (scale, [(x, y)]) for the largest scale ≤ 1 at which everything fits;
-    each row is centred horizontally."""
+    (scale, [(x, y)]) for the largest scale ≤ 1 at which everything fits.
+    Items sharing a row get equal cells (the row's widest × tallest) and sit
+    centred in them, so e.g. the front and back of a card come out as a
+    symmetric pair even when one crop is a little bigger. Rows are centred."""
     def place(s):
-        rows, row, row_w = [], [], 0.0
+        rows, row, cw = [], [], 0.0
         for k, (w, h) in enumerate(sizes):
             w, h = w * s, h * s
-            if row and row_w + gap + w > avail_w:
+            wide = max(cw, w)
+            if row and (len(row) + 1) * wide + len(row) * gap > avail_w:
                 rows.append(row)
-                row, row_w = [], 0.0
-            row_w += (gap if row else 0) + w
+                row, wide = [], w
             row.append((k, w, h))
+            cw = wide
         rows.append(row)
+        place.rows = len(rows)
         pos, y = [None] * len(sizes), 0.0
         for row in rows:
-            x = (avail_w - (sum(w for _, w, _ in row) + gap * (len(row) - 1))) / 2
-            for k, w, _ in row:
-                pos[k] = (x, y)
-                x += w + gap
-            y += max(h for _, _, h in row) + gap
+            cw = max(w for _, w, _ in row)
+            ch = max(h for _, _, h in row)
+            x = (avail_w - (cw * len(row) + gap * (len(row) - 1))) / 2
+            for k, w, h in row:
+                pos[k] = (x + (cw - w) / 2, y + (ch - h) / 2)
+                x += cw + gap
+            y += ch + gap
         return y - gap, pos
     hi = min(1.0, min(avail_w / float(w) for w, _ in sizes))
-    total, pos = place(hi)
-    if total <= avail_h:
-        return hi, pos
-    lo = 0.02
-    for _ in range(25):                                   # binary search the scale
-        mid = (lo + hi) / 2
-        if place(mid)[0] <= avail_h:
-            lo = mid
-        else:
-            hi = mid
-    return lo, place(lo)[1]
+    if place(hi)[0] <= avail_h:
+        best = hi
+    else:
+        lo, top = 0.02, hi
+        for _ in range(25):                               # binary search the scale
+            mid = (lo + top) / 2
+            if place(mid)[0] <= avail_h:
+                lo = mid
+            else:
+                top = mid
+        best = lo
+    # Prefer fewer rows when it costs ≤10% size: a front/back pair whose crops
+    # came out a few mm too wide stays side by side instead of stacking.
+    place(best)
+    rows = place.rows
+    s = best
+    while s > best * 0.9:
+        s -= 0.005
+        if place(s)[0] <= avail_h and place.rows < rows:
+            best = s
+            break
+    return best, place(best)[1]
 
 
 def _ocr_langs():
