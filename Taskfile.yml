@@ -1,0 +1,9 @@
+version: '3'
+
+tasks:
+  apply:
+    desc: Provision the Pi. Words after `--` become tack tags (task apply -- web print).
+    vars:
+      TAGS: '{{.CLI_ARGS | trim | splitList " " | compact | join ","}}'
+    cmds:
+      - tack run -sa{{if .TAGS}} -t {{.TAGS}}{{end}}
