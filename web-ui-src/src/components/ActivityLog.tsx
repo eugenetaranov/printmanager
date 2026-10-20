@@ -52,9 +52,9 @@ export function ActivityFooter() {
   if (entries.length === 0) return null
   const rows = [...entries].reverse()
   return (
-    <footer className="mt-10 w-full border-t border-base-300 pt-3">
-      <h2 className="m-0 mb-2 text-body font-[640] tracking-[0.02em]">Activity</h2>
-      <div className="divide-y divide-base-200">
+    <footer className="mt-8 w-full border-t border-base-300 pt-4">
+      <h2 className="field-label m-0 mb-1">Activity</h2>
+      <div className="divide-y divide-base-300">
         {rows.map((e) => <LogRow key={e.id} entry={e} onUndo={runUndo} />)}
       </div>
     </footer>
@@ -63,16 +63,16 @@ export function ActivityFooter() {
 
 function LogRow({ entry, onUndo }: { entry: LogEntry; onUndo: (id: string) => void }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-[6px]">
-      <span className={'min-w-0 truncate font-mono text-body ' + (entry.undone ? 'text-base-content/60 line-through' : 'text-base-content')}>
+    <div className="flex min-h-11 items-center justify-between gap-3 py-1">
+      <span className={'line-clamp-2 min-w-0 break-words text-body ' + (entry.undone ? 'text-base-content/60 line-through' : 'text-base-content')}>
         {entry.content}
       </span>
       {entry.undo && !entry.undone ? (
-        <button type="button" onClick={() => onUndo(entry.id)} disabled={entry.undoing} className="btn btn-ghost btn-xs w-16 flex-none">
-          {entry.undoing ? '…' : 'Undo'}
+        <button type="button" onClick={() => onUndo(entry.id)} disabled={entry.undoing} className="btn btn-ghost btn-sm w-16 flex-none pointer-coarse:h-11">
+          {entry.undoing ? <span className="loading loading-spinner loading-xs" /> : 'Undo'}
         </button>
       ) : (
-        <span className="w-16 flex-none text-right font-mono text-2xs text-base-content/60">{entry.undone ? 'undone' : ''}</span>
+        <span className="w-16 flex-none text-right text-2xs text-base-content/60">{entry.undone ? 'undone' : ''}</span>
       )}
     </div>
   )

@@ -64,13 +64,13 @@ export function ScanTab() {
 
   return (
     <>
-      <form onSubmit={submit} className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5">
+      <form onSubmit={submit} className="card w-full border border-base-300 bg-base-100 p-4 sm:p-5">
         {config === null ? (
           <div className="mb-4 grid grid-cols-2 gap-3">
             <FieldSkeleton /><FieldSkeleton />
           </div>
         ) : hasModes || hasRes ? (
-          <div className="mb-4 grid grid-cols-2 gap-3">
+          <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3">
             {hasModes && (
               <label className="flex flex-col gap-[6px]">
                 <span className="field-label">Mode</span>
@@ -88,7 +88,7 @@ export function ScanTab() {
 
         <label className="flex flex-col gap-[6px]">
           <span className="field-label">
-            Name <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
+            Name <span className="font-medium normal-case tracking-normal">optional</span>
           </span>
           <input
             type="text"
@@ -104,9 +104,9 @@ export function ScanTab() {
         <div className="mt-4">
           <div className="mb-[6px] flex items-baseline justify-between">
             <label htmlFor="scanCap" className="field-label">
-              Max size <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
+              Max size <span className="font-medium normal-case tracking-normal">optional</span>
             </label>
-            <span className="font-mono text-xs text-base-content/70">{cap === 0 ? 'No limit' : `${cap} MB`}</span>
+            <span className="font-mono text-xs text-base-content">{cap === 0 ? 'No limit' : `${cap} MB`}</span>
           </div>
           <input id="scanCap" type="range" min={0} max={10} step={1} value={cap} onChange={(e) => setCap(Number(e.target.value))} className="range range-primary range-sm w-full" />
           <div className="mt-1 flex justify-between px-[2px] font-mono text-2xs text-base-content/60">
@@ -114,7 +114,8 @@ export function ScanTab() {
           </div>
         </div>
 
-        <button type="submit" disabled={scanning} className="btn btn-primary btn-block btn-lg mt-4">
+        <hr className="my-4 border-t border-base-300" />
+        <button type="submit" disabled={scanning} className="btn btn-primary btn-block btn-lg">
           {scanning ? 'Scanning…' : 'Scan'}
         </button>
 

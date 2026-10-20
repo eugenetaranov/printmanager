@@ -75,7 +75,7 @@ export function NiimbotComposer({
         : { kind, text: text.trim(), address: format.address }
     nb.print(body)
       .then((r) => {
-        if (r.ok) { status.set('idle', 'Ready'); onNote('ok', 'Printed label ✓') }
+        if (r.ok) { status.set('idle', 'Ready'); onNote('ok', 'Printed label.') }
         else { status.set('error', 'Failed'); onNote('err', (r.error as string) || 'Print failed.') }
       })
       .catch(() => { status.set('error', 'Failed'); onNote('err', 'Print failed.') })
@@ -135,7 +135,7 @@ export function NiimbotComposer({
               if (f) loadImage(f)
             }}
             className={
-              'flex min-h-[128px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-colors ' +
+              'flex min-h-[128px] cursor-pointer flex-col items-center justify-center gap-2 rounded-box border-2 border-dashed p-6 text-center transition-colors ' +
               (dragOver ? 'border-primary bg-primary/10' : 'border-base-300 hover:border-primary')
             }
           >
@@ -153,7 +153,7 @@ export function NiimbotComposer({
                   type="button"
                   onClick={(e) => { e.preventDefault(); loadImage(null) }}
                   aria-label="Remove image"
-                  className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-error text-white"
+                  className="relative flex h-[22px] w-[22px] items-center justify-center rounded-full bg-error text-error-content before:absolute before:-inset-[11px] before:content-['']"
                 >
                   <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M6 6 18 18M18 6 6 18" /></svg>
                 </button>
@@ -207,12 +207,13 @@ export function NiimbotComposer({
 
 export function Seg<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: [T, string][] }) {
   return (
-    <div role="tablist" className="tabs tabs-box tabs-sm mt-3 inline-flex w-auto">
+    <div role="radiogroup" className="tabs tabs-box tabs-sm mt-3 inline-flex w-auto [&>.tab]:text-body">
       {options.map(([v, label]) => (
         <button
           key={v}
-          role="tab"
-          aria-selected={value === v}
+          type="button"
+          role="radio"
+          aria-checked={value === v}
           onClick={() => onChange(v)}
           className={'tab ' + (value === v ? 'tab-active' : '')}
         >

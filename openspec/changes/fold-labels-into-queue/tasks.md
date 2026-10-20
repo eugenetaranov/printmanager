@@ -8,7 +8,7 @@
 
 ## 2. Web UI
 
-- [x] 2.1 Router: tabs Scan · Queue · Print; `/` and unknown paths open Queue; `/labels` redirects to `/queue`
+- [x] 2.1 Router: tabs Queue · Scan · Print (Queue leftmost); `/` and unknown paths open Queue; `/labels` redirects to `/queue`
 - [x] 2.2 Move the Labels tab body into `components/LabelComposer.tsx` (printer state from the queue poll); remove `LabelsTab.tsx`
 - [x] 2.3 Queue tab: label printer row with live status, Reconnect, and a picker for several printers
 - [x] 2.4 Quick add: Print now (primary when connected) → add + release ids; Add to queue otherwise

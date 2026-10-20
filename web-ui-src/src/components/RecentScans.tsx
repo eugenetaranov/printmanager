@@ -47,6 +47,8 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
   const [clearArmed, setClearArmed] = useState(false)
   const [printing, setPrinting] = useState<string>('')
   const [preview, setPreview] = useState<{ src: string; x: number; y: number } | null>(null)
+  // Hover preview only where there is a real hover (touch would leave it stuck open).
+  const canHover = typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches
 
   // Merge modal state.
   const [mergeOpen, setMergeOpen] = useState(false)
@@ -190,9 +192,9 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
   const allChecked = scans.length > 0 && nSel === scans.length
 
   return (
-    <section className="mt-6">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="m-0 text-body font-[640] tracking-[0.02em]">Recent scans</h2>
+    <section className="card mt-5 w-full border border-base-300 bg-base-100 p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <h2 className="field-label m-0">Recent scans</h2>
         <div className="flex items-center gap-2">
           {/* Always shown (disabled until 2+ selected) so the merge feature is
               discoverable; the tooltip wrapper keeps the hint working while disabled. */}
@@ -200,7 +202,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             className="tooltip tooltip-top"
             data-tip={nSel >= 2 ? 'Merge selected scans into one PDF' : 'Select 2 or more scans to merge them into one PDF'}
           >
-            <button type="button" onClick={openMerge} disabled={nSel < 2} className="btn btn-primary btn-sm min-w-[7.5rem]">
+            <button type="button" onClick={openMerge} disabled={nSel < 2} className="btn btn-outline btn-sm min-w-[7.5rem] pointer-coarse:h-11">
               {/* Balancing spacer: mirrors the counter slot so "Merge" stays
                   centered whether or not the count is showing. */}
               <span className="inline-block w-[2ch]" aria-hidden="true" />
@@ -212,37 +214,40 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
           <button
             type="button"
             onClick={onClear}
-            className={'btn btn-sm ' + (clearArmed ? 'btn-error' : 'btn-ghost text-base-content/60')}
+            className={'btn btn-sm pointer-coarse:h-11 ' + (clearArmed ? 'btn-error' : 'btn-ghost text-base-content/60')}
           >
-            {clearArmed ? 'Click again to delete all' : 'Clear all'}
+            {clearArmed ? 'Delete all?' : 'Clear all'}
           </button>
         </div>
       </div>
 
       {share && (
-        <div className="break-all font-mono text-xs font-medium text-base-content/60">
+        <div className="mt-1 break-all text-xs text-base-content/60">
           Saved to{' '}
-          <a href={share} className="text-primary no-underline hover:underline">{share}</a>
+          <a href={share} className="font-mono text-primary no-underline hover:underline">{share}</a>
         </div>
       )}
 
-      <div className="mt-[14px]">
+      <div className="mt-3">
         {/* table-fixed + colgroup: column widths are pinned, so content changing
             (e.g. the order badge showing/hiding) can never reflow the layout.
             No overflow wrapper — it would let tooltip bubbles create a horizontal
             scrollbar; the fixed-layout table always fits its container. */}
         <table className="table table-sm w-full table-fixed text-body">
           <colgroup>
-            <col className="w-10" />
+            <col className="w-11 sm:w-10" />
             <col className="w-[46px]" />
             <col />
-            <col className="w-0 sm:w-[52px]" />
-            <col className="w-[66px]" />
-            <col className="w-0 sm:w-[74px]" />
-            <col className="w-[104px] sm:w-[168px]" />
+            {/* Phone-hidden columns hide their <col> too: a display:none cell
+                drops out of the grid, so the cells after it would shift into
+                the wrong columns (the actions landed in a 0-wide one). */}
+            <col className="hidden sm:table-column sm:w-[52px]" />
+            <col className="hidden sm:table-column sm:w-[66px]" />
+            <col className="hidden sm:table-column sm:w-[74px]" />
+            <col className="w-[96px] sm:w-[168px]" />
           </colgroup>
           <thead>
-            <tr className="[&>th]:border-b [&>th]:border-base-300 [&>th]:px-[10px] [&>th]:pb-2 [&>th]:text-left [&>th]:font-mono [&>th]:text-2xs [&>th]:font-[600] [&>th]:uppercase [&>th]:tracking-[0.04em] [&>th]:text-base-content/60">
+            <tr className="[&>th]:field-label [&>th]:border-b [&>th]:border-base-300 [&>th]:px-1.5 [&>th]:pb-2 [&>th]:text-left sm:[&>th]:px-[10px]">
               <th className="text-center">
                 <input
                   type="checkbox"
@@ -256,19 +261,19 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
               <th></th>
               <th>Name</th>
               <th className="hidden sm:table-cell">DPI</th>
-              <th>Size</th>
+              <th className="hidden sm:table-cell">Size</th>
               <th className="hidden sm:table-cell">When</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {!loaded && Array.from({ length: 4 }, (_, i) => (
-              <tr key={'sk' + i} className="[&>td]:border-b [&>td]:border-base-300 [&>td]:px-[10px] [&>td]:py-2">
+              <tr key={'sk' + i} className="[&>td]:border-b [&>td]:border-base-300 [&>td]:px-1.5 [&>td]:py-2 sm:[&>td]:px-[10px]">
                 <td><div className="skeleton mx-auto h-4 w-4 rounded" /></td>
                 <td><div className="skeleton h-11 w-[34px] rounded" /></td>
                 <td><div className="skeleton h-4 w-40 rounded" /></td>
                 <td className="hidden sm:table-cell"><div className="skeleton h-4 w-6 rounded" /></td>
-                <td><div className="skeleton h-4 w-12 rounded" /></td>
+                <td className="hidden sm:table-cell"><div className="skeleton h-4 w-12 rounded" /></td>
                 <td className="hidden sm:table-cell"><div className="skeleton h-4 w-12 rounded" /></td>
                 <td><div className="skeleton ml-auto h-4 w-16 rounded" /></td>
               </tr>
@@ -276,12 +281,12 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
             {loaded && scans.map((s) => {
               const i = selected.indexOf(s.name)
               return (
-                <tr key={s.name} className={'[&>td]:border-b [&>td]:border-base-300 [&>td]:px-[10px] [&>td]:py-2 [&>td]:align-middle ' + (s.name === newest ? '[&>td]:[animation:rowin_0.35s_ease_both]' : '')}>
+                <tr key={s.name} className={'[&>td]:border-b [&>td]:border-base-300 [&>td]:px-1.5 [&>td]:py-2 [&>td]:align-middle sm:[&>td]:px-[10px] ' + (s.name === newest ? '[&>td]:[animation:rowin_0.35s_ease_both]' : '')}>
                   <td className="whitespace-nowrap text-center">
-                    <span className="relative inline-flex items-center justify-center">
+                    <label className="relative inline-flex min-h-11 min-w-8 cursor-pointer items-center justify-center">
                       <input
                         type="checkbox"
-                        aria-label="Select"
+                        aria-label={`Select ${s.name}`}
                         checked={i >= 0}
                         onChange={() => toggle(s.name)}
                         className="checkbox checkbox-sm align-middle"
@@ -291,18 +296,22 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                           {i + 1}
                         </span>
                       )}
-                    </span>
+                    </label>
                   </td>
                   <td>
-                    <img
-                      loading="lazy"
-                      src={api.thumbUrl(s.name)}
-                      alt=""
-                      onMouseEnter={(e) => setPreview({ src: api.thumbUrl(s.name), x: e.clientX, y: e.clientY })}
-                      onMouseMove={(e) => setPreview((p) => (p ? { ...p, x: e.clientX, y: e.clientY } : p))}
-                      onMouseLeave={() => setPreview(null)}
-                      className="block h-11 w-[34px] cursor-zoom-in rounded-[3px] border border-base-300 bg-base-200 object-cover"
-                    />
+                    {/* Tapping the thumbnail opens the PDF (the phone has no Open button);
+                        the big hover preview is for mouse users only. */}
+                    <a href={api.fileUrl(s.name)} target="_blank" rel="noopener" aria-label={`Open ${s.name}`} className="block w-fit">
+                      <img
+                        loading="lazy"
+                        src={api.thumbUrl(s.name)}
+                        alt=""
+                        onMouseEnter={(e) => { if (canHover) setPreview({ src: api.thumbUrl(s.name), x: e.clientX, y: e.clientY }) }}
+                        onMouseMove={(e) => setPreview((p) => (p ? { ...p, x: e.clientX, y: e.clientY } : p))}
+                        onMouseLeave={() => setPreview(null)}
+                        className="block h-11 w-[34px] rounded-[3px] border border-base-300 bg-base-200 object-cover sm:cursor-zoom-in"
+                      />
+                    </a>
                   </td>
                   <td>
                     {renaming === s.name ? (
@@ -325,18 +334,21 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                         }}
                       />
                     ) : (
-                      <span className="break-all font-mono text-body">{s.name}</span>
+                      <>
+                        <span className="break-all font-mono text-body">{s.name}</span>
+                        <span className="block font-mono text-2xs tabular-nums text-base-content/60 sm:hidden">{fmtSize(s.size)}</span>
+                      </>
                     )}
                   </td>
                   <td className="hidden whitespace-nowrap font-mono text-xs tabular-nums text-base-content/60 sm:table-cell">{s.dpi || '—'}</td>
-                  <td className="whitespace-nowrap font-mono text-xs tabular-nums text-base-content/60">{fmtSize(s.size)}</td>
+                  <td className="hidden whitespace-nowrap font-mono text-xs tabular-nums text-base-content/60 sm:table-cell">{fmtSize(s.size)}</td>
                   <td className="hidden whitespace-nowrap font-mono text-xs tabular-nums text-base-content/60 sm:table-cell">{ago(s.mtime)}</td>
                   <td>
                     <div className="flex justify-end gap-[2px] whitespace-nowrap">
-                      <a className="tooltip tooltip-top btn btn-ghost btn-xs btn-square" href={api.fileUrl(s.name)} target="_blank" rel="noopener" data-tip="Open in new tab" aria-label="Open">
+                      <a className="tooltip tooltip-top btn btn-ghost btn-xs btn-square hidden sm:inline-flex" href={api.fileUrl(s.name)} target="_blank" rel="noopener" data-tip="Open in new tab" aria-label={`Open ${s.name}`}>
                         <IconOpen />
                       </a>
-                      <button type="button" onClick={() => onPrint(s.name)} disabled={printing === s.name} className="tooltip tooltip-top btn btn-ghost btn-xs btn-square" data-tip="Print" aria-label="Print">
+                      <button type="button" onClick={() => onPrint(s.name)} disabled={printing === s.name} className="tooltip tooltip-top btn btn-ghost btn-xs btn-square pointer-coarse:size-11" data-tip="Print" aria-label={`Print ${s.name}`}>
                         {printing === s.name ? <span className="loading loading-spinner loading-xs" /> : <IconPrint />}
                       </button>
                       <a className="tooltip tooltip-top btn btn-ghost btn-xs btn-square hidden sm:inline-flex" href={api.fileUrl(s.name)} download data-tip="Download" aria-label="Download">
@@ -348,11 +360,11 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
                       <button
                         type="button"
                         onClick={() => onRemove(s.name)}
-                        className={'tooltip tooltip-top btn btn-xs btn-square ' + (removeArmed === s.name ? 'btn-error' : 'btn-ghost')}
+                        className={'tooltip tooltip-top btn btn-xs pointer-coarse:h-11 ' + (removeArmed === s.name ? 'btn-error px-2 pointer-coarse:btn-sm' : 'btn-ghost btn-square pointer-coarse:w-11')}
                         data-tip={removeArmed === s.name ? 'Click again to delete' : 'Remove'}
-                        aria-label="Remove"
+                        aria-label={removeArmed === s.name ? `Confirm delete ${s.name}` : `Remove ${s.name}`}
                       >
-                        <IconRemove />
+                        {removeArmed === s.name ? 'Delete?' : <IconRemove />}
                       </button>
                     </div>
                   </td>
@@ -366,12 +378,12 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       {loadError && (
         <div role="alert" className="mt-2 flex items-center justify-between gap-3 rounded-md bg-error/10 px-3 py-2 text-body text-error">
           <span>Couldn’t reach the scan service.</span>
-          <button type="button" onClick={() => load()} className="btn btn-ghost btn-xs">Retry</button>
+          <button type="button" onClick={() => load()} className="btn btn-ghost btn-sm">Retry</button>
         </div>
       )}
 
       {loaded && !loadError && scans.length === 0 && (
-        <p className="px-[2px] py-4 text-body text-base-content/60">No scans yet. Place a page on the glass and press Scan.</p>
+        <p className="py-3 text-body text-base-content/60">No scans yet. Place a page on the glass and press Scan.</p>
       )}
 
       {preview && (
@@ -387,9 +399,9 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
       )}
 
       <Modal open={mergeOpen} onClose={() => { if (!mergeBusy) setMergeOpen(false) }} labelledBy="mergeTitle" wide={one}>
-        <h3 id="mergeTitle" className="m-0 text-title font-[640] tracking-[0.01em]">Merge scans</h3>
+        <h3 id="mergeTitle" className="m-0 text-title font-semibold">Merge scans</h3>
         <Seg value={mergeMode} onChange={pickMode} options={[['pages', 'Separate pages'], ['one', 'One page']]} />
-        <p className="m-0 mt-3 mb-4 text-body leading-[1.45] text-base-content/60">
+        <p className="m-0 mt-3 mb-4 text-body text-base-content/60">
           {one
             ? <>Finds what’s on each of the {mergeNames.current.length} scans and lays them out on one A4 page, in this order. The scans used are removed after merging.</>
             : <>Combining {mergeNames.current.length} scans into one PDF, in the order you selected. The originals are removed after merging.</>}
@@ -400,14 +412,13 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
           </div>
         )}
         <label htmlFor="mergeName" className="mb-[6px] block field-label">
-          Name <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
+          Name <span className="font-medium normal-case tracking-normal">optional</span>
         </label>
         <input
           id="mergeName"
           type="text"
           maxLength={80}
           autoComplete="off"
-          autoFocus
           value={mergeName}
           onChange={(e) => setMergeName(e.target.value)}
           onKeyDown={(e) => {
@@ -420,9 +431,9 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
 
         <div className="mt-4 mb-[6px] flex items-baseline justify-between">
           <label htmlFor="mergeCap" className="field-label">
-            Max size <span className="font-medium normal-case tracking-normal opacity-70">optional</span>
+            Max size <span className="font-medium normal-case tracking-normal">optional</span>
           </label>
-          <span className="font-mono text-xs text-base-content/70">{mergeCap === 0 ? 'No limit' : `${mergeCap} MB`}</span>
+          <span className="font-mono text-xs text-base-content">{mergeCap === 0 ? 'No limit' : `${mergeCap} MB`}</span>
         </div>
         <input
           id="mergeCap"
@@ -438,11 +449,11 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
           <span>Off</span><span>10 MB</span>
         </div>
 
-        {mergeError && <p className="mt-3 text-xs text-error">{mergeError}</p>}
+        {mergeError && <p aria-live="polite" className="mt-3 text-body text-error">{mergeError}</p>}
 
-        <div className="mt-[18px] flex justify-end gap-2">
-          <button type="button" onClick={() => { if (!mergeBusy) setMergeOpen(false) }} className="btn btn-ghost btn-sm">Cancel</button>
-          <button type="button" onClick={doMerge} disabled={mergeBusy || (one && !onePage?.ready)} className="btn btn-primary btn-sm">
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={() => { if (!mergeBusy) setMergeOpen(false) }} className="btn btn-ghost pointer-coarse:h-11">Cancel</button>
+          <button type="button" onClick={doMerge} disabled={mergeBusy || (one && !onePage?.ready)} className="btn btn-primary pointer-coarse:h-11 max-sm:flex-1">
             {mergeBusy ? 'Merging…' : 'Merge'}
           </button>
         </div>
@@ -475,7 +486,7 @@ function RenameField({ name, onCommit, onDone }: { name: string; onCommit: (to: 
         else if (e.key === 'Escape') { commit(false) }
       }}
       onBlur={() => commit(true)}
-      className="input input-sm w-full min-w-[160px] font-mono"
+      className="input input-sm w-full min-w-0 font-mono pointer-coarse:h-11"
     />
   )
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Modal } from './Modal'
+import { IconBtn, Icon } from './IconBtn'
 import { templates as tplApi, type Template } from '../api/client'
 
 const FIELDS: { key: string; label: string; step?: number }[] = [
@@ -55,8 +56,8 @@ export function ManageLabels({
   return (
     <Modal open={open} onClose={onClose} labelledBy="mlTitle" wide>
       <div className="mb-3 flex items-center justify-between">
-        <h3 id="mlTitle" className="m-0 text-title font-[640]">Manage A4 label sheets</h3>
-        <button type="button" onClick={onClose} aria-label="Close" className="btn btn-ghost btn-xs btn-square">✕</button>
+        <h3 id="mlTitle" className="m-0 text-title font-semibold">Manage A4 label sheets</h3>
+        <IconBtn title="Close" tip="bottom" onClick={onClose}><Icon.close /></IconBtn>
       </div>
 
       {draft ? (
@@ -69,14 +70,14 @@ export function ManageLabels({
             {FIELDS.map((f) => (
               <label key={f.key} className="flex flex-col gap-[4px]">
                 <span className="field-label">{f.label}</span>
-                <input type="number" step={f.step ?? 1} value={draft.vals[f.key]} onChange={(e) => setDraft({ ...draft, vals: { ...draft.vals, [f.key]: e.target.value } })} className="input input-sm w-full font-mono" />
+                <input type="number" step={f.step ?? 1} value={draft.vals[f.key]} onChange={(e) => setDraft({ ...draft, vals: { ...draft.vals, [f.key]: e.target.value } })} className="input w-full font-mono" />
               </label>
             ))}
           </div>
-          {err && <p className="mt-2 text-xs text-error">{err}</p>}
-          <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={() => setDraft(null)} className="btn btn-ghost btn-sm">Cancel</button>
-            <button type="button" onClick={save} disabled={!draft.name.trim()} className="btn btn-primary btn-sm">Save</button>
+          {err && <p aria-live="polite" className="mt-2 text-body text-error">{err}</p>}
+          <div className="mt-5 flex justify-end gap-2">
+            <button type="button" onClick={() => setDraft(null)} className="btn btn-ghost pointer-coarse:h-11">Cancel</button>
+            <button type="button" onClick={save} disabled={!draft.name.trim()} className="btn btn-primary pointer-coarse:h-11 max-sm:flex-1">Save</button>
           </div>
         </div>
       ) : (
@@ -87,40 +88,16 @@ export function ManageLabels({
                 <div className="truncate text-body">{t.name}</div>
                 <div className="font-mono text-2xs text-base-content/60">{t.cols}×{t.rows} · {Math.round(Number(t.cell_w))}×{Math.round(Number(t.cell_h))} mm{t.builtin ? ' · built-in' : ''}</div>
               </div>
-              <button type="button" onClick={() => setDraft(draftFrom(t))} className="tooltip tooltip-top btn btn-ghost btn-square btn-sm" data-tip="Edit" aria-label="Edit">
-                <IconEdit />
-              </button>
-              <button
-                type="button"
-                onClick={() => remove(t.id)}
-                className={'tooltip tooltip-top btn btn-square btn-sm ' + (armed === t.id ? 'btn-error' : 'btn-ghost')}
-                data-tip={armed === t.id ? 'Click again to delete' : 'Delete'}
-                aria-label="Delete"
-              >
-                <IconTrash />
-              </button>
+              <IconBtn title={`Edit ${t.name}`} onClick={() => setDraft(draftFrom(t))}><Icon.edit /></IconBtn>
+              <IconBtn title={`Delete ${t.name}`} confirm={armed === t.id ? 'Delete?' : undefined} onClick={() => remove(t.id)}><Icon.forget /></IconBtn>
             </div>
           ))}
-          {err && <p className="mt-2 text-xs text-error">{err}</p>}
-          <button type="button" onClick={() => setDraft(draftFrom())} className="btn btn-outline btn-block btn-sm mt-3 border-dashed">
+          {err && <p aria-live="polite" className="mt-2 text-body text-error">{err}</p>}
+          <button type="button" onClick={() => setDraft(draftFrom())} className="btn btn-outline btn-block btn-sm mt-3 border-dashed pointer-coarse:h-11">
             + New label sheet
           </button>
         </div>
       )}
     </Modal>
-  )
-}
-
-// Match the Devices modal icon treatment: 15px, strokeWidth 1.7. Pencil = edit,
-// trash (the Devices "forget" glyph) = delete.
-function IconEdit() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-  )
-}
-
-function IconTrash() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
   )
 }

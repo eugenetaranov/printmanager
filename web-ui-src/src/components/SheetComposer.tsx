@@ -136,18 +136,18 @@ export function SheetComposer({
 
   return (
     <div>
-      <div className="mb-2 flex items-baseline justify-between">
+      <div className="mb-2 flex items-center justify-between">
         <span className="field-label">
           {sel.size ? `${sel.size} cell${sel.size === 1 ? '' : 's'} selected` : 'Tap cells to place your label'}
         </span>
         <span className="flex gap-1">
-          <button type="button" onClick={() => setSel(new Set(Array.from({ length: n }, (_, i) => i)))} className="btn btn-ghost btn-xs">All</button>
-          <button type="button" onClick={() => setSel(new Set())} className="btn btn-ghost btn-xs">None</button>
+          <button type="button" onClick={() => setSel(new Set(Array.from({ length: n }, (_, i) => i)))} className="btn btn-ghost btn-sm pointer-coarse:h-11">All</button>
+          <button type="button" onClick={() => setSel(new Set())} className="btn btn-ghost btn-sm pointer-coarse:h-11">None</button>
         </span>
       </div>
 
-      <div className="mx-auto max-w-[280px]">
-        <svg ref={svgRef} viewBox={`0 0 ${g.page_w} ${g.page_h}`} className="w-full rounded-lg border border-base-300 bg-white" role="group" aria-label="Label sheet">
+      <div className="mx-auto max-w-[320px]">
+        <svg ref={svgRef} viewBox={`0 0 ${g.page_w} ${g.page_h}`} className="w-full rounded-box border border-base-300 bg-white" role="group" aria-label="Label sheet">
           {Array.from({ length: n }, (_, i) => {
             const { x, y } = cellXY(i)
             const isSel = sel.has(i)
@@ -221,7 +221,7 @@ export function SheetComposer({
               if (f) loadFile(f)
             }}
             className={
-              'flex min-h-[112px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-5 text-center transition-colors ' +
+              'flex min-h-[112px] cursor-pointer flex-col items-center justify-center gap-2 rounded-box border-2 border-dashed p-5 text-center transition-colors ' +
               (dragOver ? 'border-primary bg-primary/10' : 'border-base-300 hover:border-primary')
             }
           >
@@ -239,7 +239,7 @@ export function SheetComposer({
                   type="button"
                   onClick={(e) => { e.preventDefault(); loadFile(null) }}
                   aria-label="Remove file"
-                  className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-error text-white"
+                  className="relative flex h-[22px] w-[22px] items-center justify-center rounded-full bg-error text-error-content before:absolute before:-inset-[11px] before:content-['']"
                 >
                   <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M6 6 18 18M18 6 6 18" /></svg>
                 </button>
@@ -256,8 +256,8 @@ export function SheetComposer({
       </div>
 
       <div className="mt-3 flex gap-2">
-        <button type="button" onClick={addToSheet} disabled={!pd || sel.size === 0} className="btn btn-primary">Add to sheet</button>
-        <button type="button" onClick={erase} disabled={sel.size === 0} className="btn btn-ghost">Erase</button>
+        <button type="button" onClick={addToSheet} disabled={!pd || sel.size === 0} className="btn btn-outline btn-sm pointer-coarse:h-11 max-sm:flex-1">Add to sheet</button>
+        <button type="button" onClick={erase} disabled={sel.size === 0} className="btn btn-ghost btn-sm pointer-coarse:h-11 max-sm:flex-1">Erase</button>
       </div>
 
       <hr className="my-4 border-t border-base-300" />
@@ -265,8 +265,8 @@ export function SheetComposer({
         {printing ? 'Printing…' : `Print sheet${filled ? ` (${filled})` : ''}`}
       </button>
       {filled > 0 && (
-        <button type="button" onClick={clearSheet} className="btn btn-ghost btn-sm mt-2 w-full text-base-content/60 hover:text-error">
-          {clearArmed ? 'Click again to clear' : 'Clear sheet'}
+        <button type="button" onClick={clearSheet} className={'btn btn-sm mt-2 w-full pointer-coarse:h-11 ' + (clearArmed ? 'btn-error' : 'btn-ghost text-base-content/60 hover:text-error')}>
+          {clearArmed ? 'Clear sheet?' : 'Clear sheet'}
         </button>
       )}
     </div>

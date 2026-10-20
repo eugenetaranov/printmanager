@@ -33,6 +33,7 @@ export function StatusLed() {
   const { state, label } = useStatus()
   return (
     <span
+      role="status"
       data-state={state}
       className="flex flex-none items-center gap-[7px] font-mono text-xs leading-none text-base-content/60"
     >

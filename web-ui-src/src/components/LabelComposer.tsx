@@ -110,7 +110,7 @@ export function LabelComposer({ printers, onConnected }: { printers: NiimPrinter
 
           <Note note={note} />
 
-          <button type="button" onClick={() => setManageOpen(true)} className="btn btn-ghost btn-sm mt-3 px-2 text-base-content/60">
+          <button type="button" onClick={() => setManageOpen(true)} className="btn btn-ghost btn-sm mt-3 px-2 text-base-content/60 pointer-coarse:h-11">
             Manage A4 label sizes
           </button>
         </>
@@ -120,14 +120,14 @@ export function LabelComposer({ printers, onConnected }: { printers: NiimPrinter
       <Modal open={!!conn} onClose={() => setConn(null)} labelledBy="connName">
         {conn && (
           <div className="text-center">
-            <div id="connName" className="text-title font-[640]">{conn.fmt.name}</div>
+            <div id="connName" className="text-title font-semibold">{conn.fmt.name}</div>
             <div className="mt-1 font-mono text-xs text-base-content/60">{conn.fmt.w}×{conn.fmt.h} mm</div>
             <div className={'mt-3 text-body ' + (conn.status === 'err' ? 'text-error' : conn.status === 'ok' ? 'text-primary' : 'text-base-content/60')}>{conn.msg}</div>
             <div className="mt-4 flex justify-center gap-2">
               {conn.status === 'err' && (
-                <button type="button" onClick={() => ensureConnected(conn.fmt, conn.then)} className="btn btn-primary btn-sm">Try again</button>
+                <button type="button" onClick={() => ensureConnected(conn.fmt, conn.then)} className="btn btn-primary btn-sm pointer-coarse:h-11">Try again</button>
               )}
-              <button type="button" onClick={() => setConn(null)} className="btn btn-ghost btn-sm">Compose anyway</button>
+              <button type="button" onClick={() => setConn(null)} className="btn btn-ghost btn-sm pointer-coarse:h-11">Compose anyway</button>
             </div>
           </div>
         )}

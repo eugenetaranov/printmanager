@@ -4,7 +4,7 @@ The Queue tab gets far more use than the Labels tab. Most visits are "paste a sh
 
 ## What Changes
 
-- **BREAKING (UI):** the Labels tab is removed. The tabs are **Scan · Queue · Print**. `/labels` redirects to `/queue`, and `/` (and unknown paths) opens Queue instead of Scan.
+- **BREAKING (UI):** the Labels tab is removed. The tabs are **Queue · Scan · Print** (Queue first). `/labels` redirects to `/queue`, and `/` (and unknown paths) opens Queue instead of Scan.
 - The Queue tab gets a **label printer row** at the top: the printer quick add goes to (the active one), its live connection state, and a one-tap **Reconnect**. With several label printers the row is a picker, and switching makes that printer active.
 - Quick add's button adapts. When the label printer is connected, **Print now** is primary and **Add to queue** is secondary. Otherwise **Add to queue** is the only button. Print now adds the items and then releases **only those items**.
 - A collapsed **Customize a label** row opens the former Labels composer in place of the paste box: format picker (Niimbot rolls and A4 sheet templates), Text/Image/QR, preview, A4 sheet grid and Manage A4 label sizes. The two text boxes never show at once, because they split text differently.

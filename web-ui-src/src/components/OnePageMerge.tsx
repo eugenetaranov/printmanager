@@ -143,7 +143,7 @@ export function OnePageMerge({ names, onState }: { names: string[]; onState: (s:
         })}
         <div className="mt-3 mb-[6px] flex items-baseline justify-between">
           <label htmlFor="onePageScale" className="field-label">Size</label>
-          <span className="font-mono text-xs text-base-content/70">
+          <span className="font-mono text-xs text-base-content">
             {want === 1 ? 'Real size' : want ? `${scaleLabel(want)} of real size` : 'Fit the width'}
           </span>
         </div>
@@ -162,7 +162,7 @@ export function OnePageMerge({ names, onState }: { names: string[]; onState: (s:
         <div className="mt-1 flex justify-between px-[2px] font-mono text-2xs tabular-nums text-base-content/60">
           {SCALES.map((v) => <span key={v}>{scaleLabel(v)}</span>)}
         </div>
-        {error && <p className="mt-2 text-xs text-error">{error}</p>}
+        {error && <p aria-live="polite" className="mt-2 text-body text-error">{error}</p>}
         {rows.some((r) => r.skip) && (
           <p className="mt-2 text-2xs text-base-content/60">Scans left out entirely are kept, not removed.</p>
         )}

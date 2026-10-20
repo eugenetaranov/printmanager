@@ -17,8 +17,10 @@ export function useNote() {
   return { note, ok, err, info, clear }
 }
 
+// The live region stays mounted (empty) so screen readers announce the first
+// message too; a region that appears together with its text is often missed.
 export function Note({ note }: { note: NoteState }) {
-  if (!note.content) return null
+  if (!note.content) return <p aria-live="polite" className="sr-only" />
   const color = note.kind === 'ok' ? 'text-primary' : note.kind === 'err' ? 'text-error' : 'text-base-content/60'
   return (
     <p aria-live="polite" className={`mt-3 text-body ${color}`}>

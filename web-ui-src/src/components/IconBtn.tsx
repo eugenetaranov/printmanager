@@ -9,7 +9,16 @@ export function Dot({ status }: { status: string }) {
 }
 
 // Square icon button with a hover tooltip — keeps the device rows compact.
-export function IconBtn({ title, onClick, variant, disabled, tip = 'top', children }: { title: string; onClick: () => void; variant?: 'primary' | 'active' | 'danger'; disabled?: boolean; tip?: 'top' | 'bottom'; children: ReactNode }) {
+// 44px on touch screens. `confirm`: the armed state of a two-click action,
+// shown as visible text (tooltips don't show on touch).
+export function IconBtn({ title, onClick, variant, disabled, tip = 'top', confirm, children }: { title: string; onClick: () => void; variant?: 'primary' | 'active' | 'danger'; disabled?: boolean; tip?: 'top' | 'bottom'; confirm?: string; children: ReactNode }) {
+  if (confirm) {
+    return (
+      <button type="button" onClick={onClick} disabled={disabled} aria-label={confirm} className="btn btn-error btn-sm px-2 pointer-coarse:h-11">
+        {confirm}
+      </button>
+    )
+  }
   return (
     <button
       type="button"
@@ -17,7 +26,7 @@ export function IconBtn({ title, onClick, variant, disabled, tip = 'top', childr
       disabled={disabled}
       data-tip={title}
       aria-label={title}
-      className={`tooltip tooltip-${tip} btn btn-square btn-sm ` + (variant === 'primary' ? 'btn-primary' : variant === 'danger' ? 'btn-error' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
+      className={`tooltip tooltip-${tip} btn btn-square btn-sm pointer-coarse:size-11 ` + (variant === 'primary' ? 'btn-primary' : variant === 'danger' ? 'btn-error' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
     >
       {children}
     </button>
@@ -38,6 +47,7 @@ export const Icon = {
   refresh: svg(<><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></>),
   search: svg(<><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></>),
   close: svg(<path d="M6 6 18 18M18 6 6 18" />),
+  sliders: svg(<><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" /><circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="18" r="2" /></>),
   edit: svg(<><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></>),
   minus: svg(<path d="M5 12h14" />),
   up: svg(<path d="m6 15 6-6 6 6" />),

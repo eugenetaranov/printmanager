@@ -4,9 +4,9 @@ import { createPortal } from 'react-dom'
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
-// Centered modal dialog: dimmed backdrop, pop-in card, Esc / backdrop-click to
-// close. Focus is moved into the dialog on open, trapped with Tab, and returned
-// to the triggering element on close.
+// Modal dialog: a bottom sheet on phones, a centred card from `sm` up. Dimmed
+// backdrop, Esc / backdrop-click to close. Focus is moved into the dialog on
+// open, trapped with Tab, and returned to the triggering element on close.
 export function Modal({
   open,
   onClose,
@@ -21,6 +21,11 @@ export function Modal({
   children: ReactNode
 }) {
   const box = useRef<HTMLDivElement>(null)
+  // Callers pass an inline onClose, which changes on every parent render (the
+  // queue poll re-renders every 3 s). Read it through a ref so the effect runs
+  // only on open/close — otherwise focus jumped back to the first control.
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
 
   useEffect(() => {
     if (!open) return
@@ -34,7 +39,7 @@ export function Modal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        onClose()
+        closeRef.current()
         return
       }
       if (e.key !== 'Tab' || !box.current) return
@@ -61,14 +66,14 @@ export function Modal({
       document.removeEventListener('keydown', onKey)
       prev?.focus?.()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
   return createPortal(
     <div
-      className="modal modal-open"
+      className="modal modal-open modal-bottom sm:modal-middle"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
+        if (e.target === e.currentTarget) closeRef.current()
       }}
     >
       <div
@@ -77,7 +82,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={labelledBy}
         tabIndex={-1}
-        className={'modal-box overflow-x-hidden focus:outline-none ' + (wide ? 'max-w-[640px]' : 'max-w-[380px]')}
+        className={'modal-box max-h-[85dvh] overflow-x-hidden p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] focus:outline-none sm:p-6 ' + (wide ? 'sm:max-w-[640px]' : 'sm:max-w-[380px]')}
       >
         {children}
       </div>

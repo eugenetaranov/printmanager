@@ -2,7 +2,7 @@
 
 ### Requirement: Queue is the label home
 
-The web UI SHALL have three tabs, Scan, Queue and Print. There SHALL be no separate Labels tab. `/` and unknown paths SHALL open the Queue tab, and `/labels` SHALL redirect to `/queue`.
+The web UI SHALL have three tabs, in this order: Queue, Scan and Print. There SHALL be no separate Labels tab. `/` and unknown paths SHALL open the Queue tab, and `/labels` SHALL redirect to `/queue`.
 
 #### Scenario: Open the app
 

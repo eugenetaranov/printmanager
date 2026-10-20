@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, niimbot as nb, printQueue, type NiimPrinter, type Queue, type QueueItem, type QueueTarget } from '../api/client'
 import { useNote, Note } from '../components/Note'
 import { useQueue } from '../components/QueueContext'
@@ -34,6 +34,8 @@ export function QueueTab() {
     okTimer.current = window.setTimeout(clear, 4000)
   }
   useEffect(() => () => window.clearTimeout(okTimer.current), [])
+  // Errors from the list (remove, edit, Print all) show by the list, not up at quick add.
+  const { note: listNote, err: listErr, clear: listClear } = useNote()
   const [text, setText] = useState('')
   const [adding, setAdding] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -122,8 +124,8 @@ export function QueueTab() {
   }, [])
 
   const run = (p: Promise<{ ok: boolean; error?: string }>) =>
-    p.then((r) => { if (!r.ok) err(r.error || 'Something went wrong.'); return refresh() })
-      .catch(() => err('Could not reach the print service.'))
+    p.then((r) => { if (!r.ok) listErr(r.error || 'Something went wrong.'); return refresh() })
+      .catch(() => listErr('Could not reach the print service.'))
 
   // Same reconnect the Devices page uses (it also follows a D110 whose BLE
   // address rotated).
@@ -142,7 +144,7 @@ export function QueueTab() {
 
   const switchPrinter = (address: string) => { nb.select(address).then(refresh).catch(() => {}) }
 
-  const release = () => { clear(); run(printQueue.release()) }
+  const release = () => { listClear(); run(printQueue.release()) }
   const stop = () => run(printQueue.stop())
 
   const targetOptions: { key: string; target: QueueTarget; label: string }[] = [
@@ -154,122 +156,124 @@ export function QueueTab() {
     ...queues.map((q) => ({ key: 'a4:' + q.queue, target: { type: 'a4' as const, queue: q.queue }, label: `${q.name} · A4` })),
   ]
 
-  const qc = quick ? connecting[quick.address] || '' : ''
-  const quickStatus = qc === 'busy' ? 'Connecting…'
-    : qc ? qc
-    : quick?.connected ? 'Connected' : 'Disconnected'
+  const statusOf = (address: string, connected: boolean) => {
+    const c = connecting[address] || ''
+    return c === 'busy' ? { text: 'Connecting…', err: false, busy: true }
+      : c ? { text: c, err: true, busy: false }
+      : { text: connected ? 'Connected' : 'Not connected', err: false, busy: false }
+  }
+  const mm = (l: number[] | undefined) => `${(l ?? [])[0] ?? '?'}×${(l ?? [])[1] ?? '?'} mm`
+  const canAdd = !!text.trim() && !adding
+  const btn = 'btn btn-sm pointer-coarse:h-11'
 
   return (
-    <div className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5">
+    <div className="card w-full border border-base-300 bg-base-100 p-4 sm:p-5">
       {/* Label printer: where quick add goes, with a one-tap Bluetooth reconnect. */}
-      {quick && (
-        <div className="mb-3 flex items-center gap-2">
-          <Dot status={quick.connected ? 'connected' : 'disconnected'} />
-          <div className="min-w-0 flex-1">
-            {labelPrinters.length > 1 ? (
+      {quick && (() => {
+        const st = statusOf(quick.address, quick.connected)
+        return (
+          <PrinterRow
+            connected={quick.connected}
+            name={labelPrinters.length > 1 ? (
               <select
                 aria-label="Label printer"
                 value={quick.address}
                 onChange={(e) => switchPrinter(e.target.value)}
                 disabled={state.running}
-                className="select select-ghost select-sm h-auto min-h-0 w-full max-w-full px-1 font-mono text-body"
+                className="select select-ghost -ml-1 h-auto min-h-0 w-auto max-w-full py-0 pr-7 pl-1 font-mono [--font-size:0.8125rem]"
               >
                 {labelPrinters.map((p) => (
-                  <option key={p.address} value={p.address}>{p.model_label || p.name} · {(p.label_mm ?? [])[0] ?? '?'}×{(p.label_mm ?? [])[1] ?? '?'} mm</option>
+                  <option key={p.address} value={p.address}>{p.model_label || p.name} · {mm(p.label_mm)}</option>
                 ))}
               </select>
-            ) : (
-              <div className="truncate font-mono text-body">{quick.model_label || quick.name} · {quick.label_mm[0] ?? '?'}×{quick.label_mm[1] ?? '?'} mm</div>
-            )}
-            <div aria-live="polite" className={'truncate text-2xs ' + (qc && qc !== 'busy' ? 'text-error' : 'text-base-content/60')}>{quickStatus}</div>
-          </div>
-          {quick.connected ? (
-            <IconBtn title="Reconnect" onClick={() => connect(quick.address)} disabled={qc === 'busy' || state.running}>
-              {qc === 'busy' ? <span className="loading loading-spinner loading-xs" /> : <Icon.reconnect />}
-            </IconBtn>
-          ) : (
-            <button type="button" onClick={() => connect(quick.address)} disabled={qc === 'busy' || state.running} className="btn btn-outline btn-sm">
-              {qc === 'busy' ? <span className="loading loading-spinner loading-xs" /> : <Icon.reconnect />}
-              {qc === 'busy' ? 'Connecting' : 'Reconnect'}
+            ) : <span className="font-mono">{quick.model_label || quick.name} · {mm(quick.label_mm)}</span>}
+            status={st.text}
+            statusErr={st.err}
+            reconnect={state.running ? undefined : { busy: st.busy, onClick: () => connect(quick.address) }}
+          />
+        )
+      })()}
+
+      {/* Quick add. The whole section is a drop target; the outline only
+          appears while a file is dragged over it. */}
+      {!customize && (
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); addFile(e.dataTransfer.files?.[0]) }}
+          className={'mt-4 rounded-box outline-2 outline-offset-4 transition-[outline-color] ' + (dragOver ? 'outline-dashed outline-primary' : 'outline-transparent')}
+        >
+          <label className="flex flex-col gap-[6px]">
+            <span className="field-label">Add a label</span>
+            <textarea
+              rows={4}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addText(canPrintNow) }}
+              placeholder={'Paste shipment numbers, one per line\n\nOr a number + what it is,\na blank line before the next'}
+              className="textarea w-full font-mono"
+            />
+          </label>
+          {/* Phone: the main action full-width on top, the rest in a row below. */}
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end">
+            <button type="button" onClick={() => fileInput.current?.click()} disabled={adding} className={btn + ' btn-ghost sm:mr-auto'}>
+              Choose file
             </button>
-          )}
+            {/* Printer connected: printing is the likelier intent, so it leads. */}
+            {canPrintNow ? (
+              <>
+                <button type="button" onClick={() => addText(false)} disabled={!canAdd} className={btn + ' btn-outline'}>
+                  Add to queue
+                </button>
+                <button type="button" onClick={() => addText(true)} disabled={!canAdd} className={btn + ' btn-primary order-first col-span-2 sm:order-none'}>
+                  {adding ? 'Sending…' : 'Print now'}
+                </button>
+              </>
+            ) : (
+              <button type="button" onClick={() => addText(false)} disabled={!canAdd} className={btn + ' btn-primary'}>
+                {adding ? 'Adding…' : 'Add to queue'}
+              </button>
+            )}
+          </div>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/pdf,image/*,text/plain,.txt"
+            className="hidden"
+            onChange={(e) => addFile(e.target.files?.[0])}
+          />
+          <Note note={note} />
+          <p className="mt-2 text-2xs text-base-content/60">A blank line starts the next label; a plain list adds one per number. Files print on A4. Unprinted items are removed after 7 days.</p>
         </div>
       )}
 
-      {customize ? (
-        <div className="rounded-xl border border-base-300 p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="field-label">Customize a label</span>
-            <button type="button" onClick={() => setCustomize(false)} className="btn btn-ghost btn-xs">Back to quick add</button>
-          </div>
+      {/* Customize: one disclosure row; open, it swaps the paste box for the composer. */}
+      <button
+        type="button"
+        aria-expanded={customize}
+        aria-controls="customizePanel"
+        onClick={() => setCustomize((c) => !c)}
+        className={'flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-field px-1 text-left text-body hover:bg-base-200 ' + (customize ? 'mt-3' : 'mt-3 border-t border-base-300 pt-1')}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={'flex-none text-base-content/60 transition-transform ' + (customize ? 'rotate-90' : '')}><path d="m9 6 6 6-6 6" /></svg>
+        <span className="flex-none font-[600]">Customize a label</span>
+        <span className="min-w-0 truncate text-xs text-base-content/60">{customize ? 'back to quick add' : 'QR, image, preview, A4 sheets'}</span>
+      </button>
+      {customize && (
+        <div id="customizePanel" className="mt-2">
           <LabelComposer printers={labelPrinters} onConnected={refresh} />
         </div>
-      ) : (
-      <div
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false); addFile(e.dataTransfer.files?.[0]) }}
-        className={'rounded-xl border-2 border-dashed p-3 transition-colors ' + (dragOver ? 'border-primary bg-primary/10' : 'border-base-300')}
-      >
-        <label className="flex flex-col gap-[6px]">
-          <span className="field-label">Add a label</span>
-          <textarea
-            rows={4}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addText(canPrintNow) }}
-            placeholder={'Paste shipment numbers, one per line\n\nOr a number + what it is,\na blank line before the next'}
-            className="textarea w-full font-mono"
-          />
-        </label>
-        <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
-          <button type="button" onClick={() => fileInput.current?.click()} disabled={adding} className="btn btn-ghost btn-sm mr-auto">
-            Choose file
-          </button>
-          {/* Printer connected: printing is the likelier intent, so it leads. */}
-          {canPrintNow ? (
-            <>
-              <button type="button" onClick={() => addText(false)} disabled={!text.trim() || adding} className="btn btn-outline btn-sm">
-                Add to queue
-              </button>
-              <button type="button" onClick={() => addText(true)} disabled={!text.trim() || adding} className="btn btn-primary btn-sm">
-                {adding ? 'Sending…' : 'Print now'}
-              </button>
-            </>
-          ) : (
-            <button type="button" onClick={() => addText(false)} disabled={!text.trim() || adding} className="btn btn-primary btn-sm">
-              {adding ? 'Adding…' : 'Add to queue'}
-            </button>
-          )}
-        </div>
-        <input
-          ref={fileInput}
-          type="file"
-          accept="application/pdf,image/*,text/plain,.txt"
-          className="hidden"
-          onChange={(e) => addFile(e.target.files?.[0])}
-        />
-        <p className="mt-2 text-2xs text-base-content/60">Lines together make one label; a blank line starts the next (a plain list of numbers still adds one each). Numbers print on your label printer, PDFs and images on A4. Unprinted items are removed after 7 days.</p>
-      </div>
-      )}
-
-      {!customize && (
-        <button type="button" onClick={() => setCustomize(true)} className="mt-2 flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-lg px-1 text-left text-body hover:bg-base-200">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-none text-base-content/60"><path d="m9 6 6 6-6 6" /></svg>
-          <span className="font-[600]">Customize a label</span>
-          <span className="truncate text-xs text-base-content/60">QR, image, preview, A4 sheets</span>
-        </button>
       )}
 
       {/* Items */}
-      <div className="mt-5 mb-2 flex items-baseline justify-between">
+      <div className="mt-6 mb-2 flex items-baseline justify-between">
         <span className="field-label">Waiting</span>
         <span className="font-mono text-xs tabular-nums text-base-content/60">{items.length} {items.length === 1 ? 'item' : 'items'}</span>
       </div>
       {!loaded ? (
         <div className="flex flex-col gap-2">
-          <div className="skeleton h-14 w-full rounded-lg" />
-          <div className="skeleton h-14 w-full rounded-lg" />
+          <div className="skeleton h-14 w-full rounded-box" />
+          <div className="skeleton h-14 w-full rounded-box" />
         </div>
       ) : items.length === 0 ? (
         <>
@@ -291,58 +295,77 @@ export function QueueTab() {
             <div className="mt-4">
               <span className="field-label">Printers</span>
               {otherTargets.map((t) => {
-                const c = connecting[t.id] || ''
-                const canConnect = t.type === 'label' && !t.ready && !state.running
-                const stTxt = c === 'busy' ? 'Connecting…'
-                  : t.ready ? (t.type === 'label' ? 'Connected' : 'On')
-                  : t.type === 'label' ? 'Disconnected' : 'Off — switch it on'
+                const label = t.type === 'label'
+                const st = label ? statusOf(t.id, t.ready) : { text: t.ready ? 'On' : 'Off — switch it on', err: false, busy: false }
                 return (
-                  <div key={t.type + t.id} className="border-b border-base-300 py-2 last:border-0">
-                    <div className="flex items-center gap-2">
-                      <Dot status={t.ready ? 'connected' : 'disconnected'} />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-body">{t.name}</div>
-                        <div className="truncate font-mono text-2xs text-base-content/60">
-                          {c && c !== 'busy' && canConnect ? <span className="text-error">{c}</span> : stTxt}
-                        </div>
-                      </div>
-                      {canConnect && (
-                        <IconBtn title="Reconnect" variant="primary" onClick={() => connect(t.id)} disabled={c === 'busy'}>
-                          {c === 'busy' ? <span className="loading loading-spinner loading-xs" /> : <Icon.reconnect />}
-                        </IconBtn>
-                      )}
-                    </div>
-                  </div>
+                  <PrinterRow
+                    key={t.type + t.id}
+                    connected={t.ready}
+                    name={t.name}
+                    status={st.text}
+                    statusErr={st.err}
+                    reconnect={label && !t.ready && !state.running ? { busy: st.busy, onClick: () => connect(t.id) } : undefined}
+                  />
                 )
               })}
             </div>
           )}
           <hr className="my-4 border-t border-base-300" />
-          <div className="flex items-center justify-between gap-3">
-            <p aria-live="polite" className="m-0 min-w-0 text-xs text-base-content/60">
+          <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+            <p aria-live="polite" className="m-0 min-w-0 flex-1 basis-48 text-xs text-base-content/60">
               {state.message || (!state.running && state.targets.some((t) => !t.ready)
                 ? 'Switch the printer on, then Print all.'
                 : '')}
             </p>
-            <div className="flex flex-none gap-2">
+            <div className="flex flex-none gap-2 max-sm:w-full">
               {state.running ? (
                 <>
-                  <button type="button" onClick={stop} className="btn btn-ghost btn-sm">Stop</button>
-                  <button type="button" disabled className="btn btn-primary btn-sm">
+                  <button type="button" onClick={stop} className={btn + ' btn-ghost max-sm:flex-1'}>Stop</button>
+                  <button type="button" disabled className={btn + ' btn-primary max-sm:flex-1'}>
                     <span className="loading loading-spinner loading-xs" />Printing
                   </button>
                 </>
               ) : (
-                <button type="button" onClick={release} disabled={pending === 0} className="btn btn-primary btn-sm">
+                <button type="button" onClick={release} disabled={pending === 0} className={btn + ' btn-primary max-sm:flex-1'}>
                   {failed ? `Resume (${pending})` : `Print all (${pending})`}
                 </button>
               )}
             </div>
           </div>
+          <Note note={listNote} />
         </>
       )}
+    </div>
+  )
+}
 
-      <Note note={note} />
+// One printer line, the same everywhere on this tab: dot, name, a plain status
+// sentence, and Reconnect — a labelled button when disconnected (touch has no
+// tooltips), a small icon when connected (a BLE link can be stale).
+function PrinterRow({ connected, name, status, statusErr, reconnect }: {
+  connected: boolean
+  name: ReactNode
+  status: string
+  statusErr?: boolean
+  reconnect?: { busy: boolean; onClick: () => void }
+}) {
+  return (
+    <div className="flex min-h-11 items-center gap-2 border-b border-base-300 py-1.5 last:border-0">
+      <Dot status={connected ? 'connected' : 'disconnected'} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-body">{name}</div>
+        <div aria-live="polite" className={'truncate text-2xs ' + (statusErr ? 'text-error' : 'text-base-content/60')}>{status}</div>
+      </div>
+      {reconnect && (connected ? (
+        <IconBtn title="Reconnect" onClick={reconnect.onClick} disabled={reconnect.busy}>
+          {reconnect.busy ? <span className="loading loading-spinner loading-xs" /> : <Icon.reconnect />}
+        </IconBtn>
+      ) : (
+        <button type="button" onClick={reconnect.onClick} disabled={reconnect.busy} className="btn btn-outline btn-sm pointer-coarse:h-11">
+          {reconnect.busy ? <span className="loading loading-spinner loading-xs" /> : <Icon.reconnect />}
+          Reconnect
+        </button>
+      ))}
     </div>
   )
 }
@@ -386,7 +409,7 @@ function ItemRow({
   const setCopies = (n: number) => onChange(printQueue.update(item.id, { copies: Math.max(1, Math.min(20, n)) }))
 
   return (
-    <li className={'rounded-lg border p-2 ' + (item.state === 'failed' ? 'border-error' : 'border-base-300')}>
+    <li className={'rounded-box border p-2 ' + (item.state === 'failed' ? 'border-error' : 'border-base-300')}>
       <div className="flex items-center gap-2">
         <span className="flex h-6 w-6 flex-none items-center justify-center">
           {printing ? (
@@ -412,8 +435,8 @@ function ItemRow({
           </div>
         </div>
         <div className="flex flex-none gap-1">
-          <IconBtn title="Printer & copies" variant={open ? 'active' : undefined} onClick={() => setOpen((o) => !o)} disabled={locked}><Icon.edit /></IconBtn>
-          <IconBtn title={armed ? 'Click again to remove' : 'Remove'} variant={armed ? 'danger' : undefined} onClick={onRemove} disabled={locked}><Icon.forget /></IconBtn>
+          <IconBtn title="Printer & copies" variant={open ? 'active' : undefined} onClick={() => setOpen((o) => !o)} disabled={locked}><Icon.sliders /></IconBtn>
+          <IconBtn title="Remove" confirm={armed ? 'Remove?' : undefined} onClick={onRemove} disabled={locked}><Icon.forget /></IconBtn>
         </div>
       </div>
       {item.state === 'failed' && item.error && <p className="m-0 mt-1 pl-8 text-xs text-error">{item.error}</p>}
@@ -428,7 +451,7 @@ function ItemRow({
                 const o = opts.find((x) => x.key === e.target.value)
                 if (o) onChange(printQueue.update(item.id, { target: o.target }))
               }}
-              className="select select-sm w-full font-mono"
+              className="select w-full font-mono"
             >
               {!current && <option value="">{where}</option>}
               {opts.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
@@ -436,10 +459,10 @@ function ItemRow({
           </label>
           <div className="flex items-end justify-between gap-3">
             {isText ? (
-              <label className="flex cursor-pointer items-center gap-2">
+              <label className="flex min-h-11 cursor-pointer items-center gap-2">
                 <input
                   type="checkbox"
-                  className="toggle toggle-primary toggle-sm"
+                  className="toggle toggle-primary"
                   checked={item.barcode}
                   onChange={(e) => onChange(printQueue.update(item.id, { barcode: e.target.checked }))}
                 />
@@ -449,9 +472,9 @@ function ItemRow({
             <div className="flex flex-col items-end gap-[6px]">
               <span className="field-label">Copies</span>
               <div className="join">
-                <button type="button" onClick={() => setCopies(item.copies - 1)} disabled={item.copies <= 1} aria-label="Fewer copies" className="btn btn-sm btn-square join-item"><Icon.minus /></button>
-                <span className="join-item flex h-8 w-9 items-center justify-center border-y border-base-300 font-mono text-body tabular-nums">{item.copies}</span>
-                <button type="button" onClick={() => setCopies(item.copies + 1)} disabled={item.copies >= 20} aria-label="More copies" className="btn btn-sm btn-square join-item"><Icon.connect /></button>
+                <button type="button" onClick={() => setCopies(item.copies - 1)} disabled={item.copies <= 1} aria-label="Fewer copies" className="btn btn-sm btn-square join-item pointer-coarse:size-11"><Icon.minus /></button>
+                <span className="join-item flex h-8 w-9 items-center justify-center border-y border-base-300 font-mono text-body tabular-nums pointer-coarse:h-11 pointer-coarse:w-11">{item.copies}</span>
+                <button type="button" onClick={() => setCopies(item.copies + 1)} disabled={item.copies >= 20} aria-label="More copies" className="btn btn-sm btn-square join-item pointer-coarse:size-11"><Icon.connect /></button>
               </div>
             </div>
           </div>

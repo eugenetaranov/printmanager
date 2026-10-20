@@ -46,7 +46,7 @@ export function DualRange({
   }
 
   return (
-    <div ref={trackRef} className="relative h-6 touch-none select-none">
+    <div ref={trackRef} className="relative h-6 touch-none select-none pointer-coarse:h-11">
       <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-base-300" />
       <div
         className="absolute top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-primary"
@@ -63,9 +63,10 @@ export function DualRange({
             aria-valuemin={min}
             aria-valuemax={max}
             aria-valuenow={val}
+            aria-valuetext={`Page ${val}`}
             onPointerDown={startDrag(which)}
             onKeyDown={onKey(which)}
-            className="absolute top-1/2 h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none rounded-full border-2 border-primary bg-base-100 shadow-[0_1px_3px_rgba(0,0,0,0.28)] active:cursor-grabbing"
+            className="absolute top-1/2 h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none rounded-full border-2 border-primary bg-base-100 shadow-sm before:absolute before:-inset-3 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:cursor-grabbing pointer-coarse:h-6 pointer-coarse:w-6"
             style={{ left: `${pct(val)}%` }}
           />
         )

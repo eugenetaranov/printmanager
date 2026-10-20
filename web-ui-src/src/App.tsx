@@ -9,8 +9,8 @@ import { QueueTab } from './tabs/QueueTab'
 import { QueueProvider, useQueue } from './components/QueueContext'
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'scan', label: 'Scan' },
   { id: 'queue', label: 'Queue' },
+  { id: 'scan', label: 'Scan' },
   { id: 'print', label: 'Print' },
 ]
 
@@ -37,7 +37,7 @@ function Shell() {
     <div className="flex min-h-[100dvh] flex-col">
       {/* Full-bleed white bar on the paper background, hairline below. */}
       <header className="border-b border-base-300 bg-base-100">
-        <div className="mx-auto flex h-14 max-w-[900px] items-center justify-between gap-4 px-5">
+        <div className="mx-auto flex h-14 max-w-[680px] items-center justify-between gap-4 px-4 sm:px-5">
           <div className="flex items-center gap-[10px]">
             <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true" className="flex-none text-primary">
               <rect width="32" height="32" rx="7" fill="currentColor" />
@@ -60,7 +60,7 @@ function Shell() {
                   data-tip="Queue"
                   aria-label={`Print queue, ${queued} waiting`}
                   onClick={() => navigate('queue')}
-                  className="tooltip tooltip-bottom btn btn-square btn-ghost btn-sm"
+                  className="tooltip tooltip-bottom btn btn-square btn-ghost btn-sm pointer-coarse:size-11"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="4" y="3" width="13" height="5" rx="1" />
@@ -76,7 +76,7 @@ function Shell() {
               data-tip="Devices"
               aria-label="Manage devices"
               onClick={() => setDevicesOpen(true)}
-              className="tooltip tooltip-bottom btn btn-square btn-ghost btn-sm"
+              className="tooltip tooltip-bottom btn btn-square btn-ghost btn-sm pointer-coarse:size-11"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6 9V3h12v6" />
@@ -89,9 +89,9 @@ function Shell() {
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-[900px] flex-1 flex-col px-5 pb-24 pt-[clamp(18px,4vw,32px)]">
+      <div className="mx-auto flex w-full max-w-[680px] flex-1 flex-col px-4 pb-24 pt-[clamp(12px,4vw,32px)] sm:px-5">
         {/* Underlined text tabs on a hairline, like a document's section nav. */}
-        <div role="tablist" aria-label="Tools" className="mb-6 flex gap-6 border-b border-base-300">
+        <div role="tablist" aria-label="Tools" className="mb-5 flex gap-6 border-b border-base-300 sm:mb-6">
           {TABS.map((t) => (
             <button
               key={t.id}

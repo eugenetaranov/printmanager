@@ -98,7 +98,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
   return (
     <Modal open={open} onClose={onClose} labelledBy="devTitle" wide>
       <div className="mb-4 flex items-center justify-between">
-        <h3 id="devTitle" className="m-0 text-title font-[640]">Devices</h3>
+        <h3 id="devTitle" className="m-0 text-title font-semibold">Devices</h3>
         <div className="flex gap-2">
           <IconBtn title="Refresh devices" tip="bottom" onClick={refresh} disabled={busy}><Icon.refresh /></IconBtn>
           <IconBtn title="Close" tip="bottom" onClick={onClose}><Icon.close /></IconBtn>
@@ -158,27 +158,27 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
         {printers.map((p) => {
           const conn = p.status === 'connected'
           const ds = dstatus[p.address]
-          const stTxt = ds && ds.msg ? ds.msg : conn ? 'Connected' : 'Disconnected'
+          const stTxt = ds && ds.msg ? ds.msg : conn ? 'Connected' : 'Not connected'
           const mm = p.label_mm || [12, 40]
           return (
             <div key={p.address} className="border-b border-base-300 py-2 last:border-0">
-              <div className="flex items-center gap-2">
+              {/* Phone: the actions wrap onto their own line under the name. */}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <Dot status={p.status} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-body">{p.model_label || p.model}</div>
-                  <div className="truncate font-mono text-2xs text-base-content/60">
-                    {p.name} · <span className={ds?.cls === 'err' ? 'text-error' : ds?.cls === 'ok' ? 'text-primary' : ''}>{stTxt}</span>
-                    {p.label_mm ? ` · ${p.label_mm[0]}×${p.label_mm[1]} mm` : ''}
-                  </div>
+                <div className="min-w-0 flex-1 basis-40">
+                  <div className="truncate text-body">{p.model_label || p.model} <span className="font-mono text-2xs text-base-content/60">{p.name}{p.label_mm ? ` · ${p.label_mm[0]}×${p.label_mm[1]} mm` : ''}</span></div>
+                  <div className={'truncate text-2xs ' + (ds?.cls === 'err' ? 'text-error' : ds?.cls === 'ok' ? 'text-primary' : 'text-base-content/60')}>{stTxt}</div>
                 </div>
-                <div className="flex flex-none gap-1">
+                <div className="flex flex-none gap-1 max-sm:w-full max-sm:justify-end">
                   {conn ? (
                     <>
                       <IconBtn title="Print test label" onClick={() => action('test', p)}><Icon.test /></IconBtn>
                       <IconBtn title="Disconnect" onClick={() => action('disconnect', p)}><Icon.disconnect /></IconBtn>
                     </>
                   ) : (
-                    <IconBtn title="Reconnect" variant="primary" onClick={() => action('reconnect', p)}><Icon.reconnect /></IconBtn>
+                    <button type="button" onClick={() => action('reconnect', p)} className="btn btn-outline btn-sm pointer-coarse:h-11 max-sm:mr-auto">
+                      <Icon.reconnect />Reconnect
+                    </button>
                   )}
                   <IconBtn title="Roll size" variant={editSize === p.address ? 'active' : undefined} onClick={() => setEditSize((a) => (a === p.address ? '' : p.address))}><Icon.size /></IconBtn>
                   <IconBtn title="Connection log" variant={logAddr === p.address ? 'active' : undefined} onClick={() => setLogAddr((a) => (a === p.address ? '' : p.address))}><Icon.log /></IconBtn>
@@ -187,10 +187,10 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
               </div>
               {editSize === p.address && <SizeEditor w={mm[0]} h={mm[1]} onSave={(w, h) => saveSize(p, w, h)} onCancel={() => setEditSize('')} />}
               {logAddr === p.address && (
-                <div className="mt-2 max-h-40 overflow-y-auto rounded-md bg-base-200 p-2 font-mono text-2xs text-base-content/60">
+                <div className="mt-2 max-h-40 overflow-y-auto rounded-box bg-base-200 p-2 font-mono text-2xs text-base-content/60">
                   {log.length === 0 ? 'No log yet.' : log.map((l, i) => <div key={i}>{typeof l === 'string' ? l : JSON.stringify(l)}</div>)}
                   <div className="mt-1 text-right">
-                    <button type="button" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})} className="btn btn-link btn-xs h-auto min-h-0 p-0 text-base-content/60 hover:text-error">clear</button>
+                    <button type="button" onClick={() => nb.clearlog(p.address).then(setState).catch(() => {})} className="btn btn-ghost btn-xs text-base-content/60 hover:text-error pointer-coarse:btn-sm">Clear log</button>
                   </div>
                 </div>
               )}
@@ -204,7 +204,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
             <div className="mb-1 field-label">Found</div>
             {candidates.map((c) => (
               <div key={c.address} className="flex items-center gap-2 border-b border-base-300 py-2 last:border-0">
-                <span className="h-[7px] w-[7px] flex-none rounded-full bg-warning" />
+                <Dot status="disconnected" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-body">{c.name}</div>
                   <div className="truncate font-mono text-2xs text-base-content/60">{c.address}{c.rssi != null ? ` · ${c.rssi} dBm` : ''}</div>
@@ -216,7 +216,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
         )}
       </div>
 
-      {note && <p className={'mt-3 text-xs ' + (note.cls === 'err' ? 'text-error' : note.cls === 'ok' ? 'text-primary' : 'text-base-content/60')}>{note.msg}</p>}
+      {note && <p aria-live="polite" className={'mt-3 text-body ' + (note.cls === 'err' ? 'text-error' : note.cls === 'ok' ? 'text-primary' : 'text-base-content/60')}>{note.msg}</p>}
     </Modal>
   )
 }
@@ -226,7 +226,7 @@ function MiniBtn({ children, onClick, primary, active }: { children: React.React
     <button
       type="button"
       onClick={onClick}
-      className={'btn btn-xs ' + (primary ? 'btn-primary' : active ? 'btn-active' : 'btn-ghost')}
+      className={'btn btn-sm pointer-coarse:h-11 ' + (primary ? 'btn-primary' : active ? 'btn-active' : 'btn-ghost')}
     >
       {children}
     </button>
@@ -237,11 +237,11 @@ function SizeEditor({ w, h, onSave, onCancel }: { w: number; h: number; onSave: 
   const [ww, setWw] = useState(String(w))
   const [hh, setHh] = useState(String(h))
   return (
-    <div className="mt-2 flex items-center gap-2 rounded-md bg-base-200 p-2">
+    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-box bg-base-200 p-2">
       <span className="font-mono text-2xs text-base-content/60">Roll size</span>
-      <input type="number" min={5} max={120} value={ww} onChange={(e) => setWw(e.target.value)} aria-label="Width mm" className="input input-sm w-16 font-mono" />
+      <input type="number" min={5} max={120} value={ww} onChange={(e) => setWw(e.target.value)} aria-label="Width mm" className="input input-sm w-16 font-mono pointer-coarse:h-11" />
       <span className="text-base-content/60">×</span>
-      <input type="number" min={5} max={300} value={hh} onChange={(e) => setHh(e.target.value)} aria-label="Length mm" className="input input-sm w-16 font-mono" />
+      <input type="number" min={5} max={300} value={hh} onChange={(e) => setHh(e.target.value)} aria-label="Length mm" className="input input-sm w-16 font-mono pointer-coarse:h-11" />
       <span className="font-mono text-2xs text-base-content/60">mm</span>
       <MiniBtn primary onClick={() => onSave(parseFloat(ww), parseFloat(hh))}>Save</MiniBtn>
       <MiniBtn onClick={onCancel}>Cancel</MiniBtn>

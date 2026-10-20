@@ -44,6 +44,13 @@ and say why — don't silently diverge.
   `error`, `warning`, `success`. Dim a token with `/NN` opacity (`text-base-content/45`),
   not a new gray.
 - Page background is `base-200`; cards/tables sit on `base-100` with a `border-base-300`.
+- **One column.** Header, tabs and content share a single centred `max-w-[680px]` column
+  (`px-4 sm:px-5`), so every left edge lines up on desktop. Each block of a tab is a card:
+  `card w-full border border-base-300 bg-base-100 p-4 sm:p-5` (Scan's form and Recent
+  scans are two cards). In-card section headings use `field-label` ("Waiting", "Recent
+  scans", "Activity") — no bespoke `text-body font-[640]` headings.
+- Radii come from the theme: `rounded-box` for boxes/panels/drop zones, `rounded-field`
+  for row-sized hit areas. No `rounded-lg`/`rounded-xl`.
 
 ## Typography
 
@@ -87,9 +94,10 @@ arbitrary `text-[Npx]` values — pick the nearest token:
   (a badge showing/hiding) can never reflow columns. Do **not** wrap the table in
   `overflow-x-auto`; the fixed layout already fits its container, and the wrapper
   reintroduces the tooltip scrollbar. **Make it responsive** by dropping non-essential
-  columns below `sm` — hide the `<th>`/`<td>` with `hidden sm:table-cell` *and* collapse
-  the matching `<col>` to `w-0 sm:w-[..]` (in `table-fixed`, a `<col>` width is reserved
-  even when its cells are hidden, so `display:none` on the `<col>` alone isn't enough).
+  columns below `sm` — hide the `<th>`/`<td>` with `hidden sm:table-cell` *and* the
+  matching `<col>` with `hidden sm:table-column sm:w-[..]`. Both are needed: a `display:none`
+  cell drops out of the grid, so with only the cells hidden the cells after it shift into
+  the wrong `<col>` (a `w-0` col then swallowed the row actions).
   The Recent-scans table keeps select/thumb/name/size/actions on mobile and hides
   DPI/When plus the Download/Rename row actions.
 - **Interactive SVG must be keyboard-operable.** The label-grid cells
@@ -98,15 +106,29 @@ arbitrary `text-[Npx]` values — pick the nearest token:
   focus-ring `<rect>` (SVG `:focus-visible` styling is unreliable, so render the ring from
   a `focusIdx` state). Any new SVG interaction follows the same pattern — don't ship
   click-only SVG.
-- **Modals** go through `src/components/Modal.tsx` (DaisyUI `modal-box`, `overflow-x-hidden`,
-  `max-w-[380px]` normal / `max-w-[640px]` wide). Pass `labelledBy` for the a11y title link.
+- **Modals** go through `src/components/Modal.tsx`: a bottom sheet on phones
+  (`modal-bottom`), a centred card from `sm` (`sm:max-w-[380px]` normal /
+  `sm:max-w-[640px]` wide). Pass `labelledBy` for the a11y title link.
   It moves focus into the dialog on open, **traps Tab** inside it, closes on Esc/backdrop,
   and restores focus to the trigger on close — so any new modal gets this for free; don't
-  hand-roll another dialog.
+  hand-roll another dialog. It reads `onClose` through a ref: callers pass inline arrows and
+  the queue poll re-renders every 3 s, which used to re-run the effect and yank focus (and
+  the iOS keyboard) back to the first control. Modal footers: `mt-5 flex justify-end gap-2`
+  with default-size `btn btn-ghost` / `btn btn-primary` (+ `pointer-coarse:h-11`).
+- **Touch (the UI is mostly used on a phone).** Every tappable control is ≥44px on a touch
+  screen via the `pointer-coarse:` variant: inline buttons are `btn btn-sm
+  pointer-coarse:h-11`, `IconBtn` is `pointer-coarse:size-11`, steppers/checkbox cells too.
+  `index.css` sets fields to 16px on `(pointer: coarse)` (smaller fields make iOS Safari
+  zoom on focus) — don't set a font-size utility on `input`/`select`/`textarea` (it beats
+  that rule); use `[--font-size:…]` if a desktop size is needed. Tooltips are hidden on
+  `(hover: none)`, so nothing essential may live only in a tooltip: an armed two-click
+  button shows its question as text (`IconBtn confirm="Remove?"`, "Delete all?"). Hover
+  previews are mouse-only (`matchMedia('(hover: hover)')`). Rows of buttons that won't fit
+  at 360px become a `grid grid-cols-2 sm:flex` with the main action full-width on top.
 - **Loading**: show `skeleton` rows/fields (not a blocking spinner) for anything that can
   arrive late; reserve the final height so content doesn't jump (CLS).
-- **Tab route path must equal the tab name** (Scan → `/scan`, Queue → `/queue`, Print →
-  `/print`; `/` opens Queue, the label home, and the old `/labels` redirects to `/queue`) — see `src/lib/router.ts`. A path that disagrees with its tab label is a bug. The
+- **Tab route path must equal the tab name** (Queue → `/queue`, Scan → `/scan`, Print →
+  `/print`, in that tab order; `/` opens Queue, the label home, and the old `/labels` redirects to `/queue`) — see `src/lib/router.ts`. A path that disagrees with its tab label is a bug. The
   SPA owns those paths, so a JSON endpoint must never sit on one (the queue API is
   `/queue/state`, not `GET /queue`).
 - **Print queue** (`src/tabs/QueueTab.tsx`, `src/components/QueueContext.tsx`): items live on
@@ -133,7 +155,8 @@ arbitrary `text-[Npx]` values — pick the nearest token:
   footer is provided at the app root so it persists across tab switches, but is only shown
   on the Scan tab.
 - **Two-click arm/confirm** for immediate destructive buttons (Remove, Clear all): first
-  click arms + relabels ("Click again to delete all") and disarms after a few seconds.
+  click arms + relabels as a short visible question ("Delete all?", "Remove?") and
+  disarms after a few seconds.
   Use this instead of a confirm dialog for low-stakes single actions; use the Undo path for
   recoverability. Exception: queue items. Removing one is two-click only, and printed items
   are deleted outright — there is nothing meaningful to undo once a label is on paper.
@@ -141,7 +164,9 @@ arbitrary `text-[Npx]` values — pick the nearest token:
   `range range-sm`, integer MB `0–10`, `0 = "No limit"` — no decimals. Small counts
   (copies, 1–20) use a `join` −/value/+ stepper with 44px buttons instead.
 - **One primary CTA per view** (`btn-primary btn-block btn-lg` for the main action);
-  secondary actions are `btn-ghost`/`btn-outline` and visually subordinate.
+  secondary actions are `btn-ghost`/`btn-outline` and visually subordinate. Inline actions
+  inside a card (quick add, Print all, Merge) are `btn-sm` (h-11 on touch); only one of
+  them is `btn-primary` at a time per section.
 - **Respect `prefers-reduced-motion`** — the global rule in `index.css` neutralizes the
   infinite pulse/slide loops; don't add motion that ignores it.
 - **No horizontal scroll, ever** (see tooltip/table notes above). The `<html>` reserves a

@@ -183,7 +183,7 @@ export function PrintTab() {
   const multiPage = (doc?.pages ?? 1) > 1
 
   return (
-    <div className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5">
+    <div className="card w-full border border-base-300 bg-base-100 p-4 sm:p-5">
       {queues.length >= 2 && (
         <label className="mb-4 flex flex-col gap-[6px]">
           <span className="field-label">Printer</span>
@@ -212,7 +212,7 @@ export function PrintTab() {
           if (f) loadFile(f)
         }}
         className={
-          'flex min-h-[128px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-colors ' +
+          'flex min-h-[128px] cursor-pointer flex-col items-center justify-center gap-2 rounded-box border-2 border-dashed p-6 text-center transition-colors ' +
           (dragOver ? 'border-primary bg-primary/10' : 'border-base-300 hover:border-primary')
         }
       >
@@ -230,7 +230,7 @@ export function PrintTab() {
               type="button"
               onClick={(e) => { e.preventDefault(); clearFile() }}
               aria-label="Remove file"
-              className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-error text-white"
+              className="relative flex h-[22px] w-[22px] items-center justify-center rounded-full bg-error text-error-content before:absolute before:-inset-[11px] before:content-['']"
             >
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M6 6 18 18M18 6 6 18" /></svg>
             </button>
@@ -265,7 +265,7 @@ export function PrintTab() {
 
       {/* Double-sided toggle (hidden for single-page docs) */}
       {doc && multiPage && (
-        <label className="mt-4 flex w-full cursor-pointer items-center justify-between">
+        <label className="mt-4 flex min-h-11 w-full cursor-pointer items-center justify-between">
           <span className="text-body">Double-sided</span>
           <input type="checkbox" className="toggle toggle-primary" checked={sides === 'two'} onChange={(e) => setSides(e.target.checked ? 'two' : 'one')} />
         </label>
@@ -273,13 +273,13 @@ export function PrintTab() {
 
       {/* Guided manual-duplex flip step */}
       {flip && (
-        <div className="mt-4 rounded-xl border border-base-300 bg-base-200 p-4">
-          <p className="m-0 mb-3 text-body leading-[1.5] text-base-content">{flip.instruction}</p>
+        <div className="mt-4 rounded-box border border-base-300 bg-base-200 p-4">
+          <p className="m-0 mb-3 text-body text-base-content">{flip.instruction}</p>
           <div className="flex gap-2">
-            <button type="button" onClick={doContinue} disabled={busy} className="btn btn-primary">
+            <button type="button" onClick={doContinue} disabled={busy} className="btn btn-primary pointer-coarse:h-11 max-sm:flex-1">
               {busy ? 'Printing…' : 'Continue'}
             </button>
-            <button type="button" onClick={doCancel} className="btn btn-ghost">Cancel</button>
+            <button type="button" onClick={doCancel} className="btn btn-ghost pointer-coarse:h-11">Cancel</button>
           </div>
         </div>
       )}

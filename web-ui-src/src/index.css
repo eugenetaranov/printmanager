@@ -151,3 +151,19 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* Touch screens. Fields at 16px: iOS Safari zooms the page when a smaller
+   field is focused (DaisyUI only fixes inputs/textareas, and only while
+   focused, so their text visibly grows). Taller segmented tabs and sliders
+   that are easy to grab. */
+@media (pointer: coarse) {
+  .input, .select, .textarea { --font-size: 1rem; }
+  .tabs-box > .tab { --tab-height: 2.75rem; }
+  .range { --range-thumb-size: 1.5rem; }
+}
+
+/* No hover on touch: a tapped tooltip would stay stuck on screen. Controls
+   that need their hint on touch show it as visible text instead. */
+@media (hover: none) {
+  .tooltip::before, .tooltip::after, .tooltip > .tooltip-content { display: none; }
+}

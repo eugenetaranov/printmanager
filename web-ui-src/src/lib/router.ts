@@ -1,6 +1,6 @@
 import { useSyncExternalStore, useCallback } from 'react'
 
-// Three tabs; the URL path matches the tab name (scan / queue / print).
+// Three tabs; the URL path matches the tab name (queue / scan / print).
 export type TabId = 'scan' | 'print' | 'queue'
 
 const TAB_TO_PATH: Record<TabId, string> = {
