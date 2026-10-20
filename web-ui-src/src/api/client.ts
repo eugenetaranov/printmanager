@@ -308,8 +308,10 @@ export interface QueueState {
 
 export const printQueue = {
   state: () => getJSON<QueueState>('/queue/state'),
-  addText: (text: string, target?: QueueTarget) =>
-    postJSON<OkResult & { added?: number }>('/queue/add', { text, target }),
+  // Queue box: a blank line separates items (lines together = one label).
+  // `whole`: the text is one designed label (Labels tab), never split.
+  addText: (text: string, target?: QueueTarget, whole = false) =>
+    postJSON<OkResult & { added?: number }>('/queue/add', { text, target, whole }),
   addFile: (dataB64: string, filename: string) =>
     postJSON<OkResult & { added?: number }>('/queue/add', { dataB64, filename }),
   update: (id: string, patch: { target?: QueueTarget; copies?: number; barcode?: boolean }) =>

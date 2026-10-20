@@ -134,11 +134,11 @@ export function QueueTab() {
         <label className="flex flex-col gap-[6px]">
           <span className="field-label">Add to queue</span>
           <textarea
-            rows={3}
+            rows={4}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addText() }}
-            placeholder={'Paste shipment numbers, one per line'}
+            placeholder={'Paste shipment numbers, one per line\n\nOr a number + what it is,\na blank line before the next'}
             className="textarea w-full font-mono"
           />
         </label>
@@ -157,7 +157,7 @@ export function QueueTab() {
           className="hidden"
           onChange={(e) => addFile(e.target.files?.[0])}
         />
-        <p className="mt-2 text-2xs text-base-content/60">Numbers print on your label printer. PDFs and images print on A4. Unprinted items are removed after 7 days.</p>
+        <p className="mt-2 text-2xs text-base-content/60">Lines together make one label; a blank line starts the next (a plain list of numbers still adds one each). Numbers print on your label printer, PDFs and images on A4. Unprinted items are removed after 7 days.</p>
       </div>
 
       {/* Items */}
@@ -265,6 +265,8 @@ function ItemRow({
   const printing = item.state === 'printing'
   const locked = printing || busy
   const isText = item.kind === 'text'
+  const [head, ...restLines] = (isText ? item.text ?? '' : '').split('\n')
+  const rest = restLines.join('\n')
   const opts = isText ? options : options.filter((o) => o.target.type === 'a4')
   const current = opts.find((o) => o.key === targetKey(item.target))
   const where = current?.label.split(' · ')[0] ?? (item.target.type === 'label' ? item.target.name || 'Label printer' : item.target.queue)
@@ -297,7 +299,9 @@ function ItemRow({
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate font-mono text-body text-base-content">{isText ? item.text : item.filename}</div>
+          <div className="truncate font-mono text-body text-base-content">{isText ? head : item.filename}</div>
+          {/* A multi-line label: the number above, what it is (prose) under it. */}
+          {isText && rest && <div className="line-clamp-2 whitespace-pre-line text-xs text-base-content">{rest}</div>}
           <div className="truncate font-mono text-2xs text-base-content/60">
             {where}
             {item.barcode ? ' · barcode' : ''}

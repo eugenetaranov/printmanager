@@ -611,7 +611,10 @@ def _render_landscape_barcode(text, lw, lh):
     A/a = 1 module, B/b = 2, ..."""
     from PIL import Image, ImageDraw
     from reportlab.graphics.barcode import code128
-    bc = code128.Code128(text)
+    # Multi-line (a number + what it is): bars encode the first line; every
+    # line is printed underneath, with more room for the caption.
+    code, lines = text.split("\n")[0], text.split("\n")
+    bc = code128.Code128(code)
     bc.validate()
     bc.encode()
     runs = [(ch.isupper(), ord(ch.lower()) - ord("a") + 1) for ch in bc.decompose()]
@@ -623,17 +626,22 @@ def _render_landscape_barcode(text, lw, lh):
     draw = ImageDraw.Draw(img)
     margin = max(2, round(lh * 0.06))
     # Size the digits first (usually width-bound), then give the bars the rest.
-    font, _ = _fit_font(draw, text, lw - 2 * margin, max(10, round(lh * 0.28)))
-    box = draw.textbbox((0, 0), text, font=font)
-    text_h, gap = box[3], max(2, round(lh * 0.04))
+    cap = 0.28 if len(lines) == 1 else 0.45
+    font, _ = _fit_font(draw, text, lw - 2 * margin, max(10, round(lh * cap)))
+    lgap = max(2, (font.size if hasattr(font, "size") else 12) // 6)
+    heights = [draw.textbbox((0, 0), ln or " ", font=font)[3] for ln in lines]
+    text_h, gap = sum(heights) + lgap * (len(lines) - 1), max(2, round(lh * 0.04))
     bar_h = lh - 2 * margin - text_h - gap
     x = (lw - (modules - 20) * mod) // 2
     for is_bar, n in runs:
         if is_bar:
             draw.rectangle([x, margin, x + n * mod - 1, margin + bar_h - 1], fill=0)
         x += n * mod
-    w = draw.textlength(text, font=font)
-    draw.text(((lw - w) / 2, margin + bar_h + gap), text, fill=0, font=font)
+    y = margin + bar_h + gap
+    for ln, hh in zip(lines, heights):
+        w = draw.textlength(ln, font=font)
+        draw.text(((lw - w) / 2, y), ln, fill=0, font=font)
+        y += hh + lgap
     return img
 
 

@@ -88,7 +88,7 @@ export function NiimbotComposer({
     if (!canQueue || queueing) return
     setQueueing(true)
     onNote('', '')
-    printQueue.addText(text, { type: 'label', address: format.address })
+    printQueue.addText(text, { type: 'label', address: format.address }, true)
       .then((r) => {
         if (r.ok) { setText(''); onNote('ok', `Added ${r.added} to the queue.`); refreshQueue() }
         else onNote('err', r.error || 'Could not add to the queue.')

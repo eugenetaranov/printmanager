@@ -1592,17 +1592,47 @@ def _q_target(raw, kind):
     return {"type": "a4", "queue": PRINT_QUEUE}
 
 
+QUEUE_TEXT_MAX = 400       # chars per text item (a few lines of label)
+
+
+def _queue_texts(text, whole=False):
+    """The Queue box's text → one string per item. A blank line separates
+    items; lines next to each other are one multi-line label ("1234567" +
+    "this is a toothbrush"). Except a block made only of bare codes (no spaces,
+    has a digit), which stays one item per line, so a pasted list of shipment
+    numbers still adds them all. `whole` (a label designed in the Labels tab):
+    everything is one item."""
+    if whole:
+        t = "\n".join(ln.rstrip() for ln in str(text).strip().splitlines())
+        return [t[:QUEUE_TEXT_MAX]] if t else []
+    blocks, cur = [], []
+    for ln in [ln.strip() for ln in str(text).splitlines()] + [""]:
+        if ln:
+            cur.append(ln)
+        elif cur:
+            blocks.append(cur)
+            cur = []
+    code = re.compile(r"(?=.*\d)\S+")
+    out = []
+    for b in blocks:
+        if len(b) > 1 and all(code.fullmatch(ln) for ln in b):
+            out += [ln[:QUEUE_TEXT_MAX] for ln in b]
+        else:
+            out.append("\n".join(b)[:QUEUE_TEXT_MAX])
+    return out
+
+
 def queue_add(obj):
     _queue_run["message"] = ""          # a finished run's "Printed N" is stale now
     items = _q_items()
     new = []
     text = obj.get("text")
     if text is not None:
-        lines = [ln.strip() for ln in str(text).splitlines() if ln.strip()]
-        if not lines:
+        texts = _queue_texts(text, bool(obj.get("whole")))
+        if not texts:
             raise RuntimeError("Nothing to add — paste a number or some text first")
-        for ln in lines:
-            new.append({"kind": "text", "text": ln[:200],
+        for t in texts:
+            new.append({"kind": "text", "text": t,
                         "target": _q_target(obj.get("target"), "text")})
     else:
         new.append({"kind": "file", "filename": os.path.basename(obj.get("filename") or "file")[:120],
@@ -1856,22 +1886,32 @@ def queue_stop(obj):
 
 
 def _big_text_pdf(text, barcode, out):
-    """One A4 page: the text large at the top (and a Code 128 under it when
-    asked), so a number printed on A4 can be cut out and taped to a parcel."""
+    """One A4 page: the text large at the top (and a Code 128 of its first line
+    under it when asked), so a number printed on A4 can be cut out and taped to
+    a parcel. Further lines (a description) print smaller under the first."""
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
     W, H = A4
     margin = 42
     c = canvas.Canvas(out, pagesize=A4)
+    first, *rest = text.split("\n")
     size = 36
-    while size > 10 and c.stringWidth(text, "Helvetica-Bold", size) > W - 2 * margin:
+    while size > 10 and c.stringWidth(first, "Helvetica-Bold", size) > W - 2 * margin:
         size -= 1
     c.setFont("Helvetica-Bold", size)
-    c.drawString(margin, H - margin - size, text)
+    y = H - margin - size
+    c.drawString(margin, y, first)
+    for ln in rest:
+        sub = 20
+        while sub > 9 and c.stringWidth(ln, "Helvetica", sub) > W - 2 * margin:
+            sub -= 1
+        c.setFont("Helvetica", sub)
+        y -= sub * 1.35
+        c.drawString(margin, y, ln)
     if barcode:
         from reportlab.graphics.barcode import code128
-        bc = code128.Code128(text, barHeight=60, barWidth=1.4, quiet=False)
-        bc.drawOn(c, margin, H - margin - size - 90)
+        bc = code128.Code128(first, barHeight=60, barWidth=1.4, quiet=False)
+        bc.drawOn(c, margin, y - 90)
     c.showPage()
     c.save()
 
