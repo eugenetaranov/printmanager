@@ -3,7 +3,6 @@ import { StatusProvider, StatusLed } from './components/status'
 import { useRoute, type TabId } from './lib/router'
 import { ScanTab } from './tabs/ScanTab'
 import { PrintTab } from './tabs/PrintTab'
-import { LabelsTab } from './tabs/LabelsTab'
 import { DevicesModal } from './components/DevicesModal'
 import { ActivityLogProvider, ActivityFooter } from './components/ActivityLog'
 import { QueueTab } from './tabs/QueueTab'
@@ -11,9 +10,8 @@ import { QueueProvider, useQueue } from './components/QueueContext'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'scan', label: 'Scan' },
-  { id: 'labels', label: 'Labels' },
-  { id: 'print', label: 'Print' },
   { id: 'queue', label: 'Queue' },
+  { id: 'print', label: 'Print' },
 ]
 
 export function App() {
@@ -112,7 +110,6 @@ function Shell() {
         </div>
 
         {tab === 'scan' && <ScanTab />}
-        {tab === 'labels' && <LabelsTab />}
         {tab === 'print' && <PrintTab />}
         {tab === 'queue' && <QueueTab />}
 

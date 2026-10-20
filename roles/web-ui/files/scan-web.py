@@ -1600,7 +1600,7 @@ def _queue_texts(text, whole=False):
     items; lines next to each other are one multi-line label ("1234567" +
     "this is a toothbrush"). Except a block made only of bare codes (no spaces,
     has a digit), which stays one item per line, so a pasted list of shipment
-    numbers still adds them all. `whole` (a label designed in the Labels tab):
+    numbers still adds them all. `whole` (a label designed in Customize):
     everything is one item."""
     if whole:
         t = "\n".join(ln.rstrip() for ln in str(text).strip().splitlines())
@@ -1654,7 +1654,7 @@ def queue_add(obj):
                 shutil.rmtree(tmp, ignore_errors=True)
     with _queue_lock:
         _q_save(_q_load() + new)
-    return {"added": len(new)}
+    return {"added": len(new), "ids": [it["id"] for it in new]}
 
 
 def queue_update(obj):
@@ -1724,8 +1724,14 @@ def queue_state():
         seen.add((t["type"], tid))
         targets.append({"type": t["type"], "id": tid, "name": name,
                         "ready": _target_ready(t, printers)})
+    # Every remembered label printer, for the tab's quick-add printer row and
+    # its Reconnect button (cheap: in-memory BLE state, no adapter probe).
+    labels = [{"address": p["address"], "name": p["name"], "model": p.get("model") or "",
+               "model_label": p.get("model_label") or p.get("model") or "",
+               "label_mm": p.get("label_mm") or [], "active": bool(p.get("active")),
+               "connected": p.get("status") == "connected"} for p in printers]
     return {"items": items, "running": _queue_run["active"],
-            "message": _queue_run["message"], "targets": targets}
+            "message": _queue_run["message"], "targets": targets, "labels": labels}
 
 
 # Each release gets a generation number. Stop bumps it and frees the queue at
@@ -1827,12 +1833,15 @@ def _print_a4(item, queue, copies):
         time.sleep(3)
 
 
-def _queue_worker(gen):
+def _queue_worker(gen, only=None):
+    """Print waiting items until none are left. `only` (a set of ids): print
+    just those — the tab's Print now, which shouldn't release the whole queue."""
     printed = 0
     try:
         while _current(gen):
             item = next((i for i in _q_items() if i.get("state") in ("waiting", "failed")
-                         and i["id"] not in _inflight), None)
+                         and i["id"] not in _inflight
+                         and (only is None or i["id"] in only)), None)
             if not item:
                 _say(gen, "Printed %d item%s." % (printed, "" if printed == 1 else "s") if printed else "")
                 return
@@ -1860,14 +1869,17 @@ def _queue_worker(gen):
 
 
 def queue_release(obj):
+    ids = obj.get("ids")
+    only = {str(i) for i in ids} if isinstance(ids, list) else None
     with _queue_lock:
         if _queue_run["active"]:
             return {}
-        if not any(i.get("state") in ("waiting", "failed") for i in _q_items()):
+        if not any(i.get("state") in ("waiting", "failed") and (only is None or i["id"] in only)
+                   for i in _q_items()):
             raise RuntimeError("Nothing to print")
         gen = _queue_run["gen"] + 1
         _queue_run.update(gen=gen, active=True, message="Starting…", seen=time.monotonic())
-    threading.Thread(target=_queue_worker, args=(gen,), daemon=True).start()
+    threading.Thread(target=_queue_worker, args=(gen, only), daemon=True).start()
     return {}
 
 
@@ -2435,7 +2447,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/niimbot/state":
             # `?adapter=0` skips the BLE adapter probe (a ~seconds-long
             # BleakScanner.discover) for callers that only need the remembered
-            # printer list — e.g. the Labels tab, which never shows the badge.
+            # printer list — e.g. the Queue tab's composer, which never shows the badge.
             with_adapter = urllib.parse.parse_qs(parsed.query).get("adapter", ["1"])[0] != "0"
             try:
                 self._json(200, dict(niimbot_state(with_adapter=with_adapter), ok=True))

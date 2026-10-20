@@ -200,6 +200,7 @@ export interface NiimPrinter {
   label_mm?: [number, number]
   model: string
   model_label?: string
+  active?: boolean
 }
 
 export interface NiimCandidate {
@@ -299,24 +300,37 @@ export interface QueueTargetState {
   ready: boolean
 }
 
+// A remembered label printer as the queue sees it (quick-add row + Reconnect).
+export interface QueueLabelPrinter {
+  address: string
+  name: string
+  model: string
+  model_label: string
+  label_mm: number[]
+  active: boolean
+  connected: boolean
+}
+
 export interface QueueState {
   items: QueueItem[]
   running: boolean
   message: string
   targets: QueueTargetState[]
+  labels?: QueueLabelPrinter[]
 }
 
 export const printQueue = {
   state: () => getJSON<QueueState>('/queue/state'),
   // Queue box: a blank line separates items (lines together = one label).
-  // `whole`: the text is one designed label (Labels tab), never split.
+  // `whole`: the text is one designed label (Customize), never split.
   addText: (text: string, target?: QueueTarget, whole = false) =>
-    postJSON<OkResult & { added?: number }>('/queue/add', { text, target, whole }),
+    postJSON<OkResult & { added?: number; ids?: string[] }>('/queue/add', { text, target, whole }),
   addFile: (dataB64: string, filename: string) =>
     postJSON<OkResult & { added?: number }>('/queue/add', { dataB64, filename }),
   update: (id: string, patch: { target?: QueueTarget; copies?: number; barcode?: boolean }) =>
     postJSON<OkResult>('/queue/update', { id, ...patch }),
   remove: (id: string) => postJSON<OkResult>('/queue/remove', { id }),
-  release: () => postJSON<OkResult>('/queue/release', {}),
+  // `ids`: print just these (Print now) instead of everything waiting.
+  release: (ids?: string[]) => postJSON<OkResult>('/queue/release', ids ? { ids } : {}),
   stop: () => postJSON<OkResult>('/queue/stop', {}),
 }

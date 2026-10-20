@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api, niimbot as nb, templates as tplApi, type NiimState, type Template } from '../api/client'
-import { useNote, Note } from '../components/Note'
-import { Modal } from '../components/Modal'
-import { NiimbotComposer } from '../components/NiimbotComposer'
-import { SheetComposer } from '../components/SheetComposer'
-import { ManageLabels } from '../components/ManageLabels'
+import { api, niimbot as nb, templates as tplApi, type NiimPrinter, type Template } from '../api/client'
+import { useNote, Note } from './Note'
+import { Modal } from './Modal'
+import { NiimbotComposer } from './NiimbotComposer'
+import { SheetComposer } from './SheetComposer'
+import { ManageLabels } from './ManageLabels'
 import { formatOptions, type FormatOption, type ThermalFormat } from '../lib/formats'
 
 const STORE_KEY = 'pm_format'
 
-export function LabelsTab() {
+// The Queue tab's Customize section (formerly the Labels tab): pick any label
+// format — a Niimbot roll or an A4 sheet template — and design one label with
+// a live preview. `printers` comes from the queue poll, so connection state is
+// live; `onConnected` asks the queue to re-poll after a reconnect.
+export function LabelComposer({ printers, onConnected }: { printers: NiimPrinter[]; onConnected: () => void }) {
   const { note, ok, err, info } = useNote()
   const [templates, setTemplates] = useState<Template[]>([])
   const [queues, setQueues] = useState<string[]>([])
-  const [state, setState] = useState<NiimState | null>(null)
   const [formatV, setFormatV] = useState('')
   const [manageOpen, setManageOpen] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -22,24 +25,24 @@ export function LabelsTab() {
   const loadTemplates = () => tplApi.list().then(setTemplates).catch(() => {})
 
   useEffect(() => {
-    // Only the cached CUPS queue list and remembered Niimbots are needed here,
-    // so avoid the full device inventory (uncached lpstat + cold scanimage -L)
-    // and the BLE adapter probe — both add seconds and neither is shown on this tab.
+    // Only the cached CUPS queue list is needed here — not the full device
+    // inventory (uncached lpstat + cold scanimage -L).
     Promise.allSettled([
       tplApi.list().then(setTemplates),
       api.queues().then((r) => setQueues(r.queues.map((q) => q.queue))),
-      nb.state(false).then(setState),
     ]).then(() => setLoaded(true))
   }, [])
 
-  const opts = useMemo(() => formatOptions(templates, state?.printers ?? [], queues), [templates, state, queues])
+  const opts = useMemo(() => formatOptions(templates, printers, queues), [templates, printers, queues])
 
-  // Pick persisted format or the first available, once options are known.
+  // Pick the persisted format, else the active label printer, else the first.
   useEffect(() => {
     if (!opts.length) return
     const saved = (() => { try { return localStorage.getItem(STORE_KEY) || '' } catch { return '' } })()
-    setFormatV((cur) => (opts.some((o) => o.v === cur) ? cur : opts.some((o) => o.v === saved) ? saved : opts[0].v))
-  }, [opts])
+    const active = printers.find((p) => p.active)
+    const fallback = active ? 'niim:' + active.address : opts[0].v
+    setFormatV((cur) => (opts.some((o) => o.v === cur) ? cur : opts.some((o) => o.v === saved) ? saved : fallback))
+  }, [opts, printers])
 
   const format: FormatOption | undefined = opts.find((o) => o.v === formatV)
 
@@ -48,7 +51,8 @@ export function LabelsTab() {
     try { localStorage.setItem(STORE_KEY, v) } catch { /* ignore */ }
     const o = opts.find((x) => x.v === v)
     if (o?.kind === 'thermal') {
-      nb.select(o.address).catch(() => {})
+      // Also makes it the quick-add printer above.
+      nb.select(o.address).then(onConnected).catch(() => {})
       if (!o.connected) ensureConnected(o)
     }
   }
@@ -59,7 +63,7 @@ export function LabelsTab() {
     nb.reconnect(fmt.address)
       .then((r) => {
         if (r.ok) {
-          setState(r)
+          onConnected()
           setConn((c) => (c ? { ...c, status: 'ok', msg: 'Connected' } : c))
           then?.()
           window.setTimeout(() => setConn((c) => (c?.fmt.address === fmt.address ? null : c)), 550)
@@ -71,9 +75,10 @@ export function LabelsTab() {
   }
 
   const activeTemplate = format?.kind === 'a4' ? templates.find((t) => t.id === format.tplId) : undefined
+  const onNote = (k: '' | 'ok' | 'err', m: string) => (k === 'ok' ? ok(m) : k === 'err' ? err(m) : info(m))
 
   return (
-    <div className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5">
+    <div>
       {!loaded ? (
         <div>
           <div className="mb-4 flex items-end gap-2">
@@ -81,40 +86,33 @@ export function LabelsTab() {
               <div className="skeleton h-[13px] w-24 rounded" />
               <div className="skeleton h-10 w-full rounded" />
             </div>
-            <div className="skeleton h-10 w-28 rounded" />
           </div>
           <div className="skeleton mt-3 h-8 w-48 rounded" />
           <div className="skeleton mt-3 h-24 w-full rounded" />
-          <div className="skeleton mt-4 h-11 w-full rounded" />
         </div>
       ) : opts.length === 0 ? (
         <p className="text-body text-base-content/60">No printers yet. Open the Devices manager (the printer icon, top-right) to connect one.</p>
       ) : (
         <>
-          <div className="mb-4 flex items-end gap-2">
-            <label className="flex flex-1 flex-col gap-[6px]">
-              <span className="field-label">Label format</span>
-              <select value={formatV} onChange={(e) => selectFormat(e.target.value)} className="select w-full font-mono">
-                {opts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-              </select>
-            </label>
-            <button type="button" onClick={() => setManageOpen(true)} title="Add, edit or delete A4 label sizes" className="btn btn-outline">
-              Manage labels
-            </button>
-          </div>
+          <label className="mb-1 flex flex-col gap-[6px]">
+            <span className="field-label">Label format</span>
+            <select value={formatV} onChange={(e) => selectFormat(e.target.value)} className="select w-full font-mono">
+              {opts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+            </select>
+          </label>
 
           {format?.kind === 'thermal' && (
-            <NiimbotComposer
-              format={format}
-              onNote={(k, m) => (k === 'ok' ? ok(m) : k === 'err' ? err(m) : info(m))}
-              onEnsureConnected={ensureConnected}
-            />
+            <NiimbotComposer format={format} onNote={onNote} onEnsureConnected={ensureConnected} />
           )}
           {format?.kind === 'a4' && activeTemplate && (
-            <SheetComposer format={format} template={activeTemplate} onNote={(k, m) => (k === 'ok' ? ok(m) : k === 'err' ? err(m) : info(m))} />
+            <SheetComposer format={format} template={activeTemplate} onNote={onNote} />
           )}
 
           <Note note={note} />
+
+          <button type="button" onClick={() => setManageOpen(true)} className="btn btn-ghost btn-sm mt-3 px-2 text-base-content/60">
+            Manage A4 label sizes
+          </button>
         </>
       )}
 

@@ -24,11 +24,11 @@ function gitVersion(): string {
 //   VITE_API_TARGET=http://printmanager.local npm run dev
 const API_TARGET = process.env.VITE_API_TARGET || 'http://printmanager.local'
 
-// `/scan`, `/print`, `/document` are BOTH client-side page routes (a browser
+// `/scan`, `/print`, `/document`, `/queue` are BOTH client-side page routes (a browser
 // navigation should load the SPA shell) AND API endpoints (POST /scan, POST
 // /print, POST /document/*). Disambiguate by request: an HTML GET navigation is
 // a deep link → let Vite serve the SPA; anything else is an API call → proxy it.
-const PAGE_ROUTES = ['/scan', '/print', '/document']
+const PAGE_ROUTES = ['/scan', '/print', '/document', '/queue']
 
 // Pure API prefixes — always proxied.
 const API_ONLY = [

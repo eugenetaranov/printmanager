@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, niimbot as nb, printQueue, type NiimPrinter, type Queue, type QueueItem, type QueueTarget } from '../api/client'
 import { useNote, Note } from '../components/Note'
 import { useQueue } from '../components/QueueContext'
+import { LabelComposer } from '../components/LabelComposer'
 import { readImageB64 } from '../lib/formats'
 import { IconBtn, Icon, Dot } from '../components/IconBtn'
 
-// Stage shipment numbers (or a PDF/image) while the printers are off, then
-// release everything with one Print all. Items live on the Pi, so a number
-// pasted on the phone can be printed from any device.
+// The label home. Paste shipment numbers and either print them now (printer
+// connected) or stage them while the printers are off and release everything
+// later with Print all. Items live on the Pi, so a number pasted on the phone
+// can be printed from any device. Customize opens the full label composer
+// (formats, QR/image, preview, A4 sheets) in place of the quick box.
 
 const targetKey = (t: QueueTarget) => (t.type === 'label' ? 'label:' + t.address : 'a4:' + t.queue)
 
@@ -34,29 +37,52 @@ export function QueueTab() {
   const [text, setText] = useState('')
   const [adding, setAdding] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  const [labelPrinters, setLabelPrinters] = useState<NiimPrinter[]>([])
   const [queues, setQueues] = useState<Queue[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
   // Per-printer connect attempt: address -> 'busy' | error message.
   const [connecting, setConnecting] = useState<Record<string, string>>({})
+  const [customize, setCustomize] = useState(false)
+  const customizeRef = useRef(false)
+  customizeRef.current = customize
 
   useEffect(() => {
-    nb.state(false).then((s) => setLabelPrinters(s.printers ?? [])).catch(() => {})
     api.queues().then((d) => setQueues(d.queues)).catch(() => {})
   }, [])
+
+  // Label printers ride along on the 3 s queue poll, so connection state is live.
+  const labels = state.labels
+  const labelPrinters: NiimPrinter[] = useMemo(() => (labels ?? []).map((l) => ({
+    address: l.address,
+    name: l.name,
+    status: l.connected ? 'connected' : 'disconnected',
+    label_mm: (l.label_mm.length === 2 ? l.label_mm : undefined) as [number, number] | undefined,
+    model: l.model,
+    model_label: l.model_label,
+    active: l.active,
+  })), [labels])
+  // Quick add goes to the active label printer (the one that printed last).
+  const quick = labels?.find((l) => l.active) ?? labels?.[0]
+  const canPrintNow = !!quick?.connected && !state.running
 
   const items = state.items
   const pending = items.filter((i) => i.state !== 'printing').length
   const failed = items.some((i) => i.state === 'failed')
 
-  const addText = () => {
+  // Print now = add, then release just the new items (not the whole queue),
+  // so it shares the worker's reconnect, copies and failed-item handling.
+  const addText = (printNow = false) => {
     if (!text.trim() || adding) return
     setAdding(true)
     clear()
-    printQueue.addText(text)  // server defaults to the label printer used last
-      .then((r) => {
-        if (r.ok) { setText(''); ok(`Added ${r.added} to the queue.`) }
-        else err(r.error || 'Could not add to the queue.')
+    const target: QueueTarget | undefined = quick ? { type: 'label', address: quick.address } : undefined
+    printQueue.addText(text, target)  // no label printer: the server falls back to A4
+      .then(async (r) => {
+        if (!r.ok) { err(r.error || 'Could not add to the queue.'); return refresh() }
+        setText('')
+        if (printNow && r.ids?.length) {
+          const rel = await printQueue.release(r.ids)
+          if (!rel.ok) err(rel.error || 'Added, but could not start printing.')
+        } else ok(`Added ${r.added} to the queue.`)
         return refresh()
       })
       .catch(() => err('Could not reach the print service.'))
@@ -87,7 +113,8 @@ export function QueueTab() {
     const onPaste = (e: ClipboardEvent) => {
       const item = Array.from(e.clipboardData?.items ?? []).find((it) => it.type.startsWith('image/'))
       const f = item?.getAsFile()
-      if (f) { e.preventDefault(); addFile(f) }
+      // While Customize is open, its composer takes the pasted image instead.
+      if (f && !customizeRef.current) { e.preventDefault(); addFile(f) }
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
@@ -110,6 +137,11 @@ export function QueueTab() {
       .catch(() => setConnecting((c) => ({ ...c, [address]: 'Could not reach the print service.' })))
   }
 
+  // The quick-add printer already has its row (and Reconnect) at the top.
+  const otherTargets = state.targets.filter((t) => !(t.type === 'label' && t.id === quick?.address))
+
+  const switchPrinter = (address: string) => { nb.select(address).then(refresh).catch(() => {}) }
+
   const release = () => { clear(); run(printQueue.release()) }
   const stop = () => run(printQueue.stop())
 
@@ -122,9 +154,57 @@ export function QueueTab() {
     ...queues.map((q) => ({ key: 'a4:' + q.queue, target: { type: 'a4' as const, queue: q.queue }, label: `${q.name} · A4` })),
   ]
 
+  const qc = quick ? connecting[quick.address] || '' : ''
+  const quickStatus = qc === 'busy' ? 'Connecting…'
+    : qc ? qc
+    : quick?.connected ? 'Connected' : 'Disconnected'
+
   return (
     <div className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5">
-      {/* Add */}
+      {/* Label printer: where quick add goes, with a one-tap Bluetooth reconnect. */}
+      {quick && (
+        <div className="mb-3 flex items-center gap-2">
+          <Dot status={quick.connected ? 'connected' : 'disconnected'} />
+          <div className="min-w-0 flex-1">
+            {labelPrinters.length > 1 ? (
+              <select
+                aria-label="Label printer"
+                value={quick.address}
+                onChange={(e) => switchPrinter(e.target.value)}
+                disabled={state.running}
+                className="select select-ghost select-sm h-auto min-h-0 w-full max-w-full px-1 font-mono text-body"
+              >
+                {labelPrinters.map((p) => (
+                  <option key={p.address} value={p.address}>{p.model_label || p.name} · {(p.label_mm ?? [])[0] ?? '?'}×{(p.label_mm ?? [])[1] ?? '?'} mm</option>
+                ))}
+              </select>
+            ) : (
+              <div className="truncate font-mono text-body">{quick.model_label || quick.name} · {quick.label_mm[0] ?? '?'}×{quick.label_mm[1] ?? '?'} mm</div>
+            )}
+            <div aria-live="polite" className={'truncate text-2xs ' + (qc && qc !== 'busy' ? 'text-error' : 'text-base-content/60')}>{quickStatus}</div>
+          </div>
+          {quick.connected ? (
+            <IconBtn title="Reconnect" onClick={() => connect(quick.address)} disabled={qc === 'busy' || state.running}>
+              {qc === 'busy' ? <span className="loading loading-spinner loading-xs" /> : <Icon.reconnect />}
+            </IconBtn>
+          ) : (
+            <button type="button" onClick={() => connect(quick.address)} disabled={qc === 'busy' || state.running} className="btn btn-outline btn-sm">
+              {qc === 'busy' ? <span className="loading loading-spinner loading-xs" /> : <Icon.reconnect />}
+              {qc === 'busy' ? 'Connecting' : 'Reconnect'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {customize ? (
+        <div className="rounded-xl border border-base-300 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="field-label">Customize a label</span>
+            <button type="button" onClick={() => setCustomize(false)} className="btn btn-ghost btn-xs">Back to quick add</button>
+          </div>
+          <LabelComposer printers={labelPrinters} onConnected={refresh} />
+        </div>
+      ) : (
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
@@ -132,23 +212,35 @@ export function QueueTab() {
         className={'rounded-xl border-2 border-dashed p-3 transition-colors ' + (dragOver ? 'border-primary bg-primary/10' : 'border-base-300')}
       >
         <label className="flex flex-col gap-[6px]">
-          <span className="field-label">Add to queue</span>
+          <span className="field-label">Add a label</span>
           <textarea
             rows={4}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addText() }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addText(canPrintNow) }}
             placeholder={'Paste shipment numbers, one per line\n\nOr a number + what it is,\na blank line before the next'}
             className="textarea w-full font-mono"
           />
         </label>
-        <div className="mt-2 flex justify-end gap-2">
-          <button type="button" onClick={() => fileInput.current?.click()} disabled={adding} className="btn btn-ghost btn-sm">
+        <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+          <button type="button" onClick={() => fileInput.current?.click()} disabled={adding} className="btn btn-ghost btn-sm mr-auto">
             Choose file
           </button>
-          <button type="button" onClick={addText} disabled={!text.trim() || adding} className="btn btn-primary btn-sm">
-            {adding ? 'Adding…' : 'Add'}
-          </button>
+          {/* Printer connected: printing is the likelier intent, so it leads. */}
+          {canPrintNow ? (
+            <>
+              <button type="button" onClick={() => addText(false)} disabled={!text.trim() || adding} className="btn btn-outline btn-sm">
+                Add to queue
+              </button>
+              <button type="button" onClick={() => addText(true)} disabled={!text.trim() || adding} className="btn btn-primary btn-sm">
+                {adding ? 'Sending…' : 'Print now'}
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={() => addText(false)} disabled={!text.trim() || adding} className="btn btn-primary btn-sm">
+              {adding ? 'Adding…' : 'Add to queue'}
+            </button>
+          )}
         </div>
         <input
           ref={fileInput}
@@ -159,6 +251,15 @@ export function QueueTab() {
         />
         <p className="mt-2 text-2xs text-base-content/60">Lines together make one label; a blank line starts the next (a plain list of numbers still adds one each). Numbers print on your label printer, PDFs and images on A4. Unprinted items are removed after 7 days.</p>
       </div>
+      )}
+
+      {!customize && (
+        <button type="button" onClick={() => setCustomize(true)} className="mt-2 flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-lg px-1 text-left text-body hover:bg-base-200">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-none text-base-content/60"><path d="m9 6 6 6-6 6" /></svg>
+          <span className="font-[600]">Customize a label</span>
+          <span className="truncate text-xs text-base-content/60">QR, image, preview, A4 sheets</span>
+        </button>
+      )}
 
       {/* Items */}
       <div className="mt-5 mb-2 flex items-baseline justify-between">
@@ -173,7 +274,7 @@ export function QueueTab() {
       ) : items.length === 0 ? (
         <>
           {state.message && <p aria-live="polite" className="m-0 pt-1 text-body text-primary">{state.message}</p>}
-          <p className="py-3 text-body text-base-content/60">Nothing queued. Paste numbers above to print them later.</p>
+          <p className="py-3 text-body text-base-content/60">Nothing waiting. Paste numbers above to print them now or later.</p>
         </>
       ) : (
         <ul className="flex flex-col gap-2">
@@ -186,10 +287,10 @@ export function QueueTab() {
       {/* Release */}
       {items.length > 0 && (
         <>
-          {state.targets.length > 0 && (
+          {otherTargets.length > 0 && (
             <div className="mt-4">
               <span className="field-label">Printers</span>
-              {state.targets.map((t) => {
+              {otherTargets.map((t) => {
                 const c = connecting[t.id] || ''
                 const canConnect = t.type === 'label' && !t.ready && !state.running
                 const stTxt = c === 'busy' ? 'Connecting…'
