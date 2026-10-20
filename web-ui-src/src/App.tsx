@@ -5,11 +5,11 @@ import { ScanTab } from './tabs/ScanTab'
 import { PrintTab } from './tabs/PrintTab'
 import { DevicesModal } from './components/DevicesModal'
 import { ActivityLogProvider, ActivityFooter } from './components/ActivityLog'
-import { QueueTab } from './tabs/QueueTab'
+import { LabelsTab } from './tabs/LabelsTab'
 import { QueueProvider, useQueue } from './components/QueueContext'
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'queue', label: 'Queue' },
+  { id: 'labels', label: 'Labels' },
   { id: 'scan', label: 'Scan' },
   { id: 'print', label: 'Print' },
 ]
@@ -52,14 +52,14 @@ function Shell() {
           </div>
           <div className="flex items-center gap-3">
             <StatusLed />
-            {queued > 0 && tab !== 'queue' && (
+            {queued > 0 && tab !== 'labels' && (
               <div className="indicator">
                 <span className={'indicator-item badge badge-xs translate-x-[-4px] translate-y-[4px] font-mono tabular-nums ' + (queueFailed ? 'badge-error' : 'badge-primary')}>{queued}</span>
                 <button
                   type="button"
                   data-tip="Queue"
                   aria-label={`Print queue, ${queued} waiting`}
-                  onClick={() => navigate('queue')}
+                  onClick={() => navigate('labels')}
                   className="tooltip tooltip-bottom btn btn-square btn-ghost btn-sm pointer-coarse:size-11"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -102,7 +102,7 @@ function Shell() {
                 + (tab === t.id ? 'border-primary text-primary' : 'border-transparent text-base-content/60 hover:text-base-content')}
             >
               {t.label}
-              {t.id === 'queue' && queued > 0 && (
+              {t.id === 'labels' && queued > 0 && (
                 <span className={'badge badge-xs font-mono tabular-nums ' + (queueFailed ? 'badge-error' : 'badge-primary')}>{queued}</span>
               )}
             </button>
@@ -111,7 +111,7 @@ function Shell() {
 
         {tab === 'scan' && <ScanTab />}
         {tab === 'print' && <PrintTab />}
-        {tab === 'queue' && <QueueTab />}
+        {tab === 'labels' && <LabelsTab />}
 
         {tab === 'scan' && <ActivityFooter />}
 

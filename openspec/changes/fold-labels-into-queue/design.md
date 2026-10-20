@@ -13,7 +13,9 @@ Labels and Queue overlapped. Both put text on a Niimbot label, but they split te
 - **Printer state rides on the existing 3 s queue poll** (`labels` in `/queue/state`) instead of a second poll of `/niimbot/state`. `manager.state()` is in-memory, so it's cheap, and the Reconnect row and the composer's "connected" flag stay live.
 - **The quick-add target is the active label printer** (the one that last printed). The picker and the composer's format choice both call `/niimbot/select`, so all three agree.
 - **Reconnect is always available.** A full button shows when disconnected. A small icon shows when connected, because BLE often reports "connected" over a link that has gone stale.
-- **The default tab is Queue.** Most visits are a paste; Scan is still one tap away.
+- **The default tab is Labels, the leftmost tab.** Most visits are a paste; Scan is still one tap away.
+- **Named Labels, not Queue.** The tab is where labels are made; the queue is one part of it. Tab names describe the task (Labels / Scan / Print) rather than the device: "Printer" would be ambiguous with two kinds of printer.
+- **The Customize switch sits in the input's header row** and the composer's text box comes first, so switching modes doesn't move the input (it used to drop below the format picker and the kind switch).
 
 ## Risks / Trade-offs
 

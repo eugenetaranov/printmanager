@@ -127,22 +127,29 @@ arbitrary `text-[Npx]` values — pick the nearest token:
   at 360px become a `grid grid-cols-2 sm:flex` with the main action full-width on top.
 - **Loading**: show `skeleton` rows/fields (not a blocking spinner) for anything that can
   arrive late; reserve the final height so content doesn't jump (CLS).
-- **Tab route path must equal the tab name** (Queue → `/queue`, Scan → `/scan`, Print →
-  `/print`, in that tab order; `/` opens Queue, the label home, and the old `/labels` redirects to `/queue`) — see `src/lib/router.ts`. A path that disagrees with its tab label is a bug. The
-  SPA owns those paths, so a JSON endpoint must never sit on one (the queue API is
-  `/queue/state`, not `GET /queue`).
-- **Print queue** (`src/tabs/QueueTab.tsx`, `src/components/QueueContext.tsx`): items live on
+- **Tab route path must equal the tab name** (Labels → `/labels`, Scan → `/scan`, Print →
+  `/print`, in that tab order; `/` opens Labels, and the old `/queue` redirects to `/labels`) —
+  see `src/lib/router.ts`. Tabs are named for the task (Labels / Scan / Print), not the device.
+  A path that disagrees with its tab label is a bug. The SPA owns those paths, so a JSON
+  endpoint must never sit on one (the queue API is `/queue/state`, not `GET /queue`).
+- **Print queue** (`src/tabs/LabelsTab.tsx`, `src/components/QueueContext.tsx`): items live on
   the Pi; `QueueProvider` polls `/queue/state` every 3 s while the page is visible, which also
   feeds the header queue button/tab count and is the heartbeat a waiting release worker needs.
   The poll also carries every label printer's live connection state (`labels`).
-- **Queue is the label home (Queue-first).** Order of the Queue tab: the quick-add label printer
-  row (status + one-tap Bluetooth **Reconnect**, a picker when there are several), the quick
-  paste box, then a collapsed **Customize a label** row. Customize swaps the paste box for
-  `LabelComposer` (the former Labels tab: format picker, Text/Image/QR, preview, A4 sheets) —
-  never show both text boxes at once, because they split text differently (quick add: one label
-  per block / per bare code; Customize: one label, `whole=true`). Quick add's **Print now**
-  (primary when the printer is connected) adds the items, then releases *only those ids*
-  (`POST /queue/release {ids}`), so it never prints the rest of the queue.
+- **Labels is the label home.** It holds the quick add, the composer and the print queue (queued
+  A4 documents from Print appear in its Waiting list too). Order: the quick-add label printer
+  row (status + one-tap Bluetooth **Reconnect**, a picker when there are several), one header
+  row "Add a label" / "Customize a label" with the **Customize ›** / **‹ Quick add** switch at its
+  right, then the input, then Waiting. The input stays in the *same place* in both modes:
+  Customize swaps the paste box for `LabelComposer` whose text box comes first (Text/Image/QR,
+  the format picker, roll size and preview follow below it). Never show both text boxes at once,
+  because they split text differently (quick add: one label per block / per bare code;
+  Customize: one label, `whole=true`). Quick add's **Print now** (primary when the printer is
+  connected) adds the items, then releases *only those ids* (`POST /queue/release {ids}`), so
+  it never prints the rest of the queue.
+- **Print** (documents to A4): the Double-sided toggle is always visible — disabled with a
+  reason until a document with 2+ pages is loaded — so the option is discoverable; a one-page
+  document always prints one-sided whatever the toggle said before.
   Composers offer **Add to queue** as a secondary action, and promote it to the primary button
   when the target printer is off/not connected.
 

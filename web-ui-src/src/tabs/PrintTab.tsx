@@ -123,7 +123,7 @@ export function PrintTab() {
     api.documentPrint({
       src_token: doc.token,
       queue,
-      sides,
+      sides: multiPage ? sides : 'one',  // a leftover toggle never applies to a one-page doc
       ...(full ? {} : { from: range.from, to: range.to }),
     })
       .then((d) => {
@@ -263,13 +263,17 @@ export function PrintTab() {
         </div>
       )}
 
-      {/* Double-sided toggle (hidden for single-page docs) */}
-      {doc && multiPage && (
-        <label className="mt-4 flex min-h-11 w-full cursor-pointer items-center justify-between">
-          <span className="text-body">Double-sided</span>
-          <input type="checkbox" className="toggle toggle-primary" checked={sides === 'two'} onChange={(e) => setSides(e.target.checked ? 'two' : 'one')} />
-        </label>
-      )}
+      {/* Double-sided: always shown so the option is discoverable; it only
+          applies once a document with 2+ pages is loaded. */}
+      <label className={'mt-4 flex min-h-11 w-full items-center justify-between gap-3 ' + (multiPage ? 'cursor-pointer' : 'cursor-not-allowed')}>
+        <span className="min-w-0">
+          <span className="block text-body">Double-sided</span>
+          {!multiPage && (
+            <span className="block text-2xs text-base-content/60">{doc ? 'This document has one page.' : 'For documents with 2 or more pages.'}</span>
+          )}
+        </span>
+        <input type="checkbox" className="toggle toggle-primary" disabled={!multiPage} checked={multiPage && sides === 'two'} onChange={(e) => setSides(e.target.checked ? 'two' : 'one')} />
+      </label>
 
       {/* Guided manual-duplex flip step */}
       {flip && (

@@ -22,7 +22,7 @@ function age(created: number) {
   return `${Math.floor(s / 86400)} d ago`
 }
 
-export function QueueTab() {
+export function LabelsTab() {
   const { state, loaded, refresh } = useQueue()
   const { note, ok: okNote, err, clear } = useNote()
   // Success notes are transient: the list itself shows what's queued, and a
@@ -194,6 +194,25 @@ export function QueueTab() {
         )
       })()}
 
+      {/* One header for both modes, with the mode switch at its right, so the
+          input sits in the same place whether you quick-add or customize. */}
+      <div className="mt-4 mb-[6px] flex items-center justify-between gap-2">
+        <span id="addLabel" className="field-label">{customize ? 'Customize a label' : 'Add a label'}</span>
+        <button
+          type="button"
+          aria-expanded={customize}
+          aria-controls="customizePanel"
+          onClick={() => setCustomize((c) => !c)}
+          className="btn btn-ghost btn-sm -mr-2 gap-1 px-2 font-[600] text-primary pointer-coarse:h-11"
+        >
+          {customize ? (
+            <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 6-6 6 6 6" /></svg>Quick add</>
+          ) : (
+            <>Customize<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 6 6 6-6 6" /></svg></>
+          )}
+        </button>
+      </div>
+
       {/* Quick add. The whole section is a drop target; the outline only
           appears while a file is dragged over it. */}
       {!customize && (
@@ -201,11 +220,11 @@ export function QueueTab() {
           onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
           onDrop={(e) => { e.preventDefault(); setDragOver(false); addFile(e.dataTransfer.files?.[0]) }}
-          className={'mt-4 rounded-box outline-2 outline-offset-4 transition-[outline-color] ' + (dragOver ? 'outline-dashed outline-primary' : 'outline-transparent')}
+          className={'rounded-box outline-2 outline-offset-4 transition-[outline-color] ' + (dragOver ? 'outline-dashed outline-primary' : 'outline-transparent')}
         >
-          <label className="flex flex-col gap-[6px]">
-            <span className="field-label">Add a label</span>
+          <div className="flex flex-col">
             <textarea
+              aria-labelledby="addLabel"
               rows={4}
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -213,7 +232,7 @@ export function QueueTab() {
               placeholder={'Paste shipment numbers, one per line\n\nOr a number + what it is,\na blank line before the next'}
               className="textarea w-full font-mono"
             />
-          </label>
+          </div>
           {/* Phone: the main action full-width on top, the rest in a row below. */}
           <div className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end">
             <button type="button" onClick={() => fileInput.current?.click()} disabled={adding} className={btn + ' btn-ghost sm:mr-auto'}>
@@ -243,24 +262,12 @@ export function QueueTab() {
             onChange={(e) => addFile(e.target.files?.[0])}
           />
           <Note note={note} />
-          <p className="mt-2 text-2xs text-base-content/60">A blank line starts the next label; a plain list adds one per number. Files print on A4. Unprinted items are removed after 7 days.</p>
+          <p className="mt-2 text-2xs text-base-content/60">A blank line starts the next label; a plain list adds one per number. Files print on A4. Customize for QR codes, images, a preview or A4 label sheets.</p>
         </div>
       )}
 
-      {/* Customize: one disclosure row; open, it swaps the paste box for the composer. */}
-      <button
-        type="button"
-        aria-expanded={customize}
-        aria-controls="customizePanel"
-        onClick={() => setCustomize((c) => !c)}
-        className={'flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-field px-1 text-left text-body hover:bg-base-200 ' + (customize ? 'mt-3' : 'mt-3 border-t border-base-300 pt-1')}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={'flex-none text-base-content/60 transition-transform ' + (customize ? 'rotate-90' : '')}><path d="m9 6 6 6-6 6" /></svg>
-        <span className="flex-none font-[600]">Customize a label</span>
-        <span className="min-w-0 truncate text-xs text-base-content/60">{customize ? 'back to quick add' : 'QR, image, preview, A4 sheets'}</span>
-      </button>
       {customize && (
-        <div id="customizePanel" className="mt-2">
+        <div id="customizePanel">
           <LabelComposer printers={labelPrinters} onConnected={refresh} />
         </div>
       )}
@@ -281,11 +288,14 @@ export function QueueTab() {
           <p className="py-3 text-body text-base-content/60">Nothing waiting. Paste numbers above to print them now or later.</p>
         </>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {items.map((it) => (
-            <ItemRow key={it.id} item={it} options={targetOptions} busy={state.running} onChange={run} />
-          ))}
-        </ul>
+        <>
+          <ul className="flex flex-col gap-2">
+            {items.map((it) => (
+              <ItemRow key={it.id} item={it} options={targetOptions} busy={state.running} onChange={run} />
+            ))}
+          </ul>
+          <p className="mt-2 text-2xs text-base-content/60">Unprinted items are removed after 7 days.</p>
+        </>
       )}
 
       {/* Release */}

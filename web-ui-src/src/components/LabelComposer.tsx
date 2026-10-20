@@ -9,7 +9,7 @@ import { formatOptions, type FormatOption, type ThermalFormat } from '../lib/for
 
 const STORE_KEY = 'pm_format'
 
-// The Queue tab's Customize section (formerly the Labels tab): pick any label
+// The Labels tab's Customize section: pick any label
 // format — a Niimbot roll or an A4 sheet template — and design one label with
 // a live preview. `printers` comes from the queue poll, so connection state is
 // live; `onConnected` asks the queue to re-poll after a reconnect.
@@ -75,37 +75,36 @@ export function LabelComposer({ printers, onConnected }: { printers: NiimPrinter
   }
 
   const activeTemplate = format?.kind === 'a4' ? templates.find((t) => t.id === format.tplId) : undefined
+  const picker = (
+    <select aria-label="Label format" value={formatV} onChange={(e) => selectFormat(e.target.value)} className="select w-full font-mono">
+      {opts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+    </select>
+  )
   const onNote = (k: '' | 'ok' | 'err', m: string) => (k === 'ok' ? ok(m) : k === 'err' ? err(m) : info(m))
 
   return (
     <div>
       {!loaded ? (
+        // Same shape as the composer (input first), so nothing jumps when it arrives.
         <div>
-          <div className="mb-4 flex items-end gap-2">
-            <div className="flex flex-1 flex-col gap-[6px]">
-              <div className="skeleton h-[13px] w-24 rounded" />
-              <div className="skeleton h-10 w-full rounded" />
-            </div>
+          <div className="skeleton h-[104px] w-full rounded-field" />
+          <div className="mt-3 flex gap-2">
+            <div className="skeleton h-8 w-40 rounded-field" />
+            <div className="skeleton h-10 flex-1 rounded-field" />
           </div>
-          <div className="skeleton mt-3 h-8 w-48 rounded" />
-          <div className="skeleton mt-3 h-24 w-full rounded" />
         </div>
       ) : opts.length === 0 ? (
         <p className="text-body text-base-content/60">No printers yet. Open the Devices manager (the printer icon, top-right) to connect one.</p>
       ) : (
         <>
-          <label className="mb-1 flex flex-col gap-[6px]">
-            <span className="field-label">Label format</span>
-            <select value={formatV} onChange={(e) => selectFormat(e.target.value)} className="select w-full font-mono">
-              {opts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-            </select>
-          </label>
-
           {format?.kind === 'thermal' && (
-            <NiimbotComposer format={format} onNote={onNote} onEnsureConnected={ensureConnected} />
+            <NiimbotComposer format={format} onNote={onNote} onEnsureConnected={ensureConnected} picker={picker} />
           )}
           {format?.kind === 'a4' && activeTemplate && (
-            <SheetComposer format={format} template={activeTemplate} onNote={onNote} />
+            <>
+              <div className="mb-3">{picker}</div>
+              <SheetComposer format={format} template={activeTemplate} onNote={onNote} />
+            </>
           )}
 
           <Note note={note} />

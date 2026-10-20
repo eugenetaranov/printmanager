@@ -1,22 +1,22 @@
 ## ADDED Requirements
 
-### Requirement: Queue is the label home
+### Requirement: Labels tab is the label home
 
-The web UI SHALL have three tabs, in this order: Queue, Scan and Print. There SHALL be no separate Labels tab. `/` and unknown paths SHALL open the Queue tab, and `/labels` SHALL redirect to `/queue`.
+The web UI SHALL have three tabs, named for the task, in this order: Labels, Scan and Print. The Labels tab SHALL hold the quick add, the label composer and the print queue; there SHALL be no separate Queue tab. `/` and unknown paths SHALL open the Labels tab, and `/queue` SHALL redirect to `/labels`.
 
 #### Scenario: Open the app
 
 - **WHEN** the user opens the web UI at `/`
-- **THEN** the Queue tab is shown
+- **THEN** the Labels tab is shown
 
-#### Scenario: Old Labels link
+#### Scenario: Old Queue link
 
-- **WHEN** the user opens `/labels`
-- **THEN** the address becomes `/queue` and the Queue tab is shown
+- **WHEN** the user opens `/queue`
+- **THEN** the address becomes `/labels` and the Labels tab is shown
 
 ### Requirement: Label printer row with quick reconnect
 
-When at least one label printer is remembered, the Queue tab SHALL show, above the paste box, the label printer that quick add targets (the active one), its live connection state and a Reconnect control. The connection state SHALL come from the queue state poll. With several label printers the row SHALL let the user pick one, and picking SHALL make it the active printer.
+When at least one label printer is remembered, the Labels tab SHALL show, above the paste box, the label printer that quick add targets (the active one), its live connection state and a Reconnect control. The connection state SHALL come from the queue state poll. With several label printers the row SHALL let the user pick one, and picking SHALL make it the active printer.
 
 #### Scenario: Printer disconnected
 
@@ -51,7 +51,7 @@ When the active label printer is connected and no release is running, quick add 
 
 ### Requirement: Customize a label
 
-The Queue tab SHALL offer a collapsed "Customize a label" section. Opening it SHALL replace the paste box with the label composer: format picker (label printers and A4 sheet templates), Text/Image/QR, live preview, A4 sheet grid and Manage A4 label sizes. The paste box and the composer SHALL never be shown together. While the composer is open, a pasted image SHALL go to the composer, not to the queue.
+The Labels tab SHALL offer a Customize switch in the input's header row. Switching SHALL replace the paste box with the label composer: format picker (label printers and A4 sheet templates), Text/Image/QR, live preview, A4 sheet grid and Manage A4 label sizes. The paste box and the composer SHALL never be shown together. While the composer is open, a pasted image SHALL go to the composer, not to the queue.
 
 #### Scenario: Design a label
 
@@ -60,8 +60,17 @@ The Queue tab SHALL offer a collapsed "Customize a label" section. Opening it SH
 
 #### Scenario: Back to quick add
 
-- **WHEN** the user taps Back to quick add
+- **WHEN** the user taps Quick add
 - **THEN** the composer closes and the paste box returns
+
+### Requirement: Input stays in place across Customize
+
+For a label printer format, the composer's text box SHALL take the paste box's place, so the input does not move when switching between quick add and Customize.
+
+#### Scenario: Switch to Customize
+
+- **WHEN** the user switches to Customize with a label printer format
+- **THEN** the composer's text box appears where the paste box was
 
 ### Requirement: Release selected items
 

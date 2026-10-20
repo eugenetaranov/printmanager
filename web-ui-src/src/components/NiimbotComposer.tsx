@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { niimbot as nb, printQueue } from '../api/client'
 import { useQueue } from './QueueContext'
 import { useStatus } from './status'
@@ -10,10 +10,13 @@ export function NiimbotComposer({
   format,
   onNote,
   onEnsureConnected,
+  picker,
 }: {
   format: ThermalFormat
   onNote: (kind: '' | 'ok' | 'err', msg: string) => void
   onEnsureConnected: (fmt: ThermalFormat, then: () => void) => void
+  // The format picker, shown beside Text/Image/QR under the input.
+  picker?: ReactNode
 }) {
   const status = useStatus()
   const [kind, setKind] = useState<Kind>('text')
@@ -105,26 +108,20 @@ export function NiimbotComposer({
 
   return (
     <div>
-      <p className="text-xs text-base-content/60">Label {format.w}×{format.h} mm — change the roll size in Devices</p>
-
-      <Seg value={kind} onChange={setKind} options={[['text', 'Text'], ['image', 'Image'], ['qr', 'QR']]} />
-
+      {/* The input comes first, in the same spot as the quick-add box, so
+          switching to Customize doesn't move where you type. */}
       {kind !== 'image' ? (
-        <label className="mt-3 flex flex-col gap-[6px]">
-          <span className="field-label">
-            {kind === 'qr' ? 'Text or URL' : <>Text <span className="normal-case opacity-70">one line per row</span></>}
-          </span>
-          <textarea
-            rows={2}
-            maxLength={kind === 'qr' ? 512 : 200}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={kind === 'qr' ? 'e.g. https://example.com or any text' : 'e.g. 42 — or a short\nlabel on two lines'}
-            className="textarea w-full font-mono"
-          />
-        </label>
+        <textarea
+          rows={4}
+          aria-label={kind === 'qr' ? 'Text or URL for the QR code' : 'Label text'}
+          maxLength={kind === 'qr' ? 512 : 200}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={kind === 'qr' ? 'Text or URL for the QR code,\ne.g. https://example.com' : 'One label; each line is a row,\ne.g. 42 — or a short label\non two lines'}
+          className="textarea w-full font-mono"
+        />
       ) : (
-        <div className="mt-3">
+        <div>
           <label
             onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
             onDragLeave={() => setDragOver(false)}
@@ -169,6 +166,12 @@ export function NiimbotComposer({
         </div>
       )}
 
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Seg value={kind} onChange={setKind} options={[['text', 'Text'], ['image', 'Image'], ['qr', 'QR']]} className="" />
+        {picker && <div className="min-w-[12rem] flex-1">{picker}</div>}
+      </div>
+      <p className="mt-2 text-2xs text-base-content/60">Label <span className="font-mono">{format.w}×{format.h} mm</span> — change the roll size in Devices</p>
+
       {previewPng && (
         <div className="mt-4">
           <span className="field-label block">Preview</span>
@@ -205,9 +208,9 @@ export function NiimbotComposer({
   )
 }
 
-export function Seg<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: [T, string][] }) {
+export function Seg<T extends string>({ value, onChange, options, className = 'mt-3' }: { value: T; onChange: (v: T) => void; options: [T, string][]; className?: string }) {
   return (
-    <div role="radiogroup" className="tabs tabs-box tabs-sm mt-3 inline-flex w-auto [&>.tab]:text-body">
+    <div role="radiogroup" className={'tabs tabs-box tabs-sm inline-flex w-auto flex-none [&>.tab]:text-body ' + className}>
       {options.map(([v, label]) => (
         <button
           key={v}

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
 // Shared compact controls: the Devices modal's square icon buttons, icon set
-// and status dot, reused by the Queue tab so device rows look the same in both.
+// and status dot, reused by the Labels tab so device rows look the same in both.
 
 export function Dot({ status }: { status: string }) {
   const cls = status === 'error' ? 'bg-error' : status === 'connected' ? 'bg-primary' : 'bg-warning'
