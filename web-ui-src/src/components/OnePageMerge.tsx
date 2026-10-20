@@ -5,13 +5,19 @@ import { IconBtn, Icon } from './IconBtn'
 // "One page" mode of the Merge dialog: the server finds the item on each
 // scanned page and lays them out on one A4 page. Show that page before saving
 // (detection can be wrong and the originals are removed on merge), with small
-// fixes per item: reorder, use the whole page, or leave it out.
+// fixes per item: reorder, use the whole page, or leave it out — and a size:
+// real size (default) up to 175%, or Fit (as big as fits the width).
 
 export interface OnePageState {
   token: string
   choices: OnePageChoice[]
+  scale: number           // requested: × real size, 0 = fit
   ready: boolean          // a preview exists and has something on it
 }
+
+// Slider stops; 0 = Fit. The server caps each at what fits on the page.
+const SCALES = [1, 1.25, 1.5, 1.75, 0]
+const scaleLabel = (v: number) => (v ? `${Math.round(v * 100)}%` : 'Fit')
 
 interface Row extends OnePageItem {
   whole: boolean
@@ -22,17 +28,18 @@ export function OnePageMerge({ names, onState }: { names: string[]; onState: (s:
   const [rows, setRows] = useState<Row[]>([])
   const [token, setToken] = useState('')
   const [png, setPng] = useState('')
-  const [scale, setScale] = useState(0)
+  const [scale, setScale] = useState(0)     // what the server laid out
+  const [want, setWant] = useState(1)       // what the slider asks for
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(true)
   const seq = useRef(0)
 
   const choicesOf = (rs: Row[]): OnePageChoice[] => rs.map((r) => ({ id: r.id, whole: r.whole, skip: r.skip }))
 
-  const fetchPreview = (rs: Row[] | null, tok: string) => {
+  const fetchPreview = (rs: Row[] | null, tok: string, w = want) => {
     const my = ++seq.current
     setBusy(true)
-    api.onePagePreview(names, tok || undefined, rs ? choicesOf(rs) : undefined)
+    api.onePagePreview(names, tok || undefined, rs ? choicesOf(rs) : undefined, w)
       .then((d) => {
         if (my !== seq.current) return
         setBusy(false)
@@ -53,8 +60,8 @@ export function OnePageMerge({ names, onState }: { names: string[]; onState: (s:
 
   useEffect(() => {
     const used = rows.some((r) => !r.skip && (r.found || r.whole))
-    onState({ token, choices: choicesOf(rows), ready: !!token && !busy && !!png && used })
-  }, [rows, token, busy, png]) // eslint-disable-line react-hooks/exhaustive-deps
+    onState({ token, choices: choicesOf(rows), scale: want, ready: !!token && !busy && !!png && used })
+  }, [rows, token, busy, png, want]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const update = (rs: Row[]) => { setRows(rs); fetchPreview(rs, token) }
   const move = (i: number, d: -1 | 1) => {
@@ -63,6 +70,13 @@ export function OnePageMerge({ names, onState }: { names: string[]; onState: (s:
     update(rs)
   }
   const patch = (i: number, p: Partial<Row>) => update(rows.map((r, k) => (k === i ? { ...r, ...p } : r)))
+  const pickScale = (w: number) => {
+    if (w === want) return
+    setWant(w)
+    fetchPreview(rows, token, w)
+  }
+  // The server shrinks a step that doesn't fit; say so rather than look stuck.
+  const capped = scale > 0 && (want === 0 ? false : scale < want - 0.005)
 
   const multiPage = new Set(rows.map((r) => r.name)).size < rows.length
 
@@ -81,8 +95,8 @@ export function OnePageMerge({ names, onState }: { names: string[]; onState: (s:
         </div>
         <div className="font-mono text-2xs tabular-nums text-base-content/60">
           {busy && !png ? 'Finding items…'
-            : scale >= 0.999 ? '1 × A4 · real size'
-            : scale > 0 ? <span className={scale < 0.4 ? 'text-warning' : ''}>1 × A4 · scaled to {Math.round(scale * 100)}%</span>
+            : scale > 0 && Math.abs(scale - 1) < 0.005 ? '1 × A4 · real size'
+            : scale > 0 ? <span className={scale < 0.4 ? 'text-warning' : ''}>1 × A4 · {Math.round(scale * 100)}%{capped ? ' · largest that fits' : ''}</span>
             : ''}
         </div>
       </div>
@@ -127,6 +141,27 @@ export function OnePageMerge({ names, onState }: { names: string[]; onState: (s:
             </div>
           )
         })}
+        <div className="mt-3 mb-[6px] flex items-baseline justify-between">
+          <label htmlFor="onePageScale" className="field-label">Size</label>
+          <span className="font-mono text-xs text-base-content/70">
+            {want === 1 ? 'Real size' : want ? `${scaleLabel(want)} of real size` : 'Fit the width'}
+          </span>
+        </div>
+        <input
+          id="onePageScale"
+          type="range"
+          min={0}
+          max={SCALES.length - 1}
+          step={1}
+          value={SCALES.indexOf(want)}
+          onChange={(e) => pickScale(SCALES[Number(e.target.value)])}
+          aria-valuetext={scaleLabel(want)}
+          disabled={rows.length === 0}
+          className="range range-sm w-full"
+        />
+        <div className="mt-1 flex justify-between px-[2px] font-mono text-2xs tabular-nums text-base-content/60">
+          {SCALES.map((v) => <span key={v}>{scaleLabel(v)}</span>)}
+        </div>
         {error && <p className="mt-2 text-xs text-error">{error}</p>}
         {rows.some((r) => r.skip) && (
           <p className="mt-2 text-2xs text-base-content/60">Scans left out entirely are kept, not removed.</p>

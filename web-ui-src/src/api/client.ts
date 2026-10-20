@@ -99,13 +99,14 @@ export const api = {
 
   clear: () => postJSON<{ ok: boolean; removed: number; undo?: string | null }>('/clear'),
 
-  merge: (names: string[], to: string, maxMb?: number, onePage?: { token: string; items: OnePageChoice[] }) =>
+  merge: (names: string[], to: string, maxMb?: number, onePage?: { token: string; items: OnePageChoice[]; scale: number }) =>
     postJSON<MergeResult>('/merge', { names, to, max_mb: maxMb || 0, ...(onePage ? { one_page: onePage } : {}) }),
 
   // Detect the object on each page and preview them laid out on one A4 page.
-  // Pass the returned token back so tweaks don't re-read the scans.
-  onePagePreview: (names: string[], token?: string, items?: OnePageChoice[]) =>
-    postJSON<OnePagePreview>('/merge/onepage', { names, token, items }),
+  // Pass the returned token back so tweaks don't re-read the scans. `scale` is
+  // × real size (1–1.75), 0 = as big as fits; the server caps it at what fits.
+  onePagePreview: (names: string[], token?: string, items?: OnePageChoice[], scale = 1) =>
+    postJSON<OnePagePreview>('/merge/onepage', { names, token, items, scale }),
 
   undo: (token: string) => postJSON<OkResult>('/undo', { token }),
 

@@ -522,6 +522,7 @@ ONEPAGE_MAX = 12
 ONEPAGE_PAD_MM = 8
 ONEPAGE_MARGIN_MM = 1      # extra, for crops clamped at the scan edge
 ONEPAGE_GAP_MM = 1
+ONEPAGE_SCALE_MAX = 1.75   # the dialog's largest fixed step (beyond that: Fit)
 _onepage = {}                      # token -> {"dir", "names", "dpi", "gray", "items", "ts"}
 _onepage_lock = threading.Lock()
 
@@ -618,9 +619,10 @@ def find_object_box(img, dpi):
             min(h, int(max(bx[3] for bx in boxes) * mm + pad)))
 
 
-def layout_rows(sizes, avail_w, avail_h, gap):
+def layout_rows(sizes, avail_w, avail_h, gap, want=1.0):
     """Place (w, h) boxes left to right, wrapping into rows, in order. Returns
-    (scale, [(x, y)]) for the largest scale ≤ 1 at which everything fits.
+    (scale, [(x, y)]) for the largest scale ≤ `want` at which everything fits
+    (`want` 0 = no cap: as big as fits, i.e. fill the width).
     Items sharing a row get equal cells (the row's widest × tallest) and sit
     centred in them, so e.g. the front and back of a card come out as a
     symmetric pair even when one crop is a little bigger. Rows are centred."""
@@ -646,7 +648,9 @@ def layout_rows(sizes, avail_w, avail_h, gap):
                 x += cw + gap
             y += ch + gap
         return y - gap, pos
-    hi = min(1.0, min(avail_w / float(w) for w, _ in sizes))
+    hi = min(avail_w / float(w) for w, _ in sizes)
+    if want > 0:
+        hi = min(hi, want)
     if place(hi)[0] <= avail_h:
         best = hi
     else:
@@ -685,6 +689,22 @@ def _ocr_langs():
     return m.group(1) if (m and shutil.which("ocrmypdf")) else ""
 
 
+def _pdf_image_ppi(path, page):
+    """The x-ppi of the one image on a page (pdfimages -list), or 0 when the
+    page doesn't hold exactly one image."""
+    try:
+        p = subprocess.run(["pdfimages", "-list", "-f", str(page), "-l", str(page), path],
+                           capture_output=True, text=True, timeout=15)
+    except Exception:
+        return 0
+    imgs = [r for r in (l.split() for l in (p.stdout or "").splitlines()[2:])
+            if len(r) >= 14 and r[2] == "image"]
+    try:
+        return float(imgs[0][12]) if len(imgs) == 1 else 0
+    except ValueError:
+        return 0
+
+
 def onepage_analyze(names):
     """Render every page of the named scans (in order), detect the object on
     each, and cache the pages under a token."""
@@ -715,7 +735,13 @@ def onepage_analyze(names):
         for n, p, k in pages:
             # One page at a time, so a dozen 300 dpi pages never sit in memory together.
             prefix = os.path.join(tmp, "r")
-            subprocess.run(["pdftoppm", "-r", str(dpi), "-f", str(p), "-l", str(p),
+            # Scans made before the pipeline wrote a DPI into the JPEG have
+            # pages sized as if 96 ppi (a 300 dpi A4 scan comes out ~3x A4).
+            # Render so one canvas px is still 1/dpi inch of the real item.
+            ppi, r = _pdf_image_ppi(srcs[k], p), dpi
+            if ppi and dpis[k] and abs(ppi - dpis[k]) > 1:
+                r = dpi * ppi / float(dpis[k])
+            subprocess.run(["pdftoppm", "-r", "%g" % r, "-f", str(p), "-l", str(p),
                             "-singlefile", "-png"] + (["-gray"] if gray else []) + [srcs[k], prefix],
                            check=True, timeout=120)
             img = Image.open(prefix + ".png")
@@ -751,10 +777,19 @@ def _onepage_job(token, names):
     return job
 
 
-def onepage_compose(job, choices, dpi):
+def _onepage_want(v):
+    """Requested scale from the client: 1–1.75 × real size, or 0 = fit."""
+    try:
+        v = float(v if v is not None else 1)
+    except (TypeError, ValueError):
+        return 1.0
+    return 0.0 if v <= 0 else max(1.0, min(ONEPAGE_SCALE_MAX, v))
+
+
+def onepage_compose(job, choices, dpi, want=1.0):
     """Lay out the chosen items. `choices` = [{id, whole, skip}] in the wanted
-    order (missing items keep the analysed order). Returns (PIL page, scale,
-    used items) with the page rendered at `dpi`."""
+    order (missing items keep the analysed order); `want` as for layout_rows.
+    Returns (PIL page, scale, used items) with the page rendered at `dpi`."""
     from PIL import Image
     by_id = {it["id"]: it for it in job["items"]}
     order = [c for c in (choices or []) if c.get("id") in by_id]
@@ -773,7 +808,7 @@ def onepage_compose(job, choices, dpi):
     W, H = int(round(210 * mm)), int(round(297 * mm))
     margin, gap = int(ONEPAGE_MARGIN_MM * mm), int(ONEPAGE_GAP_MM * mm)
     sizes = [((b[2] - b[0]) * k, (b[3] - b[1]) * k) for _, b in used]
-    scale, pos = layout_rows(sizes, W - 2 * margin, H - 2 * margin, gap)
+    scale, pos = layout_rows(sizes, W - 2 * margin, H - 2 * margin, gap, want)
     page = Image.new("L" if job["gray"] else "RGB", (W, H), used[0][0].get("bg", 255))
     for (it, box), (w, h), (x, y) in zip(used, sizes, pos):
         with Image.open(os.path.join(job["dir"], it["id"] + ".png")) as src:
@@ -794,7 +829,7 @@ def do_onepage_preview(obj):
         job = _onepage_job(token, names)
     from PIL import Image
     try:
-        page, scale, used = onepage_compose(job, obj.get("items"), 48)
+        page, scale, used = onepage_compose(job, obj.get("items"), 48, _onepage_want(obj.get("scale")))
         buf = io.BytesIO()
         page.save(buf, format="PNG", optimize=True)
         png, err = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode(), ""
@@ -823,7 +858,7 @@ def _merge_one_page(names, obj, tmp, out):
     job = _onepage_job(obj.get("token"), names)
     if not job:
         job = _onepage_job(onepage_analyze(names), names)
-    page, _, used = onepage_compose(job, obj.get("items"), job["dpi"])
+    page, _, used = onepage_compose(job, obj.get("items"), job["dpi"], _onepage_want(obj.get("scale")))
     jpg = os.path.join(tmp, "onepage.jpg")
     page.save(jpg, "JPEG", quality=85, subsampling=0, dpi=(job["dpi"], job["dpi"]))
     img_pdf = os.path.join(tmp, "img.pdf")

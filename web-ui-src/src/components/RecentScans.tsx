@@ -165,7 +165,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
     setMergeError('')
     const n = mergeNames.current.length
     api.merge(mergeNames.current, mergeName.trim(), mergeCap > 0 ? mergeCap : undefined,
-      one && onePage ? { token: onePage.token, items: onePage.choices } : undefined)
+      one && onePage ? { token: onePage.token, items: onePage.choices, scale: onePage.scale } : undefined)
       .then((d) => {
         setMergeBusy(false)
         if (d.ok && d.file) {

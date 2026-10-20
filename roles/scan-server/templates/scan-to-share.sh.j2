@@ -23,7 +23,9 @@ scanimage --mode "$MODE" --resolution "$RES" --format=pnm > "$tmp/p.pnm"
 {{ if not .scan_escl_enabled }}python3 /usr/local/lib/scan-web/pad_pnm.py "$tmp/p.pnm"
 {{ end -}}
 # -sampling-factor 1x1 (no chroma subsampling) keeps text edges crisp.
-convert "$tmp/p.pnm" -sampling-factor 1x1 -quality "$QUALITY" "$tmp/p.jpg"
+# PNM carries no resolution: write the scan's DPI into the JPEG, or img2pdf
+# assumes 96 ppi and the PDF page comes out ~3x real size at 300 dpi.
+convert "$tmp/p.pnm" -sampling-factor 1x1 -quality "$QUALITY" -units PixelsPerInch -density "$RES" "$tmp/p.jpg"
 
 if [ -n "$NAME" ]; then base="$DEST/$NAME"; else base="$DEST/scan-$(date +%Y%m%d-%H%M%S)"; fi
 out="$base.pdf"
