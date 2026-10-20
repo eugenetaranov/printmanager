@@ -123,7 +123,7 @@ export function QueueTab() {
   ]
 
   return (
-    <div className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5 shadow-sm">
+    <div className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5">
       {/* Add */}
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}

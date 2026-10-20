@@ -28,8 +28,17 @@ and say why — don't silently diverge.
 
 ## Theming — DaisyUI, not raw colors
 
-- Themes: **`nord` (light)** and **`dim` (dark)**, auto-switched by `prefers-color-scheme`
-  (declared in `src/index.css`). There is no manual theme toggle.
+- Themes: **`workshop` (light)** and **`workshop-dark`**, custom DaisyUI themes declared in
+  `src/index.css`, auto-switched by `prefers-color-scheme`; no manual toggle. The look follows
+  solidcraft.online: warm paper (`#f8f9f6`) page, white surfaces, forest-green primary
+  (`#2d6549`), hairline sage borders (`#dce2d8`), 5–8px radii, `--depth: 0` (flat — cards get
+  a hairline border, not a shadow; only "paper" previews keep `shadow-sm`).
+- **Fonts:** Manrope (sans, variable) + IBM Plex Mono, self-hosted via `@fontsource` (imported
+  in `main.tsx`) so the Pi UI works offline — don't link Google Fonts.
+- **Shell:** full-bleed white header bar with a hairline below (brand mark + status/icons),
+  then underlined text tabs on a hairline (active = primary text + 2px primary underline).
+- Sliders are `range range-primary range-sm`; secondary buttons are `btn-outline`, which
+  `index.css` softens to a sage hairline with a soft-green hover.
 - **Never hard-code colors.** Use DaisyUI semantic tokens so both themes stay correct:
   `base-100/200/300` (surfaces), `base-content` (text), `primary` (accent/CTA),
   `error`, `warning`, `success`. Dim a token with `/NN` opacity (`text-base-content/45`),

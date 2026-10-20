@@ -432,7 +432,7 @@ export const RecentScans = forwardRef<RecentScansHandle, Props>(function RecentS
           step={1}
           value={mergeCap}
           onChange={(e) => setMergeCap(Number(e.target.value))}
-          className="range range-sm w-full"
+          className="range range-primary range-sm w-full"
         />
         <div className="mt-1 flex justify-between px-[2px] font-mono text-2xs text-base-content/60">
           <span>Off</span><span>10 MB</span>

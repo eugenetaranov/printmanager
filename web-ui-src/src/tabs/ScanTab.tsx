@@ -64,7 +64,7 @@ export function ScanTab() {
 
   return (
     <>
-      <form onSubmit={submit} className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5 shadow-sm">
+      <form onSubmit={submit} className="card mx-auto w-full max-w-[600px] border border-base-300 bg-base-100 p-5">
         {config === null ? (
           <div className="mb-4 grid grid-cols-2 gap-3">
             <FieldSkeleton /><FieldSkeleton />
@@ -108,7 +108,7 @@ export function ScanTab() {
             </label>
             <span className="font-mono text-xs text-base-content/70">{cap === 0 ? 'No limit' : `${cap} MB`}</span>
           </div>
-          <input id="scanCap" type="range" min={0} max={10} step={1} value={cap} onChange={(e) => setCap(Number(e.target.value))} className="range range-sm w-full" />
+          <input id="scanCap" type="range" min={0} max={10} step={1} value={cap} onChange={(e) => setCap(Number(e.target.value))} className="range range-primary range-sm w-full" />
           <div className="mt-1 flex justify-between px-[2px] font-mono text-2xs text-base-content/60">
             <span>Off</span><span>10 MB</span>
           </div>

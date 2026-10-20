@@ -157,7 +157,7 @@ export function OnePageMerge({ names, onState }: { names: string[]; onState: (s:
           onChange={(e) => pickScale(SCALES[Number(e.target.value)])}
           aria-valuetext={scaleLabel(want)}
           disabled={rows.length === 0}
-          className="range range-sm w-full"
+          className="range range-primary range-sm w-full"
         />
         <div className="mt-1 flex justify-between px-[2px] font-mono text-2xs tabular-nums text-base-content/60">
           {SCALES.map((v) => <span key={v}>{scaleLabel(v)}</span>)}

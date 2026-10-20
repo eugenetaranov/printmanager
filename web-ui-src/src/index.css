@@ -1,14 +1,84 @@
 @import 'tailwindcss';
 @plugin "daisyui" {
-  themes: nord --default, dim --prefersdark;
+  themes: false;
   logs: false;
 }
 
-/* Only app-specific additions; all colours come from the DaisyUI theme
-   (nord in light, dim in dark, switched by prefers-color-scheme). */
+/* "Workshop" palette: warm paper, forest-green ink, hairline sage borders,
+   small radii, no shadows/noise (after solidcraft.online). Light is the
+   default; dark is a green-tinted night version, picked by
+   prefers-color-scheme. All UI colour comes from these tokens. */
+@plugin "daisyui/theme" {
+  name: "workshop";
+  default: true;
+  color-scheme: light;
+  --color-base-100: #ffffff;   /* surface: cards, inputs, modals */
+  --color-base-200: #f8f9f6;   /* paper: page background */
+  --color-base-300: #dce2d8;   /* line: hairline borders */
+  --color-base-content: #222b26;
+  --color-primary: #2d6549;
+  --color-primary-content: #ffffff;
+  --color-secondary: #edf1e9;
+  --color-secondary-content: #214f39;
+  --color-accent: #214f39;
+  --color-accent-content: #ffffff;
+  --color-neutral: #222b26;
+  --color-neutral-content: #f8f9f6;
+  --color-info: #3a6f86;
+  --color-info-content: #ffffff;
+  --color-success: #3f7d55;
+  --color-success-content: #ffffff;
+  --color-warning: #a8660f;
+  --color-warning-content: #ffffff;
+  --color-error: #b3412c;
+  --color-error-content: #ffffff;
+  --radius-selector: 0.375rem;
+  --radius-field: 0.3125rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+@plugin "daisyui/theme" {
+  name: "workshop-dark";
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100: #1b221e;
+  --color-base-200: #141a16;
+  --color-base-300: #2e3832;
+  --color-base-content: #e2e8e1;
+  --color-primary: #7cb592;
+  --color-primary-content: #0f2419;
+  --color-secondary: #243029;
+  --color-secondary-content: #b9d6c3;
+  --color-accent: #9cc9ac;
+  --color-accent-content: #0f2419;
+  --color-neutral: #e2e8e1;
+  --color-neutral-content: #141a16;
+  --color-info: #7fb3c9;
+  --color-info-content: #0e1f27;
+  --color-success: #7fbf92;
+  --color-success-content: #0f2419;
+  --color-warning: #e0a650;
+  --color-warning-content: #2a1a05;
+  --color-error: #e5826c;
+  --color-error-content: #2b0e08;
+  --radius-selector: 0.375rem;
+  --radius-field: 0.3125rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* Only app-specific additions; colours come from the theme above. */
 @theme {
-  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: 'Manrope Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, Helvetica, Arial, sans-serif;
 
   /* One coherent type scale (11 / 12 / 13 / 15 / 19). text-xs (12) is the
      stock Tailwind step; the rest are named so every size is a token. */
@@ -26,10 +96,22 @@
 @utility field-label {
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: color-mix(in oklch, var(--color-base-content) 60%, transparent);
+}
+
+/* Secondary (outline) buttons: a sage hairline, not a full-ink border, so the
+   one primary CTA stays the only heavy element; hover fills with the soft green.
+   Unlayered, so it beats DaisyUI's component layer. */
+.btn-outline {
+  border-color: color-mix(in oklch, var(--color-base-content) 22%, transparent);
+}
+.btn-outline:hover:not(:disabled) {
+  background: var(--color-secondary);
+  color: var(--color-secondary-content);
+  border-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
 }
 
 html {
