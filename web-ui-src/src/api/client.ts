@@ -288,9 +288,11 @@ export interface QueueItem {
   target: QueueTarget
   copies: number
   barcode: boolean
-  state: 'waiting' | 'printing' | 'failed'
+  state: 'waiting' | 'printing' | 'failed' | 'printed'
   error: string
   created: number
+  done?: number        // copies printed before a failure (not printed again on Resume)
+  printed_at?: number  // history items
 }
 
 export interface QueueTargetState {
@@ -313,6 +315,7 @@ export interface QueueLabelPrinter {
 
 export interface QueueState {
   items: QueueItem[]
+  history?: QueueItem[]  // printed in the last 24 h, newest first
   running: boolean
   message: string
   targets: QueueTargetState[]
@@ -327,10 +330,14 @@ export const printQueue = {
     postJSON<OkResult & { added?: number; ids?: string[] }>('/queue/add', { text, target, whole }),
   addFile: (dataB64: string, filename: string) =>
     postJSON<OkResult & { added?: number }>('/queue/add', { dataB64, filename }),
-  update: (id: string, patch: { target?: QueueTarget; copies?: number; barcode?: boolean }) =>
+  // `all` (with target): also move every other item waiting for the same printer.
+  update: (id: string, patch: { target?: QueueTarget; all?: boolean; copies?: number; barcode?: boolean }) =>
     postJSON<OkResult>('/queue/update', { id, ...patch }),
   remove: (id: string) => postJSON<OkResult>('/queue/remove', { id }),
   // `ids`: print just these (Print now) instead of everything waiting.
   release: (ids?: string[]) => postJSON<OkResult>('/queue/release', ids ? { ids } : {}),
   stop: () => postJSON<OkResult>('/queue/stop', {}),
+  // History: put a printed item back and print it now; or drop all of it.
+  reprint: (id: string) => postJSON<OkResult>('/queue/reprint', { id }),
+  clearHistory: () => postJSON<OkResult>('/queue/clear-history', {}),
 }

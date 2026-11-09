@@ -147,6 +147,16 @@ arbitrary `text-[Npx]` values — pick the nearest token:
   Customize: one label, `whole=true`). Quick add's **Print now** (primary when the printer is
   connected) adds the items, then releases *only those ids* (`POST /queue/release {ids}`), so
   it never prints the rest of the queue.
+- **A failure never loses work.** When a print fails (no labels, flat battery, lost link, the
+  printer never finished), that item turns *failed* with the reason, and it and everything after
+  it stay queued. Copies already printed aren't repeated (`done`). Changing a failed item's
+  printer moves every item waiting for the same printer (`update {all: true}`), so the queue can
+  move to another printer in one step. While a needed label printer is disconnected, the release
+  button reads **Connect & print** / **Connect & resume** (the worker reconnects first).
+- **Printed history.** Printed items move to a **Printed** list under Waiting for 24 h
+  (`state: "printed"`, `printed_at`) with a labelled **Reprint** (puts the item back and prints
+  it) and a two-click **Clear**. The history doesn't count toward the queue limit or the tab
+  count.
 - **Print** (documents to A4): the Double-sided toggle is always visible — disabled with a
   reason until a document with 2+ pages is loaded — so the option is discoverable; a one-page
   document always prints one-sided whatever the toggle said before.
@@ -165,8 +175,8 @@ arbitrary `text-[Npx]` values — pick the nearest token:
   click arms + relabels as a short visible question ("Delete all?", "Remove?") and
   disarms after a few seconds.
   Use this instead of a confirm dialog for low-stakes single actions; use the Undo path for
-  recoverability. Exception: queue items. Removing one is two-click only, and printed items
-  are deleted outright — there is nothing meaningful to undo once a label is on paper.
+  recoverability. Exception: queue items. Removing one (or clearing the Printed history) is
+  two-click only, with no undo — the day-long Printed history is the safety net for reprints.
 - **Prefer sliders to fiddly numeric inputs** for coarse settings. Size caps use a
   `range range-sm`, integer MB `0–10`, `0 = "No limit"` — no decimals. Small counts
   (copies, 1–20) use a `join` −/value/+ stepper with 44px buttons instead.

@@ -40,6 +40,10 @@ _ble_scan_lock = asyncio.Lock()
 
 
 # --- Packet framing:  55 55 <type> <len> <data...> <xor> AA AA ---------------
+class DeadLinkError(RuntimeError):
+    """BLE link reports connected but the printer answers nothing."""
+
+
 class Packet:
     def __init__(self, ptype, data):
         self.type = ptype
@@ -342,6 +346,29 @@ T_BITMAP_ROW_INDEXED = 0x83
 T_EMPTY_ROW = 0x84
 T_GET_STATUS = 0xA3
 RESP_STATUS = 0xB3
+RESP_PRINT_ERROR = 0xDB  # pushed unasked when the printer hits a fault
+
+# Printer fault codes (0xdb packet, also the status reply's error byte), after
+# niimbluelib's PrinterErrorCode. Unlisted codes fall back to the number.
+PRINT_ERRORS = {
+    1: "The printer's cover is open — close it, then Resume.",
+    2: "The printer is out of labels — load a roll, then Resume.",
+    3: "The printer's battery is low — charge it, then Resume.",
+    4: "The printer's battery has a problem — charge it, then Resume.",
+    5: "Printing was cancelled on the printer.",
+    7: "The printer is overheated — let it cool, then Resume.",
+    8: "The labels didn't feed — check the roll, then Resume.",
+    9: "The printer is busy — try again in a moment.",
+    16: "Wrong labels for this printer — check the roll, then Resume.",
+}
+
+
+class PrintError(RuntimeError):
+    """The printer reported a fault (no labels, low battery, cover open…)."""
+
+    def __init__(self, code):
+        super().__init__(PRINT_ERRORS.get(code, "The printer reported error %d — check it, then Resume." % code))
+        self.code = code
 RESP_MAP = {0x21: 0x31, 0x23: 0x33, 0x01: 0x02, 0x03: 0x04,
             0x13: 0x14, 0xE3: 0xE4, 0xF3: 0xF4}
 HEAD_PX = 384
@@ -386,9 +413,13 @@ class Client:
         self._waiters = []  # list of [type, asyncio.Future]
         self._ack_mode = "unknown"
         self._rowbuf = bytearray()
+        self._fault = 0
         transport.on_packet(self._on_packet)
 
     def _on_packet(self, pkt):
+        if pkt.type == RESP_PRINT_ERROR and pkt.data:
+            self._fault = pkt.data[0]
+            self.log("printer error %d" % self._fault)
         for i in range(len(self._waiters) - 1, -1, -1):
             wtype, fut = self._waiters[i]
             if wtype == pkt.type and not fut.done():
@@ -446,8 +477,27 @@ class Client:
     async def ping(self, timeout=1.5):
         return (await self._send_recv(T_GET_STATUS, [1], RESP_STATUS, timeout)) is not None
 
+    def _check_fault(self):
+        if self._fault:
+            raise PrintError(self._fault)
+
+    async def _abort(self):
+        """End the job after a fault so the printer isn't left mid-job."""
+        try:
+            await self._send(T_PRINT_END, [1])
+        except Exception:
+            pass
+
     async def print_image(self, width, height, data, density=3, label_type=1):
         """data: 1bpp MSB-first, ceil(width/8) bytes/row, black=1."""
+        try:
+            await self._print_image(width, height, data, density, label_type)
+        except PrintError:
+            await self._abort()
+            raise
+
+    async def _print_image(self, width, height, data, density, label_type):
+        self._fault = 0
         self._ack_mode = "unknown"
         self._rowbuf.clear()
         bpr = (width + 7) // 8
@@ -458,6 +508,7 @@ class Client:
         await self._send(T_PRINT_START, [*_u16(total_pages), 0, 0, 0, 0, 0])
         await self._send(T_PAGE_START, [1])
         await self._send(T_SET_PAGE_SIZE, [*_u16(height), *_u16(width), *_u16(1)])
+        self._check_fault()
 
         y = 0
         while y < height:
@@ -480,6 +531,7 @@ class Client:
                     self._queue_row(T_BITMAP_ROW, [*_u16(y), *parts, repeat, *row])
             if len(self._rowbuf) >= ROW_FLUSH_BYTES:
                 await self._flush_rows()
+                self._check_fault()
                 await asyncio.sleep(0.004)  # pacing for small-buffer printers (D110)
             y += repeat
         await self._flush_rows()
@@ -489,21 +541,36 @@ class Client:
 
         # Wait for the printer to PHYSICALLY finish before ending the job.
         printed = 0
+        answered = False
         for _ in range(80):
+            self._check_fault()
             resp = await self._send_recv(T_GET_STATUS, [1], RESP_STATUS, 0.5)
             if resp:
+                answered = True
                 d = resp.data
                 page = (d[0] << 8) | d[1] if len(d) >= 2 else 0
                 err = d[6] if len(d) >= 10 else 0
                 if err:
-                    raise RuntimeError("print error %d" % err)
+                    raise PrintError(err)
                 printed = page
                 if page >= total_pages:
                     break
             await asyncio.sleep(0.25)
+        if not answered:
+            # Not one status reply: the link is dead even if BlueZ still says
+            # "connected" (a dozing D110 does this). Fail instead of reporting
+            # success, so a queued label stays queued.
+            raise DeadLinkError("The printer didn't respond — it may be asleep. "
+                                "Press its button, then Reconnect.")
 
         await self._send(T_PRINT_END, [1])
-        self.log("print done" if printed >= total_pages else "print timed out")
+        if printed < total_pages:
+            # It answered but never finished the page: stuck feed, empty roll
+            # that wasn't reported, or it died mid-label. Not printed.
+            self.log("print timed out")
+            raise RuntimeError("The printer didn't finish the label — check it has labels "
+                               "and charge, then Resume.")
+        self.log("print done")
 
 
 # --- Label rendering (Pillow; layout from moverse label.ts) ------------------
@@ -902,7 +969,23 @@ class PrinterManager:
             raise RuntimeError("no active printer connected")
         width, height, data = render_label(kind, payload, mp.model, mp.label_mm)
         async with mp.lock:
-            await mp.client.print_image(width, height, data)
+            try:
+                await mp.client.print_image(width, height, data)
+            except DeadLinkError:
+                # Drop the dead handle so the printer shows as disconnected and
+                # the next print (or the queue worker) reconnects first.
+                await self.disconnect(mp.address)
+                raise
+            except PrintError:
+                raise
+            except Exception as e:
+                # A write failing because the link went down (battery died,
+                # out of range) — say that instead of a raw BlueZ error.
+                if mp.connected:
+                    raise
+                await self.disconnect(mp.address)
+                raise RuntimeError("Lost the connection to the printer — check it's on and "
+                                   "charged, then Resume.") from e
         return {"width": width, "height": height}
 
     def state(self):
@@ -929,13 +1012,13 @@ class PrinterManager:
         return run_coro(self.scan(timeout), timeout=timeout + 5)
 
     def sync_connect(self, address, name=None):
-        run_coro(self.connect(address, name), timeout=30)
+        return run_coro(self.connect(address, name), timeout=30)
 
     def sync_reconnect(self, address):
         # Generous timeout: a stale-address reconnect first burns through the
         # normal connect+scan retry chain before falling back to a by-name
         # rescan (see PrinterManager.reconnect), which can add another ~15s.
-        run_coro(self.reconnect(address), timeout=60)
+        return run_coro(self.reconnect(address), timeout=60)
 
     def sync_disconnect(self, address):
         run_coro(self.disconnect(address), timeout=15)

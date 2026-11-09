@@ -1496,11 +1496,16 @@ def do_document_cancel(obj):
 # --- Print queue -------------------------------------------------------------
 # Items staged for later printing (e.g. shipment numbers pasted on the phone
 # while the printers are off), released together with "Print all". Stored on the
-# Pi so every device sees the same queue. Printed items are deleted at once.
+# Pi so every device sees the same queue. A failed item (no labels, flat
+# battery, printer gone) stays — and so does everything after it — until the
+# printer is fixed or the items are moved to another one. Printed items stay a
+# day as history ("printed"), so a label that came out wrong is one tap to
+# reprint.
 QUEUE_DIR = os.path.join(DATA_DIR, "queue")
 QUEUE_FILE = os.path.join(QUEUE_DIR, "queue.json")
-QUEUE_MAX = 20
+QUEUE_MAX = 20                # waiting items; history doesn't count
 QUEUE_TTL = 7 * 24 * 3600
+QUEUE_HISTORY_TTL = 24 * 3600
 QUEUE_HEARTBEAT = 30          # a waiting worker gives up after this long unwatched
 QUEUE_JOB_TIMEOUT = 180       # an A4 job that hasn't completed by then fails
 _queue_lock = threading.RLock()
@@ -1538,7 +1543,9 @@ def _q_items():
     with _queue_lock:
         items = _q_load()
         now = time.time()
-        keep = [i for i in items if now - i.get("created", now) < QUEUE_TTL]
+        keep = [i for i in items
+                if (now - i.get("printed_at", now) < QUEUE_HISTORY_TTL if i.get("state") == "printed"
+                    else now - i.get("created", now) < QUEUE_TTL)]
         # An item left "printing" by a restart or a dead worker is just waiting.
         stale = not _queue_run["active"] and any(i.get("state") == "printing" for i in keep)
         for i in keep:
@@ -1637,7 +1644,7 @@ def queue_add(obj):
     else:
         new.append({"kind": "file", "filename": os.path.basename(obj.get("filename") or "file")[:120],
                     "target": _q_target(obj.get("target"), "file")})
-    if len(items) + len(new) > QUEUE_MAX:
+    if sum(i.get("state") != "printed" for i in items) + len(new) > QUEUE_MAX:
         raise RuntimeError("The queue is full (max %d items) — print or remove some first" % QUEUE_MAX)
     now = time.time()
     for n, it in enumerate(new):
@@ -1664,17 +1671,60 @@ def queue_update(obj):
         raise RuntimeError("That item is no longer in the queue")
     if item.get("state") == "printing":
         raise RuntimeError("That item is printing right now")
+    if item.get("state") == "printed":
+        raise RuntimeError("That item is already printed — Reprint it instead")
     patch = {}
     if "target" in obj:
         patch["target"] = _q_target(obj["target"], item["kind"])
+        if obj.get("all"):
+            # The printer died: move everything still waiting for it, not just
+            # this item, so one switch lets the rest print on the new printer.
+            old = item["target"]
+            with _queue_lock:
+                items = _q_load()
+                for i in items:
+                    if (i.get("state") in ("waiting", "failed") and i["kind"] == item["kind"]
+                            and i["target"] == old):
+                        i["target"] = patch["target"]
+                _q_save(items)
     if "copies" in obj:
         try:
             patch["copies"] = max(1, min(20, int(obj["copies"])))
         except (TypeError, ValueError):
             raise RuntimeError("Copies must be a number")
+        patch["done"] = 0             # a new count starts over
     if "barcode" in obj:
         patch["barcode"] = bool(obj["barcode"])
     _q_update(item_id, **patch)
+    return {}
+
+
+def queue_reprint(obj):
+    """Put a printed item back in the queue and print it now."""
+    item_id = obj.get("id") or ""
+    with _queue_lock:
+        items = _q_load()
+        item = next((i for i in items if i["id"] == item_id), None)
+        if not item or item.get("state") != "printed":
+            raise RuntimeError("That item is no longer in the history")
+        if sum(i.get("state") != "printed" for i in items) >= QUEUE_MAX:
+            raise RuntimeError("The queue is full (max %d items) — print or remove some first" % QUEUE_MAX)
+        item.update(state="waiting", error="", done=0)
+        item.pop("printed_at", None)
+        _q_save(items)
+        running = _queue_run["active"]
+    if not running:                   # else the running worker picks it up
+        queue_release({"ids": [item_id]})
+    return {}
+
+
+def queue_clear_history(obj):
+    with _queue_lock:
+        items = _q_load()
+        for i in items:
+            if i.get("state") == "printed":
+                _q_drop_files(i)
+        _q_save([i for i in items if i.get("state") != "printed"])
     return {}
 
 
@@ -1705,7 +1755,10 @@ def queue_state():
     """Items + worker state + readiness of every printer the queue needs. Each
     call is also the heartbeat that keeps a waiting worker alive."""
     _queue_run["seen"] = time.monotonic()
-    items = _q_items()
+    everything = _q_items()
+    items = [i for i in everything if i.get("state") != "printed"]
+    history = sorted((i for i in everything if i.get("state") == "printed"),
+                     key=lambda i: i.get("printed_at", 0), reverse=True)
     printers = _label_printers()
     names = {q["queue"]: q["name"] for q in queue_list()}
     targets, seen = [], set()
@@ -1730,7 +1783,7 @@ def queue_state():
                "model_label": p.get("model_label") or p.get("model") or "",
                "label_mm": p.get("label_mm") or [], "active": bool(p.get("active")),
                "connected": p.get("status") == "connected"} for p in printers]
-    return {"items": items, "running": _queue_run["active"],
+    return {"items": items, "history": history, "running": _queue_run["active"],
             "message": _queue_run["message"], "targets": targets, "labels": labels}
 
 
@@ -1768,7 +1821,10 @@ def _cups_job_pending(queue, job):
 
 
 def _print_item(gen, item):
-    t, copies = item["target"], int(item.get("copies") or 1)
+    # Copies already printed before a failure aren't printed again on Resume.
+    t = item["target"]
+    done = int(item.get("done") or 0)
+    copies = max(1, int(item.get("copies") or 1) - done)
     if t["type"] == "label":
         nb = _niimbot()
         state = nb.manager.state()
@@ -1792,6 +1848,8 @@ def _print_item(gen, item):
                     raise InterruptedError("Stopped")
                 _say(gen, "Printing…")
                 nb.manager.sync_print(kind, item["text"], p["address"])
+                done += 1
+                _q_update(item["id"], done=done)
             nb.manager.select(p["address"])
         finally:
             _inflight.discard(item["id"])
@@ -1856,11 +1914,11 @@ def _queue_worker(gen, only=None):
             except Exception as e:
                 if _current(gen):
                     _q_update(item["id"], state="failed", error=str(e) or "Print failed")
-                    _say(gen, "Paused — fix the problem, then Resume")
+                    _say(gen, "Paused — fix the problem or pick another printer, then Resume")
                 return
-            with _queue_lock:            # printed: remove it even if we were stopped meanwhile
-                _q_drop_files(item)
-                _q_save([i for i in _q_load() if i["id"] != item["id"]])
+            # Printed: into the history, even if we were stopped meanwhile (so
+            # it can't print twice).
+            _q_update(item["id"], state="printed", printed_at=time.time(), error="", done=0)
             printed += 1
     finally:
         with _queue_lock:
@@ -2373,10 +2431,12 @@ class Handler(BaseHTTPRequestHandler):
             nb = _niimbot()
             if path == "/niimbot/scan":
                 return self._json(200, {"ok": True, "candidates": nb.manager.sync_scan()})
+            # The printer you just connected is the one you mean to print on,
+            # so make it the active one (quick add targets the active printer).
             if path == "/niimbot/connect":
-                nb.manager.sync_connect(obj.get("address", ""), obj.get("name"))
+                nb.manager.select(nb.manager.sync_connect(obj.get("address", ""), obj.get("name")).address)
             elif path == "/niimbot/reconnect":
-                nb.manager.sync_reconnect(obj.get("address", ""))
+                nb.manager.select(nb.manager.sync_reconnect(obj.get("address", "")).address)
             elif path == "/niimbot/disconnect":
                 nb.manager.sync_disconnect(obj.get("address", ""))
             elif path == "/niimbot/clearlog":
@@ -2593,9 +2653,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"ok": False, "error": "The printer did not respond in time."})
             except Exception as e:
                 return self._json(200, {"ok": False, "error": str(e)})
-        if path in ("/queue/add", "/queue/update", "/queue/remove", "/queue/release", "/queue/stop"):
+        if path in ("/queue/add", "/queue/update", "/queue/remove", "/queue/release", "/queue/stop",
+                    "/queue/reprint", "/queue/clear-history"):
             fn = {"/queue/add": queue_add, "/queue/update": queue_update, "/queue/remove": queue_remove,
-                  "/queue/release": queue_release, "/queue/stop": queue_stop}[path]
+                  "/queue/release": queue_release, "/queue/stop": queue_stop,
+                  "/queue/reprint": queue_reprint, "/queue/clear-history": queue_clear_history}[path]
             try:
                 return self._json(200, dict(fn(self._json_body()), ok=True))
             except Exception as e:

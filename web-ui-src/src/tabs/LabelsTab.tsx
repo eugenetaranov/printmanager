@@ -67,8 +67,16 @@ export function LabelsTab() {
   const canPrintNow = !!quick?.connected && !state.running
 
   const items = state.items
+  const history = state.history ?? []
+  const [clearArmed, setClearArmed] = useState(false)
+  const clearTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(clearTimer.current), [])
   const pending = items.filter((i) => i.state !== 'printing').length
   const failed = items.some((i) => i.state === 'failed')
+  // A label printer the queue needs is off: the worker reconnects it first, so
+  // say so on the button instead of a bare "Print all".
+  const needsConnect = state.targets.some((t) => t.type === 'label' && !t.ready)
+  const releaseLabel = needsConnect ? (failed ? 'Connect & resume' : 'Connect & print') : failed ? 'Resume' : 'Print all'
 
   // Print now = add, then release just the new items (not the whole queue),
   // so it shares the worker's reconnect, copies and failed-item handling.
@@ -145,6 +153,16 @@ export function LabelsTab() {
   const switchPrinter = (address: string) => { nb.select(address).then(refresh).catch(() => {}) }
 
   const release = () => { listClear(); run(printQueue.release()) }
+  const clearHistory = () => {
+    if (!clearArmed) {
+      setClearArmed(true)
+      window.clearTimeout(clearTimer.current)
+      clearTimer.current = window.setTimeout(() => setClearArmed(false), 3000)
+      return
+    }
+    setClearArmed(false)
+    run(printQueue.clearHistory())
+  }
   const stop = () => run(printQueue.stop())
 
   const targetOptions: { key: string; target: QueueTarget; label: string }[] = [
@@ -324,7 +342,7 @@ export function LabelsTab() {
           <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
             <p aria-live="polite" className="m-0 min-w-0 flex-1 basis-48 text-xs text-base-content/60">
               {state.message || (!state.running && state.targets.some((t) => !t.ready)
-                ? 'Switch the printer on, then Print all.'
+                ? `Switch the printer on, then ${releaseLabel}.`
                 : '')}
             </p>
             <div className="flex flex-none gap-2 max-sm:w-full">
@@ -337,7 +355,7 @@ export function LabelsTab() {
                 </>
               ) : (
                 <button type="button" onClick={release} disabled={pending === 0} className={btn + ' btn-primary max-sm:flex-1'}>
-                  {failed ? `Resume (${pending})` : `Print all (${pending})`}
+                  {`${releaseLabel} (${pending})`}
                 </button>
               )}
             </div>
@@ -345,7 +363,90 @@ export function LabelsTab() {
           <Note note={listNote} />
         </>
       )}
+
+      {/* Printed in the last day: one tap to reprint a label that came out wrong. */}
+      {history.length > 0 && (
+        <>
+          <div className="mt-6 mb-2 flex items-center justify-between">
+            <span className="field-label">Printed</span>
+            <button type="button" onClick={clearHistory} className={btn + ' btn-ghost -mr-2 px-2'}>
+              {clearArmed ? 'Clear all?' : 'Clear'}
+            </button>
+          </div>
+          <ul className="flex flex-col gap-2">
+            {history.map((it) => (
+              <HistoryRow key={it.id} item={it} options={targetOptions} busy={state.running} onChange={run} />
+            ))}
+          </ul>
+          <p className="mt-2 text-2xs text-base-content/60">Printed items stay here for a day.</p>
+          {items.length === 0 && <Note note={listNote} />}
+        </>
+      )}
     </div>
+  )
+}
+
+// Where an item goes, as the row's meta line names it.
+function whereOf(item: QueueItem, options: { key: string; label: string }[]) {
+  const o = options.find((x) => x.key === targetKey(item.target))
+  return o?.label.split(' · ')[0] ?? (item.target.type === 'label' ? item.target.name || 'Label printer' : item.target.queue)
+}
+
+function HistoryRow({
+  item,
+  options,
+  busy,
+  onChange,
+}: {
+  item: QueueItem
+  options: { key: string; label: string }[]
+  busy: boolean
+  onChange: (p: Promise<{ ok: boolean; error?: string }>) => void
+}) {
+  const [armed, setArmed] = useState(false)
+  const armTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(armTimer.current), [])
+  const isText = item.kind === 'text'
+  const [head, ...restLines] = (isText ? item.text ?? '' : '').split('\n')
+  const rest = restLines.join('\n')
+
+  const onRemove = () => {
+    if (!armed) {
+      setArmed(true)
+      window.clearTimeout(armTimer.current)
+      armTimer.current = window.setTimeout(() => setArmed(false), 3000)
+      return
+    }
+    setArmed(false)
+    onChange(printQueue.remove(item.id))
+  }
+
+  return (
+    <li className="rounded-box border border-base-300 p-2">
+      <div className="flex items-center gap-2">
+        <span className="flex h-6 w-6 flex-none items-center justify-center">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success text-success-content" aria-label="Printed">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
+          </span>
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-mono text-body text-base-content">{isText ? head : item.filename}</div>
+          {isText && rest && <div className="line-clamp-2 whitespace-pre-line text-xs text-base-content">{rest}</div>}
+          <div className="truncate font-mono text-2xs text-base-content/60">
+            {whereOf(item, options)}
+            {item.copies > 1 ? ` · ×${item.copies}` : ''}
+            {item.pages ? ` · ${item.pages} p` : ''}
+            {' · '}{age(item.printed_at ?? item.created)}
+          </div>
+        </div>
+        <div className="flex flex-none items-center gap-1">
+          <button type="button" onClick={() => onChange(printQueue.reprint(item.id))} disabled={busy} className="btn btn-outline btn-sm pointer-coarse:h-11">
+            <Icon.test />Reprint
+          </button>
+          <IconBtn title="Remove" confirm={armed ? 'Remove?' : undefined} onClick={onRemove}><Icon.forget /></IconBtn>
+        </div>
+      </div>
+    </li>
   )
 }
 
@@ -403,7 +504,8 @@ function ItemRow({
   const rest = restLines.join('\n')
   const opts = isText ? options : options.filter((o) => o.target.type === 'a4')
   const current = opts.find((o) => o.key === targetKey(item.target))
-  const where = current?.label.split(' · ')[0] ?? (item.target.type === 'label' ? item.target.name || 'Label printer' : item.target.queue)
+  const where = whereOf(item, opts)
+  const failed = item.state === 'failed'
 
   const onRemove = () => {
     if (!armed) {
@@ -439,7 +541,7 @@ function ItemRow({
           <div className="truncate font-mono text-2xs text-base-content/60">
             {where}
             {item.barcode ? ' · barcode' : ''}
-            {item.copies > 1 ? ` · ×${item.copies}` : ''}
+            {item.copies > 1 ? (item.done ? ` · ${item.done} of ${item.copies} printed` : ` · ×${item.copies}`) : ''}
             {item.pages ? ` · ${item.pages} p` : ''}
             {' · '}{age(item.created)}
           </div>
@@ -459,13 +561,14 @@ function ItemRow({
               value={current?.key ?? ''}
               onChange={(e) => {
                 const o = opts.find((x) => x.key === e.target.value)
-                if (o) onChange(printQueue.update(item.id, { target: o.target }))
+                if (o) onChange(printQueue.update(item.id, { target: o.target, all: failed }))
               }}
               className="select w-full font-mono"
             >
               {!current && <option value="">{where}</option>}
               {opts.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
             </select>
+            {failed && <span className="text-2xs text-base-content/60">Everything else waiting for {where} moves too.</span>}
           </label>
           <div className="flex items-end justify-between gap-3">
             {isText ? (
