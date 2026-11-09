@@ -186,7 +186,10 @@ export function LabelsTab() {
 
   return (
     <div className="card w-full border border-base-300 bg-base-100 p-4 sm:p-5">
-      {/* Label printer: where quick add goes, with a one-tap Bluetooth reconnect. */}
+      {/* Label printer: where quick add goes, with a one-tap Bluetooth reconnect.
+          The picker sits in PrinterRow's truncating (overflow-hidden) name box,
+          which clipped DaisyUI's outset focus ring to a stray line at its right
+          edge — so no ring after a tap, and an inset one for the keyboard. */}
       {quick && (() => {
         const st = statusOf(quick.address, quick.connected)
         return (
@@ -198,7 +201,7 @@ export function LabelsTab() {
                 value={quick.address}
                 onChange={(e) => switchPrinter(e.target.value)}
                 disabled={state.running}
-                className="select select-ghost -ml-1 h-auto min-h-0 w-auto max-w-full py-0 pr-7 pl-1 font-mono [--font-size:0.8125rem]"
+                className="select select-ghost -ml-1 h-auto min-h-0 w-auto max-w-full py-0 pr-7 pl-1 font-mono [--font-size:0.8125rem] focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-base-content"
               >
                 {labelPrinters.map((p) => (
                   <option key={p.address} value={p.address}>{p.model_label || p.name} · {mm(p.label_mm)}</option>
