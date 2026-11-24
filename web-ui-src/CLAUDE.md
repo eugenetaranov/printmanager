@@ -85,7 +85,10 @@ arbitrary `text-[Npx]` values — pick the nearest token:
 - **Tooltips: DaisyUI `tooltip` with a *vertical* direction only** (`tooltip-top`,
   `tooltip-bottom`). Horizontal tooltips (`tooltip-left/right`) or tooltip bubbles inside
   an `overflow-x-auto` container create a horizontal scrollbar — a bug we hit repeatedly.
-  Row action tooltips point `top`; modal-header actions point `bottom`. Don't fall back to
+  Row action tooltips point `top`; modal-header actions point `bottom`. The **right-most**
+  button of a row or header gets `IconBtn align="end"` (DaisyUI `tooltip-end`): a centred
+  bubble overhangs the button by half its width and gets clipped by the card/modal edge
+  ("Print test pag…"); end-aligned, it grows leftward instead. Don't fall back to
   the native `title` attribute — its ~1s delay feels broken.
 - **Icon-only buttons** (`btn btn-ghost btn-xs btn-square`) must carry a `tooltip` +
   `data-tip` (and an `aria-label` for screen readers). Icons come from one SVG set — no
@@ -159,11 +162,11 @@ arbitrary `text-[Npx]` values — pick the nearest token:
   count.
 - **Print** (documents to A4): the Double-sided toggle is always visible — disabled with a
   reason until a document with 2+ pages is loaded — so the option is discoverable; a one-page
-  document always prints one-sided whatever the toggle said before. With no document loaded,
-  the secondary slot under Print is **Print test page** (`POST /document/testpage {queue}`):
-  a diagnostic A4 sheet (100 mm scale bar, grey ramp, solid black, line weights, text
-  sizes, 8 mm border) sent through the same `_submit_lp` path, so it also checks the
-  printer-off guard. The Devices dialog's printer test icon prints the same sheet.
+  document always prints one-sided whatever the toggle said before. The printer test page
+  lives only in the Devices dialog (printer row's test icon, `POST /devices/testpage`): a
+  diagnostic A4 sheet (100 mm scale bar, grey ramp, solid black, line weights, text sizes,
+  8 mm border) sent through the same `_submit_lp` path, so it also checks the printer-off
+  guard. The Print tab has no test-page button.
   Composers offer **Add to queue** as a secondary action, and promote it to the primary button
   when the target printer is off/not connected.
 

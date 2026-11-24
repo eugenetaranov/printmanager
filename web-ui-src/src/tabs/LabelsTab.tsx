@@ -446,7 +446,7 @@ function HistoryRow({
           <button type="button" onClick={() => onChange(printQueue.reprint(item.id))} disabled={busy} className="btn btn-outline btn-sm pointer-coarse:h-11">
             <Icon.test />Reprint
           </button>
-          <IconBtn title="Remove" confirm={armed ? 'Remove?' : undefined} onClick={onRemove}><Icon.forget /></IconBtn>
+          <IconBtn title="Remove" align="end" confirm={armed ? 'Remove?' : undefined} onClick={onRemove}><Icon.forget /></IconBtn>
         </div>
       </div>
     </li>
@@ -471,7 +471,7 @@ function PrinterRow({ connected, name, status, statusErr, reconnect }: {
         <div aria-live="polite" className={'truncate text-2xs ' + (statusErr ? 'text-error' : 'text-base-content/60')}>{status}</div>
       </div>
       {reconnect && (connected ? (
-        <IconBtn title="Reconnect" onClick={reconnect.onClick} disabled={reconnect.busy}>
+        <IconBtn title="Reconnect" align="end" onClick={reconnect.onClick} disabled={reconnect.busy}>
           {reconnect.busy ? <span className="loading loading-spinner loading-xs" /> : <Icon.reconnect />}
         </IconBtn>
       ) : (
@@ -551,7 +551,7 @@ function ItemRow({
         </div>
         <div className="flex flex-none gap-1">
           <IconBtn title="Printer & copies" variant={open ? 'active' : undefined} onClick={() => setOpen((o) => !o)} disabled={locked}><Icon.sliders /></IconBtn>
-          <IconBtn title="Remove" confirm={armed ? 'Remove?' : undefined} onClick={onRemove} disabled={locked}><Icon.forget /></IconBtn>
+          <IconBtn title="Remove" align="end" confirm={armed ? 'Remove?' : undefined} onClick={onRemove} disabled={locked}><Icon.forget /></IconBtn>
         </div>
       </div>
       {item.state === 'failed' && item.error && <p className="m-0 mt-1 pl-8 text-xs text-error">{item.error}</p>}

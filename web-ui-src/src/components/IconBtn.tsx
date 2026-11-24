@@ -10,8 +10,10 @@ export function Dot({ status }: { status: string }) {
 
 // Square icon button with a hover tooltip — keeps the device rows compact.
 // 44px on touch screens. `confirm`: the armed state of a two-click action,
-// shown as visible text (tooltips don't show on touch).
-export function IconBtn({ title, onClick, variant, disabled, tip = 'top', confirm, children }: { title: string; onClick: () => void; variant?: 'primary' | 'active' | 'danger'; disabled?: boolean; tip?: 'top' | 'bottom'; confirm?: string; children: ReactNode }) {
+// shown as visible text (tooltips don't show on touch). `align="end"`: for the
+// right-most button in a row — DaisyUI's `tooltip-end` pins the bubble to the
+// button's right edge so it grows leftward and the card/modal edge can't clip it.
+export function IconBtn({ title, onClick, variant, disabled, tip = 'top', align = 'center', confirm, children }: { title: string; onClick: () => void; variant?: 'primary' | 'active' | 'danger'; disabled?: boolean; tip?: 'top' | 'bottom'; align?: 'center' | 'end'; confirm?: string; children: ReactNode }) {
   if (confirm) {
     return (
       <button type="button" onClick={onClick} disabled={disabled} aria-label={confirm} className="btn btn-error btn-sm px-2 pointer-coarse:h-11">
@@ -26,7 +28,7 @@ export function IconBtn({ title, onClick, variant, disabled, tip = 'top', confir
       disabled={disabled}
       data-tip={title}
       aria-label={title}
-      className={`tooltip tooltip-${tip} btn btn-square btn-sm pointer-coarse:size-11 ` + (variant === 'primary' ? 'btn-primary' : variant === 'danger' ? 'btn-error' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
+      className={`tooltip tooltip-${tip}${align === 'end' ? ' tooltip-end' : ''} btn btn-square btn-sm pointer-coarse:size-11 ` + (variant === 'primary' ? 'btn-primary' : variant === 'danger' ? 'btn-error' : variant === 'active' ? 'btn-active' : 'btn-ghost')}
     >
       {children}
     </button>

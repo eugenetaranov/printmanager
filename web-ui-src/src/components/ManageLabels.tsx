@@ -57,7 +57,7 @@ export function ManageLabels({
     <Modal open={open} onClose={onClose} labelledBy="mlTitle" wide>
       <div className="mb-3 flex items-center justify-between">
         <h3 id="mlTitle" className="m-0 text-title font-semibold">Manage A4 label sheets</h3>
-        <IconBtn title="Close" tip="bottom" onClick={onClose}><Icon.close /></IconBtn>
+        <IconBtn title="Close" tip="bottom" align="end" onClick={onClose}><Icon.close /></IconBtn>
       </div>
 
       {draft ? (
@@ -89,7 +89,7 @@ export function ManageLabels({
                 <div className="font-mono text-2xs text-base-content/60">{t.cols}×{t.rows} · {Math.round(Number(t.cell_w))}×{Math.round(Number(t.cell_h))} mm{t.builtin ? ' · built-in' : ''}</div>
               </div>
               <IconBtn title={`Edit ${t.name}`} onClick={() => setDraft(draftFrom(t))}><Icon.edit /></IconBtn>
-              <IconBtn title={`Delete ${t.name}`} confirm={armed === t.id ? 'Delete?' : undefined} onClick={() => remove(t.id)}><Icon.forget /></IconBtn>
+              <IconBtn title={`Delete ${t.name}`} align="end" confirm={armed === t.id ? 'Delete?' : undefined} onClick={() => remove(t.id)}><Icon.forget /></IconBtn>
             </div>
           ))}
           {err && <p aria-live="polite" className="mt-2 text-body text-error">{err}</p>}

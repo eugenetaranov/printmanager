@@ -133,8 +133,6 @@ export const api = {
     postJSON<DocPrintResult>('/document/continue', { token }),
 
   documentCancel: (token: string) => postJSON<OkResult>('/document/cancel', { token }),
-
-  documentTestPage: (queue: string) => postJSON<DocPrintResult>('/document/testpage', { queue }),
 }
 
 export interface OnePageChoice {

@@ -101,7 +101,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
         <h3 id="devTitle" className="m-0 text-title font-semibold">Devices</h3>
         <div className="flex gap-2">
           <IconBtn title="Refresh devices" tip="bottom" onClick={refresh} disabled={busy}><Icon.refresh /></IconBtn>
-          <IconBtn title="Close" tip="bottom" onClick={onClose}><Icon.close /></IconBtn>
+          <IconBtn title="Close" tip="bottom" align="end" onClick={onClose}><Icon.close /></IconBtn>
         </div>
       </div>
 
@@ -135,7 +135,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                   <div className={'truncate font-mono text-2xs ' + (d.error ? 'text-error' : 'text-base-content/60')}>{d.error || d.detail || d.status}</div>
                 </div>
                 {d.kind === 'printer' && d.id && (
-                  <IconBtn title="Print test page" onClick={() => testDevice(d)}><Icon.test /></IconBtn>
+                  <IconBtn title="Print test page" align="end" onClick={() => testDevice(d)}><Icon.test /></IconBtn>
                 )}
               </div>
             ))}
@@ -148,7 +148,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
       <div className={'mt-4 ' + (loaded ? '' : 'hidden')}>
         <div className="mb-1 flex items-center justify-between">
           <span className="field-label">Label printers (Niimbot)</span>
-          <IconBtn title="Scan for Bluetooth printers" onClick={scan} disabled={scanning}>
+          <IconBtn title="Scan for Bluetooth printers" align="end" onClick={scan} disabled={scanning}>
             {scanning ? <span className="loading loading-spinner loading-xs" /> : <Icon.search />}
           </IconBtn>
         </div>
@@ -182,7 +182,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                   )}
                   <IconBtn title="Roll size" variant={editSize === p.address ? 'active' : undefined} onClick={() => setEditSize((a) => (a === p.address ? '' : p.address))}><Icon.size /></IconBtn>
                   <IconBtn title="Connection log" variant={logAddr === p.address ? 'active' : undefined} onClick={() => setLogAddr((a) => (a === p.address ? '' : p.address))}><Icon.log /></IconBtn>
-                  <IconBtn title="Forget" onClick={() => action('forget', p)}><Icon.forget /></IconBtn>
+                  <IconBtn title="Forget" align="end" onClick={() => action('forget', p)}><Icon.forget /></IconBtn>
                 </div>
               </div>
               {editSize === p.address && <SizeEditor w={mm[0]} h={mm[1]} onSave={(w, h) => saveSize(p, w, h)} onCancel={() => setEditSize('')} />}
@@ -209,7 +209,7 @@ export function DevicesModal({ open, onClose }: { open: boolean; onClose: () => 
                   <div className="truncate text-body">{c.name}</div>
                   <div className="truncate font-mono text-2xs text-base-content/60">{c.address}{c.rssi != null ? ` · ${c.rssi} dBm` : ''}</div>
                 </div>
-                <IconBtn title="Connect" variant="primary" onClick={() => connect(c)}><Icon.connect /></IconBtn>
+                <IconBtn title="Connect" variant="primary" align="end" onClick={() => connect(c)}><Icon.connect /></IconBtn>
               </div>
             ))}
           </div>

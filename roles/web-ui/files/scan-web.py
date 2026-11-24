@@ -2395,20 +2395,6 @@ def _build_test_pdf(queue, out):
     c.save()
 
 
-def do_document_testpage(obj):
-    """Print the diagnostic test page to the chosen A4 queue (Print tab)."""
-    if not DOCUMENT_ENABLED:
-        raise RuntimeError("Document printing is disabled")
-    queue = _doc_target_queue(obj)
-    tmp = tempfile.mkdtemp(prefix="testpage-")
-    try:
-        pdf = os.path.join(tmp, "test.pdf")
-        _build_test_pdf(queue, pdf)
-        return {"queue": queue, "job": _submit_lp(pdf, queue), "pages": 1, "done": True}
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-
-
 def print_test_page(kind, dev_id):
     """Print a device-appropriate test page: an A4 sheet to a CUPS queue, or a
     small test label to a Niimbot (sized to its loaded roll)."""
@@ -2761,12 +2747,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, dict(fn(self._json_body()), ok=True))
             except Exception as e:
                 return self._json(200, {"ok": False, "error": str(e)})
-        if path in ("/document/info", "/document/print", "/document/continue", "/document/cancel",
-                    "/document/testpage"):
+        if path in ("/document/info", "/document/print", "/document/continue", "/document/cancel"):
             obj = self._json_body()
             fn = {"/document/info": do_document_info, "/document/print": do_document,
-                  "/document/continue": do_document_continue, "/document/cancel": do_document_cancel,
-                  "/document/testpage": do_document_testpage}[path]
+                  "/document/continue": do_document_continue, "/document/cancel": do_document_cancel}[path]
             try:
                 return self._json(200, dict(fn(obj), ok=True))
             except subprocess.TimeoutExpired:

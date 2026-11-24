@@ -134,7 +134,7 @@ export function OnePageMerge({ names, onState }: { names: string[]; onState: (s:
                   <IconBtn title="Move down" onClick={() => move(i, 1)} disabled={i === rows.length - 1}><Icon.down /></IconBtn>
                   <IconBtn title={r.whole ? 'Use the detected item' : 'Use the whole page'} variant={r.whole ? 'active' : undefined}
                     onClick={() => patch(i, { whole: !r.whole, skip: false })}><Icon.page /></IconBtn>
-                  <IconBtn title={r.skip ? 'Put it back' : 'Leave out'} variant={r.skip ? 'active' : undefined}
+                  <IconBtn title={r.skip ? 'Put it back' : 'Leave out'} align="end" variant={r.skip ? 'active' : undefined}
                     onClick={() => patch(i, { skip: !r.skip })}><Icon.close /></IconBtn>
                 </div>
               </div>
