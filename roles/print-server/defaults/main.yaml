@@ -8,6 +8,7 @@ print_packages:
   - avahi-daemon
   - avahi-utils
   - cups-ipp-utils        # ipptool/ippfind, for driverless (IPP Everywhere)
+  - python3-pikepdf       # pdf-fixboxes filter (clamps broken PDF page boxes)
 
 # Vendor driver packages to install for the printers declared below. A
 # `driver: driverless` printer needs nothing here. For a named driver, add its

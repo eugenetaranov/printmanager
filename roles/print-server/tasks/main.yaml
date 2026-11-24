@@ -27,6 +27,27 @@
     mode: "0640"
   notify: Restart CUPS
 
+# Some PDFs carry a Crop/Trim/Bleed/ArtBox larger than the page; with
+# print-scaling=none (always sent by Android's print service) pdftopdf crops to
+# it and prints a blank sheet. pdf-fixboxes clamps the boxes, then runs
+# pdftopdf. CUPS refuses filters not owned by root, hence owner: root.
+- name: Install the PDF page-box sanitizing filter
+  copy:
+    src: pdf-fixboxes
+    dest: /usr/lib/cups/filter/pdf-fixboxes
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Route PDFs through the page-box sanitizing filter
+  copy:
+    src: local.convs
+    dest: /etc/cups/local.convs
+    mode: "0644"
+    owner: root
+    group: root
+  notify: Restart CUPS
+
 - name: Ensure CUPS and Avahi are running and enabled
   systemd:
     name: "{{ item }}"

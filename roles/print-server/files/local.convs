@@ -1,0 +1,4 @@
+# Managed by the print-server role. Route PDFs through pdf-fixboxes (which
+# clamps broken page boxes, then runs pdftopdf) instead of pdftopdf directly:
+# cost 33 < pdftopdf's 66 in cupsfilters.convs, so CUPS prefers this path.
+application/pdf	application/vnd.cups-pdf	33	pdf-fixboxes
