@@ -5,6 +5,10 @@ share_packages:
   - samba
   - samba-vfs-modules
 
+# Shared settings owned by this role (scan-server and web-ui read them too).
+# Tack merges every role's defaults into one namespace, so declare them only
+# here and override them in site.yaml `vars:` (see `task check-vars`).
+
 # Destination directory scans are written to and the [scans] share exposes.
 scan_dir: /srv/scans
 
@@ -13,17 +17,18 @@ scan_dir: /srv/scans
 # setgid so new files inherit this group.
 scan_group: scans
 
-# Samba (and system) user that clients authenticate as to reach the share.
-scan_samba_user: scans
+# System user that owns the scan dir: Samba clients authenticate as it, and
+# the web UI (scan-web) and its scan pipeline run as it.
+scan_user: scans
 
 # Allow unauthenticated (guest) access to the [scans] share. When true, clients
-# reach the share without a password, mapped to scan_samba_user (the owner of
+# reach the share without a password, mapped to scan_user (the owner of
 # scan_dir) so they can read and write scans. Suitable for a trusted LAN, where
 # access is already restricted to the LAN subnet by hosts allow/deny. Set false
 # to require the Samba password below instead.
 scan_samba_guest: true
 
-# Samba password for scan_samba_user. This is a SECRET — leave empty here and
+# Samba password for scan_user. This is a SECRET — leave empty here and
 # supply it from encrypted vars / a vault at run time. When empty, the Samba
 # password is left unset (task skipped) and you must set it manually with
 # `smbpasswd -a scans` on the host. Only relevant when scan_samba_guest is false.

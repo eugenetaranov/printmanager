@@ -7,7 +7,7 @@
 set -eu
 DEST='{{ .scan_dir }}'
 RES="${SCAN_RES:-{{ .scan_resolution }}}"
-MODE="${SCAN_MODE:-{{ if .scan_escl_enabled }}{{ .scan_escl_mode }}{{ else }}{{ .scan_mode }}{{ end }}}"
+MODE="${SCAN_MODE:-{{ if eq .scan_backend "escl" }}{{ .scan_escl_mode }}{{ else }}{{ .scan_mode }}{{ end }}}"
 QUALITY="${SCAN_QUALITY:-{{ .scan_jpeg_quality }}}"
 
 # Optional filename; keep only safe chars, spaces -> dashes (no slashes/dots, so
@@ -20,7 +20,7 @@ trap 'rm -rf "$tmp"' EXIT
 # Scan to raw PNM. On the brscan4 net path pad to full size (Brother short-reads
 # ~1 row); the eSCL backend delivers full data, so no padding.
 scanimage --mode "$MODE" --resolution "$RES" --format=pnm > "$tmp/p.pnm"
-{{ if not .scan_escl_enabled }}python3 /usr/local/lib/scan-web/pad_pnm.py "$tmp/p.pnm"
+{{ if eq .scan_backend "brscan4-emu" }}python3 /usr/local/lib/scan-web/pad_pnm.py "$tmp/p.pnm"
 {{ end -}}
 # -sampling-factor 1x1 (no chroma subsampling) keeps text edges crisp.
 # PNM carries no resolution: write the scan's DPI into the JPEG, or img2pdf
@@ -43,8 +43,8 @@ chmod 0660 "$out" 2>/dev/null || true
 
 # Sidecar thumbnail + metadata (DPI/mode) for the web UI, kept out of the share.
 b="$(basename "$out" .pdf)"
-mkdir -p /var/lib/scan-web/thumbs /var/lib/scan-web/meta 2>/dev/null || true
-convert "$tmp/p.jpg" -resize 480x -quality 70 "/var/lib/scan-web/thumbs/$b.jpg" 2>/dev/null || true
-printf '%s\t%s\n' "$RES" "$MODE" > "/var/lib/scan-web/meta/$b" 2>/dev/null || true
+mkdir -p {{ .scan_web_data_dir }}/thumbs {{ .scan_web_data_dir }}/meta 2>/dev/null || true
+convert "$tmp/p.jpg" -resize 480x -quality 70 "{{ .scan_web_data_dir }}/thumbs/$b.jpg" 2>/dev/null || true
+printf '%s\t%s\n' "$RES" "$MODE" > "{{ .scan_web_data_dir }}/meta/$b" 2>/dev/null || true
 
 echo "$out"

@@ -4,8 +4,8 @@
 # print path. Runs as the unprivileged scans user on port 80.
 #
 # Depends on the scan-server role (the scan pipeline it shells out to lives at
-# /usr/local/lib/scan-web/scan-to-share.sh, and the thumbnail/metadata dir at
-# /var/lib/scan-web) and on print-server (the CUPS queue it prints to), so this
+# /usr/local/lib/scan-web/scan-to-share.sh, and the thumbnail/metadata dir,
+# scan_web_data_dir) and on print-server (the CUPS queue it prints to), so this
 # role runs after both in site.yaml.
 
 # Packages the UI needs beyond stdlib Python: reportlab (vector label PDFs),
@@ -29,7 +29,6 @@ web_packages:
 web_enabled: true
 scan_web_enabled: true
 scan_web_port: 80
-scan_web_user: scans          # must match scan-share (owns the share) + scan-server
 scan_web_title: printmanager
 scan_web_share: "smb://printmanager.local/scans"
 
@@ -52,10 +51,12 @@ web_ui_build_dir: /usr/local/lib/scan-web/src
 # to reclaim disk on the Pi (only dist/ is served).
 web_ui_keep_node_modules: false
 
-# Defaults preselected in the Scan tab's Mode/Resolution dropdowns. (Separate
-# from scan-server's scan_mode/scan_resolution, which drive the pipeline itself.)
-scan_web_default_mode: "24bit Color"
-scan_web_default_res: 300
+# Defaults preselected in the Scan tab's Mode/Resolution dropdowns. Empty =
+# derive from scan-server: the active backend's mode (scan_mode, or
+# scan_escl_mode when scan_backend is escl) and scan_resolution. Set a value
+# only to preselect something different from what the pipeline defaults to.
+scan_web_default_mode: ""
+scan_web_default_res: ""
 
 # --- Label printer (the "Print" tab) -----------------------------------------
 # Pick a layout, click the cells on the rendered A4 sheet, drop in text (e.g. a
@@ -63,10 +64,11 @@ scan_web_default_res: 300
 # below. Label stock dimensions vary, so the UI ships a few presets plus a
 # per-print X/Y "nudge" (mm): do one test print on plain paper, hold it against a
 # real sheet, and adjust until the ink lands on the labels (remembered in the
-# browser). scan_web_print_queue must match print-server's printer_queue_name.
-# Set scan_web_print_enabled false to hide the Print tab.
+# browser). scan_web_print_queue empty = the print-server `printers:` entry
+# marked `default: true` (preflight fails unless exactly one is); set a queue
+# name to override. Set scan_web_print_enabled false to hide the Print tab.
 scan_web_print_enabled: true
-scan_web_print_queue: DCP1511
+scan_web_print_queue: ""
 
 # --- Document printing (the "Print" tab) -------------------------------------
 # A separate tab to print a PDF document to an A4 CUPS queue, single- or
@@ -104,6 +106,5 @@ niimbot_pip_packages:
   - "bleak>=0.22,<1.0"
   - "qrcode>=7.4,<9"
 
-# Must match the scan-share / scan-server roles (where scans land + the group).
-scan_dir: /srv/scans
-scan_group: scans
+# The service runs as scan_user:scan_group and reads scans from scan_dir — all
+# owned by the scan-share role.

@@ -7,8 +7,8 @@ MINS=$(( {{ .scan_retention_hours }} * 60 ))
 
 find "$DEST" -maxdepth 1 -type f -name '*.pdf' -mmin +"$MINS" 2>/dev/null | while IFS= read -r f; do
   b="$(basename "$f" .pdf)"
-  rm -f "$f" "/var/lib/scan-web/thumbs/$b.jpg" "/var/lib/scan-web/meta/$b"
+  rm -f "$f" "{{ .scan_web_data_dir }}/thumbs/$b.jpg" "{{ .scan_web_data_dir }}/meta/$b"
 done
 
 # Sweep any orphaned sidecars past the window too.
-find /var/lib/scan-web/thumbs /var/lib/scan-web/meta -type f -mmin +"$MINS" -delete 2>/dev/null || true
+find {{ .scan_web_data_dir }}/thumbs {{ .scan_web_data_dir }}/meta -type f -mmin +"$MINS" -delete 2>/dev/null || true

@@ -3,6 +3,16 @@
 # pipeline (scan-server) and the CUPS queue (print-server), so it runs after
 # both. Overridable variables: see defaults/main.yaml.
 
+# Shared settings this role reads but does not declare (scan-share, scan-server and print-server own them).
+# Tack only loads them when the owning roles are in the play, so a direct
+# `tack run roles/<this role>` would otherwise render empty paths and users.
+- name: Require the shared settings declared by other roles
+  command:
+    cmd: >-
+      sh -c 'm=""; for kv in "scan_dir={{ scan_dir }}" "scan_group={{ scan_group }}" "scan_user={{ scan_user }}" "scan_backend={{ scan_backend }}" "scan_mode={{ scan_mode }}" "scan_escl_mode={{ scan_escl_mode }}" "scan_resolution={{ scan_resolution }}" "scan_web_data_dir={{ scan_web_data_dir }}" "printers={{ printers }}"; do [ "${kv#*=}" = "<nil>" ] && m="$m ${kv%%=*}"; done;
+      echo "missing shared settings:$m (run via site.yaml, or set them in vars)" >&2; exit 1'
+  when: scan_dir is not defined or scan_group is not defined or scan_user is not defined or scan_backend is not defined or scan_mode is not defined or scan_escl_mode is not defined or scan_resolution is not defined or scan_web_data_dir is not defined or printers is not defined
+
 - name: Install web UI packages (reportlab, Pillow, poppler, CUPS client)
   apt:
     name: "{{ web_packages }}"

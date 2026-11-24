@@ -18,7 +18,7 @@
 
 - name: Ensure the scan user exists
   command:
-    cmd: "sh -c 'getent passwd {{ scan_samba_user }} >/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin -g {{ scan_group }} {{ scan_samba_user }}'"
+    cmd: "sh -c 'getent passwd {{ scan_user }} >/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin -g {{ scan_group }} {{ scan_user }}'"
 
 # setgid (2xxx) so files created here by the scan process inherit the scan
 # group and stay readable to Samba clients.
@@ -26,7 +26,7 @@
   file:
     path: "{{ scan_dir }}"
     state: directory
-    owner: "{{ scan_samba_user }}"
+    owner: "{{ scan_user }}"
     group: "{{ scan_group }}"
     mode: "2775"
 
@@ -41,7 +41,7 @@
 # in which case set it manually on the host: `smbpasswd -a scans`.
 - name: Set the Samba password for the scan user
   command:
-    cmd: "sh -c 'pdbedit -L 2>/dev/null | grep -q \"^{{ scan_samba_user }}:\" || printf \"%s\\n%s\\n\" \"{{ scan_samba_password }}\" \"{{ scan_samba_password }}\" | smbpasswd -s -a {{ scan_samba_user }}'"
+    cmd: "sh -c 'pdbedit -L 2>/dev/null | grep -q \"^{{ scan_user }}:\" || printf \"%s\\n%s\\n\" \"{{ scan_samba_password }}\" \"{{ scan_samba_password }}\" | smbpasswd -s -a {{ scan_user }}'"
   when: scan_samba_password
 
 - name: Ensure Samba services are running and enabled

@@ -28,9 +28,11 @@ designed to run the same on **Raspberry Pi OS (Debian)** and **Ubuntu**.
 Tack applies a set of roles (in `site.yaml` order) to the host over SSH:
 
 ```
-base ──> watchdog ──> print-server ──> scan-share ──> scan-server ──> web-ui
+preflight ──> base ──> watchdog ──> print-server ──> scan-share ──> scan-server ──> web-ui
 ```
 
+- **preflight** — checks the settings shared between roles (scan backend,
+  default printer, renamed settings) and stops before anything is changed.
 - **base** — common packages, the `iptables` default-deny firewall (SSH allowed
   first to avoid lockout; ICMP + per-service LAN rules inserted above the DROP),
   Wi-Fi power-save off, and a portable `en_US.UTF-8` locale (works on both
@@ -45,10 +47,10 @@ base ──> watchdog ──> print-server ──> scan-share ──> scan-serve
   add your own by appending to the list (override it from `site.yaml` `vars:`).
 - **scan-share** — the Samba `[scans]` share backed by `/srv/scans`.
 - **scan-server** — the scanning stack, with two selectable backends
-  (`scan_brscan4_enabled` / `scan_escl_enabled`):
+  (`scan_backend: brscan4-emu | escl`):
   - **Driverless eSCL** (`sane-airscan`) — most modern scanners; the host SANE
     reaches the device directly, with **no** chroot/qemu/net-bridge/AirSane.
-    Enable with `scan_escl_enabled: true` and `scan_brscan4_enabled: false`.
+    Enable with `scan_backend: escl`.
   - **brscan4 under i386 emulation** (the shipped default, for driver-only units
     like the DCP-1510/1511): Brother's proprietary **brscan4** runs in a small
     **i386 Debian chroot** (`qemu-user-static` + `debootstrap`) because Brother
@@ -113,6 +115,7 @@ unavailable. Set `scan_web_devices_enabled: false` to hide it entirely.
 ```
 site.yaml            # Tack playbook: host + role order
 roles/
+  preflight/         # validates shared settings before any change (always runs)
   base/              # packages, iptables firewall, wifi power-save off, locale
   watchdog/          # hardware watchdog + connectivity self-heal
   print-server/      # CUPS + Avahi (AirPrint); config-driven printers: (driverless or named driver)
@@ -155,9 +158,29 @@ plugged in. The CUPS queue and the scanner are detected at provision time, so
 **after connecting the DCP-1511, re-run `tack site.yaml`** (or `--tags print,scan`)
 once to finalize the queue and pick up the scanner.
 
+### Settings shared between roles
+
+Tack merges every role's `defaults/` (and role-level `vars:`) into one
+play-wide namespace, so each setting is declared once, in the role that owns
+it, and other roles read it from there:
+
+| Owner | Settings |
+| --- | --- |
+| `scan-share` | `scan_dir`, `scan_group`, `scan_user` |
+| `scan-server` | `scan_backend`, `scan_mode`, `scan_escl_mode`, `scan_resolution`, `scan_jpeg_quality`, `scan_ocr_*`, `scan_web_data_dir` |
+| `print-server` | `printers` |
+
+The web UI derives its print queue (the `printers:` entry with `default: true`)
+and its preselected scan mode/resolution from these unless you set
+`scan_web_print_queue` / `scan_web_default_mode` / `scan_web_default_res`.
+Override any of them in the top-level `vars:` of `site.yaml` (not with `-e`,
+which ranks below role defaults in `tack run`). The `preflight` role checks them
+before anything changes, and `task check-vars` fails if a default is declared in
+two roles again.
+
 ### Secrets
 
-The Samba password for the `scans` user is empty by default (the task is
+The Samba password for the `scan_user` account (`scans`) is empty by default (the task is
 skipped); set it on the host:
 
 ```sh

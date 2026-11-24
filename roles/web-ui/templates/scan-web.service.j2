@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User={{ .scan_web_user }}
+User={{ .scan_user }}
 Group={{ .scan_group }}
 # All config is read from this YAML file (rendered by the role), keeping the
 # Python a plain .py file with no templating.

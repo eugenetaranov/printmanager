@@ -7,3 +7,14 @@ tasks:
       TAGS: '{{.CLI_ARGS | trim | splitList " " | compact | join ","}}'
     cmds:
       - tack run -sa{{if .TAGS}} -t {{.TAGS}}{{end}}
+
+  check-vars:
+    desc: Fail if a variable is declared in more than one role's defaults (Tack merges all role defaults play-wide, so the last role in site.yaml silently wins).
+    silent: true
+    cmds:
+      - |
+        dups=$(grep -hoE '^[a-z_][a-z0-9_]*:' roles/*/defaults/main.yaml | sort | uniq -d)
+        if [ -n "$dups" ]; then
+          for v in $dups; do echo "duplicate default ${v%:} in: $(grep -lE "^${v}" roles/*/defaults/main.yaml | tr '\n' ' ')"; done
+          exit 1
+        fi
