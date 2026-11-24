@@ -1185,21 +1185,38 @@ def _queue_uri(queue):
     return ""
 
 
+# USB vendor ids of common printer brands, for devices whose descriptor carries
+# no manufacturer string (the DCP-1511 exposes only idVendor + serial in sysfs).
+_USB_VENDOR_IDS = {"brother": "04f9", "hp": "03f0", "canon": "04a9", "epson": "04b8",
+                   "samsung": "04e8", "lexmark": "043d", "kyocera": "0482", "xerox": "0924"}
+
+
+def _sysfs(dev, attr):
+    try:
+        with open(os.path.join("/sys/bus/usb/devices", dev, attr)) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
 def usb_present(queue):
     """False only when the queue is a usb:// printer and no attached USB device
-    carries its brand (e.g. 'Brother') as manufacturer. Anything we can't tell
-    (non-USB queue, cold cache, no sysfs) counts as present — the old behaviour."""
-    m = re.match(r"usb://([^/]+)/", _queue_uri(queue))
+    matches it — by the URI's serial, else by brand (manufacturer string or the
+    brand's vendor id). Anything we can't tell (non-USB queue, cold cache, no
+    sysfs) counts as present — the old behaviour."""
+    m = re.match(r"usb://([^/?]+)/[^?]*(?:\?(.*))?$", _queue_uri(queue))
     if not m or not os.path.isdir("/sys/bus/usb/devices"):
         return True
     brand = urllib.parse.unquote(m.group(1)).strip().lower()
+    serial = urllib.parse.parse_qs(m.group(2) or "").get("serial", [""])[0]
+    vendor = _USB_VENDOR_IDS.get(brand)
     for dev in os.listdir("/sys/bus/usb/devices"):
-        try:
-            with open(os.path.join("/sys/bus/usb/devices", dev, "manufacturer")) as f:
-                if brand in f.read().lower():
-                    return True
-        except OSError:
-            continue
+        if serial and _sysfs(dev, "serial") == serial:
+            return True
+        if brand and brand in _sysfs(dev, "manufacturer").lower():
+            return True
+        if vendor and _sysfs(dev, "idVendor") == vendor:
+            return True
     return False
 
 
