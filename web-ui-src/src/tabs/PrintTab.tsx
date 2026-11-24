@@ -38,6 +38,7 @@ export function PrintTab() {
   // becomes the main action.
   const [offline, setOffline] = useState(false)
   const [queueing, setQueueing] = useState(false)
+  const [testing, setTesting] = useState(false)
   const { refresh: refreshQueue } = useQueue()
 
   useEffect(() => {
@@ -148,6 +149,24 @@ export function PrintTab() {
         status.set('error', 'Failed')
         err('Could not reach the print service.')
       })
+  }
+
+  const testPage = () => {
+    if (testing) return
+    setTesting(true)
+    clear()
+    status.set('busy', 'Printing')
+    api.documentTestPage(queue)
+      .then((d) => {
+        status.set(d.ok ? 'idle' : 'error', d.ok ? 'Ready' : 'Failed')
+        if (d.ok) ok(`Sent a test page to ${d.queue}.`)
+        else err(d.error || 'Test page failed.')
+      })
+      .catch(() => {
+        status.set('error', 'Failed')
+        err('Could not reach the print service.')
+      })
+      .finally(() => setTesting(false))
   }
 
   const doContinue = () => {
@@ -305,9 +324,14 @@ export function PrintTab() {
               <button type="button" onClick={print} disabled={!doc || busy} className="btn btn-primary btn-block btn-lg">
                 {busy ? 'Printing…' : 'Print'}
               </button>
-              {doc && (
+              {doc ? (
                 <button type="button" onClick={addToQueue} disabled={queueing} className="btn btn-outline btn-block mt-2 h-11">
                   {queueing ? 'Adding…' : 'Add to queue'}
+                </button>
+              ) : (
+                // Nothing to add to the queue yet, so the slot checks the printer instead.
+                <button type="button" onClick={testPage} disabled={testing || !queue} className="btn btn-outline btn-block mt-2 h-11">
+                  {testing ? 'Printing…' : 'Print test page'}
                 </button>
               )}
             </>

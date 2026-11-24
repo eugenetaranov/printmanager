@@ -159,7 +159,11 @@ arbitrary `text-[Npx]` values — pick the nearest token:
   count.
 - **Print** (documents to A4): the Double-sided toggle is always visible — disabled with a
   reason until a document with 2+ pages is loaded — so the option is discoverable; a one-page
-  document always prints one-sided whatever the toggle said before.
+  document always prints one-sided whatever the toggle said before. With no document loaded,
+  the secondary slot under Print is **Print test page** (`POST /document/testpage {queue}`):
+  a diagnostic A4 sheet (100 mm scale bar, grey ramp, solid black, line weights, text
+  sizes, 8 mm border) sent through the same `_submit_lp` path, so it also checks the
+  printer-off guard. The Devices dialog's printer test icon prints the same sheet.
   Composers offer **Add to queue** as a secondary action, and promote it to the primary button
   when the target printer is off/not connected.
 

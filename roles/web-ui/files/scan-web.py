@@ -2285,26 +2285,101 @@ def inventory(force=False):
 
 
 def _build_test_pdf(queue, out):
-    """A simple A4 test page: title, queue name, timestamp, paper size, and a
-    full-page border with corner ticks so alignment/coverage is easy to eyeball."""
+    """A diagnostic A4 test page. Each block checks one thing that goes wrong:
+    the border + corner ticks (8 mm in) show clipping or an offset image, the
+    100 mm scale bar shows the page was scaled, the grey ramp and solid block
+    show faint toner, streaks or a dirty drum, and the line weights and text
+    sizes show how fine a detail survives."""
     from reportlab.pdfgen import canvas
     from reportlab.lib.units import mm
     import datetime
     pw, ph = 210.0, 297.0
     c = canvas.Canvas(out, pagesize=(pw * mm, ph * mm))
+    c.setTitle("Test page")
+
+    def label(x, y, text, size=8):
+        c.setFont("Helvetica", size)
+        c.drawString(x * mm, y * mm, text)
+
+    # Border + corner ticks.
     c.setLineWidth(1)
     c.rect(8 * mm, 8 * mm, (pw - 16) * mm, (ph - 16) * mm)
     for cx, cy in ((8, 8), (pw - 8, 8), (8, ph - 8), (pw - 8, ph - 8)):
         c.line((cx - 5) * mm, cy * mm, (cx + 5) * mm, cy * mm)
         c.line(cx * mm, (cy - 5) * mm, cx * mm, (cy + 5) * mm)
+
+    # Header: what printed this, and when.
     c.setFont("Helvetica-Bold", 30)
-    c.drawCentredString(pw / 2 * mm, (ph / 2 + 12) * mm, "TEST PAGE")
-    c.setFont("Helvetica", 12)
-    c.drawCentredString(pw / 2 * mm, (ph / 2) * mm, queue)
-    c.drawCentredString(pw / 2 * mm, (ph / 2 - 7) * mm, datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
-    c.drawCentredString(pw / 2 * mm, (ph / 2 - 14) * mm, "A4 · 210 x 297 mm")
+    c.drawCentredString(pw / 2 * mm, 262 * mm, "TEST PAGE")
+    c.setFont("Helvetica", 11)
+    c.drawCentredString(pw / 2 * mm, 252 * mm, "%s  @  %s" % (queue, os.uname().nodename))
+    c.drawCentredString(pw / 2 * mm, 246 * mm, datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+
+    x0 = 25.0  # left edge of the content blocks
+
+    # Scale bar: 100 mm with mm ticks; measure it to catch fit-to-page scaling.
+    y = 224.0
+    label(x0, y + 7, "SCALE  -  this bar should measure exactly 100 mm")
+    c.setLineWidth(0.5)
+    c.line(x0 * mm, y * mm, (x0 + 100) * mm, y * mm)
+    for i in range(101):
+        t = 4.0 if i % 10 == 0 else 2.5 if i % 5 == 0 else 1.5
+        c.line((x0 + i) * mm, y * mm, (x0 + i) * mm, (y - t) * mm)
+        if i % 10 == 0:
+            c.setFont("Helvetica", 6)
+            c.drawCentredString((x0 + i) * mm, (y - 7) * mm, str(i))
+
+    # Grey ramp 0-100% in 10% steps, then a solid black block.
+    y = 190.0
+    label(x0, y + 17, "GREY LEVELS  -  each step should look distinct, no streaks")
+    w = 14.0
+    for i in range(11):
+        c.setFillGray(1 - i / 10.0)
+        c.rect((x0 + i * w) * mm, y * mm, w * mm, 12 * mm, stroke=1, fill=1)
+        c.setFillGray(0)
+        c.setFont("Helvetica", 6)
+        c.drawCentredString((x0 + i * w + w / 2) * mm, (y - 4) * mm, "%d%%" % (i * 10))
+    y = 162.0
+    label(x0, y + 15, "SOLID BLACK  -  should be even, no white lines or fading")
+    c.setFillGray(0)
+    c.rect(x0 * mm, y * mm, 154 * mm, 12 * mm, stroke=0, fill=1)
+
+    # Line weights.
+    y = 140.0
+    label(x0, y + 8, "LINE WEIGHTS")
+    for i, lw in enumerate((0.25, 0.5, 1.0, 2.0, 4.0)):
+        yy = y - i * 6
+        c.setLineWidth(lw)
+        c.line((x0 + 18) * mm, yy * mm, (x0 + 154) * mm, yy * mm)
+        label(x0, yy - 1, "%g pt" % lw, 7)
+
+    # Text sizes.
+    y = 100.0
+    label(x0, y + 8, "TEXT SIZES")
+    sample = "The quick brown fox jumps over the lazy dog 0123456789"
+    for size in (6, 8, 10, 12, 16):
+        c.setFont("Helvetica", size)
+        c.drawString(x0 * mm, y * mm, "%d pt  %s" % (size, sample))
+        y -= size * 0.3528 + 4  # pt -> mm, plus a gap
+
+    c.setFont("Helvetica", 8)
+    c.drawCentredString(pw / 2 * mm, 14 * mm, "A4  -  210 x 297 mm  -  the border is 8 mm in from every edge")
     c.showPage()
     c.save()
+
+
+def do_document_testpage(obj):
+    """Print the diagnostic test page to the chosen A4 queue (Print tab)."""
+    if not DOCUMENT_ENABLED:
+        raise RuntimeError("Document printing is disabled")
+    queue = _doc_target_queue(obj)
+    tmp = tempfile.mkdtemp(prefix="testpage-")
+    try:
+        pdf = os.path.join(tmp, "test.pdf")
+        _build_test_pdf(queue, pdf)
+        return {"queue": queue, "job": _submit_lp(pdf, queue), "pages": 1, "done": True}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def print_test_page(kind, dev_id):
@@ -2315,10 +2390,7 @@ def print_test_page(kind, dev_id):
         try:
             pdf = os.path.join(tmp, "test.pdf")
             _build_test_pdf(dev_id, pdf)
-            proc = subprocess.run(["lp", "-d", dev_id, "-o", "media=A4", pdf],
-                                  capture_output=True, text=True, timeout=60)
-            if proc.returncode != 0:
-                raise RuntimeError((proc.stderr or proc.stdout or "lp failed").strip().splitlines()[-1])
+            _submit_lp(pdf, dev_id)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
         return
@@ -2662,10 +2734,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, dict(fn(self._json_body()), ok=True))
             except Exception as e:
                 return self._json(200, {"ok": False, "error": str(e)})
-        if path in ("/document/info", "/document/print", "/document/continue", "/document/cancel"):
+        if path in ("/document/info", "/document/print", "/document/continue", "/document/cancel",
+                    "/document/testpage"):
             obj = self._json_body()
             fn = {"/document/info": do_document_info, "/document/print": do_document,
-                  "/document/continue": do_document_continue, "/document/cancel": do_document_cancel}[path]
+                  "/document/continue": do_document_continue, "/document/cancel": do_document_cancel,
+                  "/document/testpage": do_document_testpage}[path]
             try:
                 return self._json(200, dict(fn(obj), ok=True))
             except subprocess.TimeoutExpired:
