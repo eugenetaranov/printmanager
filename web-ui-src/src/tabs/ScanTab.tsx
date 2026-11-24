@@ -15,7 +15,7 @@ export function ScanTab() {
   const [name, setName] = useState('')
   const [mode, setMode] = useState('')
   const [resolution, setResolution] = useState('')
-  const [cap, setCap] = useState(0)   // MB; 0 = no limit
+  const [cap, setCap] = useState(1)   // MB; 0 = no limit. Default 1 MB: easy to email/upload
   const [scanning, setScanning] = useState(false)
 
   useEffect(() => {
