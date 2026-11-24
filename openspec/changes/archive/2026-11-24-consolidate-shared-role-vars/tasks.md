@@ -54,7 +54,7 @@
   - every rendered template is byte-identical;
   - the export differs only by the renamed `when:` conditions and the added preflight and guard tasks;
   - no command, package, user, firewall rule or service changes.
-- [ ] 8.2 Apply to the Pi (`task apply`) and verify a web-UI scan lands in `/srv/scans` with its thumbnail, and that a document prints to `DCP1511`.
+- [x] 8.2 Apply to the Pi (`task apply`) and verify a web-UI scan lands in `/srv/scans` with its thumbnail, and that a document prints to `DCP1511`.
 
 ## Workflow follow-up
 
