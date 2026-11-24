@@ -5,7 +5,7 @@ Some PDFs declare a CropBox/TrimBox/BleedBox/ArtBox that does not fit the
 MediaBox (seen: an A4 page with a TrimBox 3x its size). When the client asks
 for print-scaling=none — the Android print service always does — pdftopdf
 centres and crops to that box, which shifts the content off the sheet and
-prints a blank page. Clamping every box to the MediaBox fixes it.
+prints a blank page. Clamping the boxes back onto the page fixes it.
 
 Registered in /etc/cups/local.convs as application/pdf -> application/vnd.cups-pdf
 at a lower cost than pdftopdf, so CUPS runs this instead and we exec pdftopdf
@@ -14,7 +14,7 @@ through untouched, so this can never make a job worse than plain pdftopdf.
 """
 import os
 import shutil
-import subprocess
+import signal
 import sys
 import tempfile
 
@@ -40,29 +40,46 @@ def inherited(node, key):
     return None
 
 
+def clamp(box, bounds):
+    """`box` clipped to `bounds`, or None if it already fits. No overlap ⇒ `bounds`."""
+    x0, y0, x1, y1 = box
+    bx0, by0, bx1, by1 = bounds
+    if (x0 >= bx0 - TOLERANCE and y0 >= by0 - TOLERANCE
+            and x1 <= bx1 + TOLERANCE and y1 <= by1 + TOLERANCE):
+        return None
+    cx0, cy0, cx1, cy1 = max(x0, bx0), max(y0, by0), min(x1, bx1), min(y1, by1)
+    if cx1 - cx0 < 1 or cy1 - cy0 < 1:
+        return bounds  # no overlap: the box is garbage
+    return cx0, cy0, cx1, cy1
+
+
 def fix(path, out):
-    """Write a box-clamped copy of `path` to `out`; return False if none was needed."""
+    """Write a box-clamped copy of `path` to `out`; return False if none was needed.
+
+    The CropBox is clamped to the MediaBox, then Bleed/Trim/ArtBox to the
+    (clamped) CropBox: pdftopdf crops to TrimBox, falling back to CropBox, so
+    each must lie within the one it falls back to.
+    """
     import pikepdf
 
     changed = False
     with pikepdf.open(path) as pdf:
         for n, page in enumerate(pdf.pages, 1):
-            mx0, my0, mx1, my1 = rect(page.mediabox)
+            media = rect(page.mediabox)
+            crop = media
             for name in BOXES:
+                # CropBox may be inherited from the page tree; the others may not.
                 box = inherited(page.obj, name) if name == "/CropBox" else page.obj.get(name)
-                if box is None:
-                    continue
-                x0, y0, x1, y1 = rect(box)
-                if (x0 >= mx0 - TOLERANCE and y0 >= my0 - TOLERANCE
-                        and x1 <= mx1 + TOLERANCE and y1 <= my1 + TOLERANCE):
-                    continue
-                cx0, cy0, cx1, cy1 = max(x0, mx0), max(y0, my0), min(x1, mx1), min(y1, my1)
-                if cx1 - cx0 < 1 or cy1 - cy0 < 1:
-                    page.obj[name] = page.mediabox  # no overlap: the box is garbage
-                else:
-                    page.obj[name] = pikepdf.Array([cx0, cy0, cx1, cy1])
-                log("DEBUG", f"page {n}: {name} {[x0, y0, x1, y1]} clamped to MediaBox")
-                changed = True
+                bounds = media if name == "/CropBox" else crop
+                fitted = None
+                if box is not None:
+                    fitted = clamp(rect(box), bounds)
+                    if fitted is not None:
+                        page.obj[name] = pikepdf.Array(fitted)
+                        log("DEBUG", f"page {n}: {name} {list(rect(box))} clamped to {list(fitted)}")
+                        changed = True
+                if name == "/CropBox" and box is not None:
+                    crop = fitted or rect(box)
         if changed:
             pdf.save(out)
     return changed
@@ -73,10 +90,12 @@ def main():
         print("Usage: pdf-fixboxes job user title copies options [file]", file=sys.stderr)
         return 1
     pdftopdf = os.path.join(os.environ.get("CUPS_SERVERBIN", "/usr/lib/cups"), "filter", "pdftopdf")
-    args = sys.argv[1:6]
+    src = sys.argv[6] if len(sys.argv) == 7 else None
+    # A cancel before the exec below must still run the `finally` cleanup (the
+    # handler is reset to the default by exec, so pdftopdf dies on SIGTERM as usual).
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))
     tmp = tempfile.mkdtemp(prefix="pdf-fixboxes-", dir=os.environ.get("TMPDIR"))
     try:
-        src = sys.argv[6] if len(sys.argv) == 7 else None
         if src is None:  # pdftopdf needs a seekable file, and so do we
             src = os.path.join(tmp, "in.pdf")
             with open(src, "wb") as f:
@@ -87,10 +106,17 @@ def main():
                 src = fixed
         except Exception as e:  # never fail a job over the cleanup step
             log("WARNING", f"left PDF as-is ({e})")
-        # Not exec: the temp files must outlive pdftopdf, and we clean them up.
-        return subprocess.call([pdftopdf, *args, src])
+        if src.startswith(tmp + os.sep):
+            # Hand our temp file over as an open descriptor, so the directory can
+            # go before pdftopdf even starts — nothing is left behind if the job
+            # is cancelled mid-way.
+            fd = os.open(src, os.O_RDONLY)
+            os.set_inheritable(fd, True)
+            src = f"/dev/fd/{fd}"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    # Become pdftopdf, so CUPS's cancel (SIGTERM) and exit status reach it directly.
+    os.execv(pdftopdf, [pdftopdf, *sys.argv[1:6], src])
 
 
 if __name__ == "__main__":
